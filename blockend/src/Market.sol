@@ -84,16 +84,18 @@ contract Market is Ownable {
     // ------------------- Constructor -------------------
     constructor(
         IERC20 _collateral,
-        string memory _t0name, string memory _t0sym,
-        string memory _t1name, string memory _t1sym,
+        string memory _tokenApproveName, 
+        string memory _tokenApproveSymbol,
+        string memory _tokenRejectName, 
+        string memory _tokenRejectSymbol,
         uint256 _maxSupply,
         address _pythAddress,
         bytes32 _priceId0,
         bytes32 _priceId1
     ) Ownable(msg.sender) {
         collateral = _collateral;
-        token0 = new MarketToken(_t0name, _t0sym);
-        token1 = new MarketToken(_t1name, _t1sym);
+        token0 = new MarketToken(_tokenApproveName, _tokenApproveSymbol);
+        token1 = new MarketToken(_tokenRejectName, _tokenRejectSymbol);
         maxSupply = _maxSupply;
 
         token0.mint(address(this), _maxSupply);
