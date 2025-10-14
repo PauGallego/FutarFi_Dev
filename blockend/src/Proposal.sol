@@ -43,7 +43,7 @@ contract Proposal is Ownable, IProposal {
 
 
     modifier checkEnded() {
-        if (block.timestamp < endTime) revert Proposal_NotEnded();
+        if (block.timestamp >= endTime) revert Proposal_NotEnded();
         _;
     }
 
