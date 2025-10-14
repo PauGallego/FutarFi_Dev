@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
@@ -15,7 +15,7 @@ interface IMarket {
     function sell(uint8 optionIndex, uint256 tokenAmount) external;
 
     function getOptionPrice(uint8 idx) external view returns (uint256);
-    function getTotals() external view returns (uint256 tot0, uint256 tot1);
+    function totalSupply() external view returns (uint256 tot0, uint256 tot1);
 
     function setPyth(address _pyth) external;
     function setPriceId(uint8 idx, bytes32 pid) external;
@@ -37,6 +37,7 @@ contract Market is Ownable {
         bytes32 priceId;         // Pyth feed ID
         uint256 asset_price;     // Price in 1e18
         uint256 totalCollateral; // Total collateral staked in this option
+        uint256 totalSupply;     // Total tokens minted
     }
 
     // ------------------- State Variables -------------------
@@ -101,8 +102,8 @@ contract Market is Ownable {
         token0.mint(address(this), _maxSupply);
         token1.mint(address(this), _maxSupply);
 
-        options[0] = Option({ priceId: _priceId0, asset_price: 1e18, totalCollateral: 0 });
-        options[1] = Option({ priceId: _priceId1, asset_price: 1e18, totalCollateral: 0 });
+        options[0] = Option({ priceId: _priceId0, asset_price: 1e18, totalCollateral: 0 , totalSupply: _maxSupply});
+        options[1] = Option({ priceId: _priceId1, asset_price: 1e18, totalCollateral: 0 , totalSupply: _maxSupply});
 
         if (_pythAddress != address(0)) {
             pyth = IPyth(_pythAddress);
@@ -157,16 +158,17 @@ contract Market is Ownable {
     }
 
     // ------------------- Market Logic -------------------
-    function buy(uint8 optionIndex, uint256 amount) external  isMarketOpen {
-        require(optionIndex < 2, "invalid index");
+    function buy(bool optionIndex, uint256 amount) external  isMarketOpen {
+        // require(optionIndex < 2, "invalid index");
         require(amount > 0, "zero amount");
 
         require(collateral.transferFrom(msg.sender, address(this), amount), "transfer failed");
+        uint8 option = optionIndex ? 0 : 1;
 
-        uint256 currentPrice = options[optionIndex].asset_price;
+        uint256 currentPrice = options[option].asset_price;
         uint256 tokensToMint = (amount * 1e18) / currentPrice;
 
-        if (optionIndex == 0) {
+        if (optionIndex) {
             require(token0.balanceOf(address(this)) >= tokensToMint, "insufficient token0 supply");
             token0.transfer(msg.sender, tokensToMint);
             if (!addedParticipant[msg.sender]) { participants0.push(msg.sender); addedParticipant[msg.sender] = true; }
@@ -176,42 +178,42 @@ contract Market is Ownable {
             if (!addedParticipant[msg.sender]) { participants1.push(msg.sender); addedParticipant[msg.sender] = true; }
         }
 
-        options[optionIndex].totalCollateral += amount;
-        userCollateral[msg.sender][optionIndex] += amount;
+        options[option].totalSupply -= tokensToMint;
+        options[option].totalCollateral += amount;
+        userCollateral[msg.sender][option] += amount;
 
         _recomputePrices();
 
-        emit Bought(msg.sender, optionIndex, amount, options[optionIndex].asset_price);
+        emit Bought(msg.sender, option, amount, options[option].asset_price);
     }
 
-    function sell(uint8 optionIndex, uint256 tokenAmount) external  isMarketOpen {
-        require(optionIndex < 2, "invalid index");
+    function sell(bool optionIndex, uint256 tokenAmount) external  isMarketOpen {
         require(tokenAmount > 0, "zero amount");
+        uint8 option = optionIndex ? 0 : 1;
 
-        if (optionIndex == 0) require(token0.balanceOf(msg.sender) >= tokenAmount, "insufficient token0 balance");
-        else require(token1.balanceOf(msg.sender) >= tokenAmount, "insufficient token1 balance");
+        require(token0.balanceOf(msg.sender) >= tokenAmount, "insufficient token0 balance");
+        require(token1.balanceOf(msg.sender) >= tokenAmount, "insufficient token1 balance");
 
-        uint256 price18 = options[optionIndex].asset_price;
+        uint256 price18 = options[option].asset_price;
         uint256 collateralOut = (tokenAmount * price18) / 1e18;
 
         require(collateral.balanceOf(address(this)) >= collateralOut, "insufficient collateral in contract");
 
-        if (optionIndex == 0) {
+        if (optionIndex) {
             token0.transferFrom(msg.sender, address(this), tokenAmount);
-            token0.burn(address(this), tokenAmount);
         } else {
             token1.transferFrom(msg.sender, address(this), tokenAmount);
-            token1.burn(address(this), tokenAmount);
         }
-
-        options[optionIndex].totalCollateral -= collateralOut;
-        userCollateral[msg.sender][optionIndex] -= collateralOut;
+        
+        options[option].totalSupply += tokenAmount;
+        options[option].totalCollateral -= collateralOut;
+        userCollateral[msg.sender][option] -= collateralOut;
 
         require(collateral.transfer(msg.sender, collateralOut), "payout failed");
 
         _recomputePrices();
 
-        emit Sold(msg.sender, optionIndex, tokenAmount, collateralOut, options[optionIndex].asset_price);
+        emit Sold(msg.sender, option, tokenAmount, collateralOut, options[option].asset_price);
     }
 
     // ------------------- Automatic Settlement -------------------
@@ -311,8 +313,16 @@ contract Market is Ownable {
         return options[idx].asset_price;
     }
 
-    function getTotals() external view returns (uint256 tot0, uint256 tot1) {
+
+    function totalCollateralSupply() external view returns (uint256 tot0, uint256 tot1) {
         tot0 = options[0].totalCollateral;
-        tot1 = options[1].totalCollateral;
+        tot1 = options[1].totalCollateral;       
+    }
+
+
+
+    function totalSupply() external view returns (uint256 tot0, uint256 tot1) {
+        tot0 = options[0].totalSupply;
+        tot1 = options[1].totalSupply;       
     }
 }

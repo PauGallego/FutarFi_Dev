@@ -48,8 +48,8 @@ contract ProposalManager is IProposalManager, Ownable {
     event ProposalRegistered(address indexed proposal);
     event ProposalExecuted(uint256 indexed proposalId);
 
+
     modifier onlyAdmin() {
-        require(adminRefCount[msg.sender] > 0, "Not admin of any Proposal");
         _;
     }
 
@@ -111,7 +111,6 @@ contract ProposalManager is IProposalManager, Ownable {
         external
         view
         override
-        onlyAdmin
         returns (address proposal)
     {
         return proposals[_proposalId];
@@ -123,7 +122,7 @@ contract ProposalManager is IProposalManager, Ownable {
         external
         view
         override
-        onlyAdmin
+        onlyOwner()
         returns (address[] memory)
     {
         uint256 len = proposalIds.length;
