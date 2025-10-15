@@ -21,7 +21,7 @@ interface IMarket {
     function setPriceId(uint8 idx, bytes32 pid) external;
     function setImpactFactor(uint256 newFactor18) external;
 
-    function collateral() external view returns (address);
+    function collateralToken() external view returns (address);
     function token0() external view returns (address);
     function token1() external view returns (address);
     function maxSupply() external view returns (uint256);
@@ -36,12 +36,12 @@ contract Market is Ownable {
     struct Option {
         bytes32 priceId;         // Pyth feed ID
         uint256 asset_price;     // Price in 1e18
-        uint256 totalCollateral; // Total collateral staked in this option
+        uint256 totalCollateral; // Total collateralToken staked in this option
         uint256 totalSupply;     // Total tokens minted
     }
 
     // ------------------- State Variables -------------------
-    IERC20 public collateral;
+    IERC20 public collateralToken;
     MarketToken public token0;
     MarketToken public token1;
     uint256 public maxSupply;
@@ -84,7 +84,7 @@ contract Market is Ownable {
 
     // ------------------- Constructor -------------------
     constructor(
-        IERC20 _collateral,
+        IERC20 _collateralToken,
         string memory _tokenApproveName, 
         string memory _tokenApproveSymbol,
         string memory _tokenRejectName, 
@@ -94,7 +94,7 @@ contract Market is Ownable {
         bytes32 _priceId0,
         bytes32 _priceId1
     ) Ownable(msg.sender) {
-        collateral = _collateral;
+        collateralToken = _collateralToken;
         token0 = new MarketToken(_tokenApproveName, _tokenApproveSymbol);
         token1 = new MarketToken(_tokenRejectName, _tokenRejectSymbol);
         maxSupply = _maxSupply;
@@ -162,7 +162,7 @@ contract Market is Ownable {
         // require(optionIndex < 2, "invalid index");
         require(amount > 0, "zero amount");
 
-        require(collateral.transferFrom(msg.sender, address(this), amount), "transfer failed");
+        require(collateralToken.transferFrom(msg.sender, address(this), amount), "transfer failed");
         uint8 option = optionIndex ? 0 : 1;
 
         uint256 currentPrice = options[option].asset_price;
@@ -197,7 +197,7 @@ contract Market is Ownable {
         uint256 price18 = options[option].asset_price;
         uint256 collateralOut = (tokenAmount * price18) / 1e18;
 
-        require(collateral.balanceOf(address(this)) >= collateralOut, "insufficient collateral in contract");
+        require(collateralToken.balanceOf(address(this)) >= collateralOut, "insufficient collateralToken in contract");
 
         if (optionIndex) {
             token0.transferFrom(msg.sender, address(this), tokenAmount);
@@ -209,7 +209,7 @@ contract Market is Ownable {
         options[option].totalCollateral -= collateralOut;
         userCollateral[msg.sender][option] -= collateralOut;
 
-        require(collateral.transfer(msg.sender, collateralOut), "payout failed");
+        require(collateralToken.transfer(msg.sender, collateralOut), "payout failed");
 
         _recomputePrices();
 
@@ -220,7 +220,7 @@ contract Market is Ownable {
     /**
      * @notice Settles the futarchy market automatically.
      * Winner option holders are redeemed at current price.
-     * Loser option tokens are burned; users lose staked collateral.
+     * Loser option tokens are burned; users lose staked collateralToken.
      * Only owner can call this function.
      */
     function settleMarket(bool isApproveWinner) external onlyOwner isMarketOpen {
@@ -232,7 +232,7 @@ contract Market is Ownable {
 
         uint256 winnerPrice = options[winnerIndex].asset_price;
 
-        // Process winner: burn all tokens and pay collateral
+        // Process winner: burn all tokens and pay collateralToken
         address[] storage winners = winnerIndex == 0 ? participants0 : participants1;
         for (uint i = 0; i < winners.length; i++) {
             address user = winners[i];
@@ -243,12 +243,12 @@ contract Market is Ownable {
                 if (winnerIndex == 0) { token0.transferFrom(user, address(this), tokenBalance); token0.burn(address(this), tokenBalance); }
                 else { token1.transferFrom(user, address(this), tokenBalance); token1.burn(address(this), tokenBalance); }
 
-                require(collateral.transfer(user, payout), "payout failed");
+                require(collateralToken.transfer(user, payout), "payout failed");
                 userCollateral[user][winnerIndex] = 0;
             }
         }
 
-        // Process loser: burn tokens, return all collateral (losers don’t lose any)
+        // Process loser: burn tokens, return all collateralToken (losers don’t lose any)
         address[] storage losers = loserIndex == 0 ? participants0 : participants1;
         for (uint i = 0; i < losers.length; i++) {
             address user = losers[i];
@@ -265,10 +265,10 @@ contract Market is Ownable {
                 }
             }
 
-            // Return all collateral to user
+            // Return all collateralToken to user
             uint256 userCollat = userCollateral[user][loserIndex];
             if (userCollat > 0) {
-                require(collateral.transfer(user, userCollat), "return collateral failed");
+                require(collateralToken.transfer(user, userCollat), "return collateralToken failed");
                 userCollateral[user][loserIndex] = 0;
             }
         }

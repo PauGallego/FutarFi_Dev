@@ -50,12 +50,11 @@ contract ProposalManager is IProposalManager, Ownable {
 
 
     modifier onlyAdmin() {
+        // TODO: implement admin management
         _;
     }
 
-    constructor() Ownable(msg.sender) {
-        proposalCount = 0;
-    }
+    constructor() Ownable(msg.sender) {}
 
     
 
@@ -143,7 +142,7 @@ contract ProposalManager is IProposalManager, Ownable {
         uint256 matchesCount = 0;
         for (uint256 i = 0; i < proposalCount; i++) {
             address propAddr = proposals[i];
-            if (Proposal(propAddr).getAdmin() == _admin) {
+            if (Proposal(propAddr).admin() == _admin) {
                 matchesCount++;
             }
         }
@@ -153,7 +152,7 @@ contract ProposalManager is IProposalManager, Ownable {
         uint256 idx = 0;
         for (uint256 i = 0; i < proposalCount; i++) {
             address propAddr = proposals[i];
-            if (Proposal(propAddr).getAdmin() == _admin) {
+            if (Proposal(propAddr).admin() == _admin) {
                 proposalsByAdmin[idx] = propAddr; 
                 idx++;
             }

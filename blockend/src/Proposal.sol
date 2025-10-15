@@ -8,13 +8,6 @@ import {Market} from "./Market.sol";
 interface IProposal {
     function closeProposal() external;
     function isActive() external view returns(bool);
-    function getAdmin() external view returns(address);
-    function getName() external view returns(string memory);
-    function getDescription() external view returns(string memory);
-    function getStartTime() external view returns(uint256);
-    function getEndTime() external view returns(uint256);
-    function getMarketAddress() external view returns(address);
-    function isExecuted() external view returns(bool);
 }
 
 contract Proposal is Ownable, IProposal {
@@ -143,33 +136,6 @@ contract Proposal is Ownable, IProposal {
         return block.timestamp >= startTime && block.timestamp <= endTime && !proposalEnded;
     }
 
-    function getAdmin() external view returns(address) {
-        return admin;
-    }
-
-    function getName() external view returns(string memory) {
-        return name;
-    }
-
-    function getDescription() external view returns(string memory) {
-        return description;
-    }
-
-    function getStartTime() external view returns(uint256) {
-        return startTime;
-    }
-
-    function getEndTime() external view returns(uint256) {
-        return endTime;
-    }
-
-    function getMarketAddress() external view returns(address) {
-        return address(market);
-    }
-
-    function isExecuted() external view returns(bool) {
-        return proposalExecuted;
-    }
 
    
 
