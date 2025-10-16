@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
@@ -20,6 +21,9 @@ export default function NewProposalPage() {
   const [formData, setFormData] = useState({
     title: "",
     description: "",
+    duration: "",
+    collateralToken: "",
+    maxSupply: "",
     targetAddress: "",
     calldata: "",
   })
@@ -41,6 +45,42 @@ export default function NewProposalPage() {
       toast({
         title: "Validation Error",
         description: "Please provide a proposal description.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!formData.duration || Number(formData.duration) <= 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please provide a valid duration in days.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!formData.collateralToken) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a collateral token.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!formData.maxSupply || Number(formData.maxSupply) <= 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please provide a valid max supply.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!formData.targetAddress.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please provide a target contract address.",
         variant: "destructive",
       })
       return
@@ -107,8 +147,63 @@ export default function NewProposalPage() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="duration" className="text-base">
+                Duration (Days) *
+              </Label>
+              <Input
+                id="duration"
+                type="number"
+                min="1"
+                placeholder="e.g., 7"
+                value={formData.duration}
+                onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                className="text-base"
+                required
+              />
+              <p className="text-sm text-muted-foreground">How many days the proposal will be open for voting</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="collateralToken" className="text-base">
+                Collateral Token *
+              </Label>
+              <Select
+                value={formData.collateralToken}
+                onValueChange={(value) => setFormData({ ...formData, collateralToken: value })}
+                required
+              >
+                <SelectTrigger id="collateralToken" className="text-base">
+                  <SelectValue placeholder="Select a token" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PYUSD">PYUSD</SelectItem>
+                  <SelectItem value="USDC">USDC</SelectItem>
+                  <SelectItem value="DAI">DAI</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">The stablecoin token used as collateral for this proposal</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maxSupply" className="text-base">
+                Max Supply *
+              </Label>
+              <Input
+                id="maxSupply"
+                type="number"
+                min="1"
+                placeholder="e.g., 1000000"
+                value={formData.maxSupply}
+                onChange={(e) => setFormData({ ...formData, maxSupply: e.target.value })}
+                className="text-base"
+                required
+              />
+              <p className="text-sm text-muted-foreground">Maximum supply for the market (in token units)</p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="targetAddress" className="text-base">
-                Target Contract Address
+                Target Contract Address *
               </Label>
               <Input
                 id="targetAddress"
@@ -116,10 +211,9 @@ export default function NewProposalPage() {
                 value={formData.targetAddress}
                 onChange={(e) => setFormData({ ...formData, targetAddress: e.target.value })}
                 className="font-mono text-sm"
+                required
               />
-              <p className="text-sm text-muted-foreground">
-                Optional: The contract address this proposal will interact with
-              </p>
+              <p className="text-sm text-muted-foreground">The contract address this proposal will interact with</p>
             </div>
 
             <div className="space-y-2">

@@ -7,6 +7,8 @@ import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 contract MarketToken is IERC20, Ownable {
 
+    bool private _initialized;
+
     string public name;
     string public symbol;
     uint8 public decimals = 18;
@@ -14,9 +16,14 @@ contract MarketToken is IERC20, Ownable {
 
     mapping(address => uint256) private _balances;
 
-    constructor(string memory _name, string memory _symbol) Ownable(msg.sender) {
+    constructor() Ownable(msg.sender) {}
+
+    function initialize(string memory _name, string memory _symbol) external {
+        require(!_initialized, "Already initialized");
+        _initialized = true;
         name = _name;
         symbol = _symbol;
+        _transferOwnership(msg.sender); // set the proxy owner to caller of initialize()
     }
 
     // IERC20 totalSupply

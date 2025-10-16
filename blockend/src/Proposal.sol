@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {Market} from "./Market.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 interface IProposal {
     function closeProposal() external;
@@ -11,6 +12,7 @@ interface IProposal {
 }
 
 contract Proposal is Ownable, IProposal {
+    bool private _initialized;
 
     uint256 public id;
     address public admin; 
@@ -18,9 +20,15 @@ contract Proposal is Ownable, IProposal {
     string public description;
     uint256 public startTime;
     uint256 public endTime;
+    string public approveName;
+    string public approveSymbol;
+    string public rejectName;
+    string public rejectSymbol;
     bool public proposalExecuted;
     bool public proposalEnded;
-    Market public market; 
+    Market public market;
+    address public marketImpl; 
+    address public marketTokenImpl;
 
     // Execution
     address public target;     
@@ -42,47 +50,50 @@ contract Proposal is Ownable, IProposal {
 
 
 
-    constructor(
+    constructor() Ownable(msg.sender) {}
+
+    function initialize(
         uint256 _id,
         address _admin,
         string memory _name,
         string memory _description,
-        uint256 _duration,            
-        IERC20 _collateral,           
-        string memory _approveName,
-        string memory _approveSymbol,
-        string memory _rejectName,
-        string memory _rejectSymbol,
+        uint256 _duration,
+        IERC20 _collateralToken,
         uint256 _maxSupply,
         address _target,
-        bytes memory _data
-    ) Ownable(_admin) {
+        bytes memory _data,
+        address _marketImpl,
+        address _marketTokenImpl
+    ) external {
+        require(!_initialized, "Already initialized");
+        _initialized = true;
+
         id = _id;
         admin = _admin;
         name = _name;
         description = _description;
         startTime = block.timestamp;
-        endTime = startTime + _duration; // Duration in seconds
-
-        // Create Market automatically
-        market = new Market(
-            _collateral,
-            _approveName,
-            _approveSymbol,
-            _rejectName,
-            _rejectSymbol,
-            _maxSupply,
-            address(0), // TODO: Implement pyth in this contract
-            bytes32(""), 
-            bytes32("")
-        );
-
-        target = _target; 
+        endTime = block.timestamp + _duration;
+        target = _target;
         data = _data;
 
-        proposalExecuted = false;
-        proposalEnded = false;
+        marketImpl = _marketImpl;
+        marketTokenImpl = _marketTokenImpl;
+
+        // Clone Market and initialize
+        address m = Clones.clone(marketImpl);
+        Market(m).initialize(
+            _collateralToken,
+            _maxSupply,
+            address(0),
+            bytes32(""),
+            _marketTokenImpl
+        );
+        market = Market(m);
+
+        _transferOwnership(msg.sender); // set the proxy owner to caller of initialize()
     }
+
 
     function closeProposal() external onlyOwner checkEnded {
         if (proposalExecuted) revert Proposal_AlreadyExecuted();
@@ -129,14 +140,11 @@ contract Proposal is Ownable, IProposal {
 
     }
 
-   
 
     // Check if proposal is active
     function isActive() external view returns(bool){
         return block.timestamp >= startTime && block.timestamp <= endTime && !proposalEnded;
     }
 
-
-   
 
 }

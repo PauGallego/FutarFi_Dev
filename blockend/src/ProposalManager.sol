@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {Proposal} from "./Proposal.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 interface IProposalManager {
     // TODO: function addAdmin(uint256 proposalId, address newAdmin) external;
@@ -12,11 +13,7 @@ interface IProposalManager {
         string memory _name,
         string memory _description,
         uint256 _duration,
-        address _collateral,
-        string memory _approveName,
-        string memory _approveSymbol,
-        string memory _rejectName,
-        string memory _rejectSymbol,
+        address _collateralToken,
         uint256 _maxSupply,
         address _target,
         bytes memory _data
@@ -29,6 +26,10 @@ interface IProposalManager {
 }
 
 contract ProposalManager is IProposalManager, Ownable {
+
+    address public proposalImpl;     
+    address public marketImpl;       
+    address public marketTokenImpl;  
 
     // Single registry of proposals by proposalId -> proposalAddress (not scoped by proposalId yet)
     mapping(uint256 => address) private proposals;
@@ -45,7 +46,7 @@ contract ProposalManager is IProposalManager, Ownable {
     // ------ Events ------
     event adminAdded(uint256 indexed proposalId, address indexed admin);
     event adminRemoved(uint256 indexed proposalId, address indexed admin);
-    event ProposalRegistered(address indexed proposal);
+    event ProposalRegistered(uint256 indexed proposalId, address indexed proposal);
     event ProposalExecuted(uint256 indexed proposalId);
 
 
@@ -54,7 +55,21 @@ contract ProposalManager is IProposalManager, Ownable {
         _;
     }
 
-    constructor() Ownable(msg.sender) {}
+    constructor(address _proposalImpl, address _marketImpl, address _marketTokenImpl)
+        Ownable(msg.sender)
+    {
+        proposalImpl = _proposalImpl;
+        marketImpl = _marketImpl;
+        marketTokenImpl = _marketTokenImpl;
+    }
+
+    
+    function setImplementations(address _p, address _m, address _t) external onlyOwner {
+        proposalImpl = _p; 
+        marketImpl = _m; 
+        marketTokenImpl = _t;
+    }
+
 
     
 
@@ -62,34 +77,34 @@ contract ProposalManager is IProposalManager, Ownable {
         string memory _name,
         string memory _description,
         uint256 _duration,
-        address _collateral,
-        string memory _approveName,
-        string memory _approveSymbol,
-        string memory _rejectName,
-        string memory _rejectSymbol,
+        address _collateralToken,
         uint256 _maxSupply,
         address _target,
         bytes memory _data
-    ) external override returns (uint256) {
-        Proposal newProposal = new Proposal(
-            proposalCount++,
+    ) external returns (uint256 id) {
+        id = proposalCount;
+
+        address clone = Clones.clone(proposalImpl);
+        Proposal(clone).initialize(
+            id,
             msg.sender,
             _name,
             _description,
             _duration,
-            IERC20(_collateral),
-            _approveName,
-            _approveSymbol,
-            _rejectName,
-            _rejectSymbol,
+            IERC20(_collateralToken),
             _maxSupply,
             _target,
-            _data
+            _data,
+            marketImpl,
+            marketTokenImpl
         );
-        proposals[proposalCount] = address(newProposal);
-        proposalIds.push(proposalCount);
-        emit ProposalRegistered(address(newProposal));
-        return proposalCount;
+
+        proposals[id] = clone;
+        proposalIds.push(id);
+        unchecked { proposalCount = id + 1; }
+
+        emit ProposalRegistered(id, clone);
+        return id;
     }
     
     // NOTE: maybe not needed, as proposals are immutable once created

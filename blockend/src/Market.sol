@@ -3,61 +3,77 @@ pragma solidity ^0.8.30;
 
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {MarketToken} from "./MarketToken.sol";
 import "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
 import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 
+
 interface IMarket {
+    function initialize(
+        IERC20 _collateralToken,
+        uint256 _maxSupply,
+        address _pythAddress,
+        bytes32 _collateralPriceId,
+        address _marketTokenImpl
+    ) external;
+
     function openMarket() external;
     function closeMarket() external;
 
-    function buy(uint8 optionIndex, uint256 amount) external;
-    function sell(uint8 optionIndex, uint256 tokenAmount) external;
+    function buy(bool optionIndex, uint256 amount) external;
+    function sell(bool optionIndex, uint256 tokenAmount) external;
 
-    function getOptionPrice(uint8 idx) external view returns (uint256);
+    function getMarketTypePrice(uint8 idx) external view returns (uint256);
     function totalSupply() external view returns (uint256 tot0, uint256 tot1);
-
-    function setPyth(address _pyth) external;
-    function setCollateralPriceId(bytes32 pid) external;
-    function setImpactFactor(uint256 newFactor18) external;
-
-    function collateral() external view returns (address);
-    function tokenApprove() external view returns (address);
-    function tokenReject() external view returns (address);
     function maxSupply() external view returns (uint256);
     function isOpen() external view returns (bool);
-
     function userCollateral(address user, uint8 optionIndex) external view returns (uint256);
 }
 
-contract Market is Ownable {
+contract Market is Ownable, IMarket {
+    error E_AlreadyInitialized();
+    error E_ZeroAddress();
+    error E_MarketClosed();
+    error E_MarketOpen();
+    error E_InvalidOption();
+    error E_InsufficientSupply();
+    error E_InsufficientBalance();
+    error E_TransferFailed();
 
-    // ------------------- Structs -------------------
     struct MarketType {
-        uint256 asset_price;     // Price in 1e18
-        uint256 totalCollateral; // Total collateral staked in this option (in collateral token base units)
-        uint256 totalSupply;     // Total tokens minted
+        uint256 asset_price;     
+        uint256 totalCollateral; 
+        uint256 totalSupply;     
     }
 
-    // ------------------- State Variables -------------------
-    IERC20 public collateral;
-    MarketToken public tokenApprove;
-    MarketToken public tokenReject;
-    uint256 public maxSupply;
-    MarketType[2] public marketType;
-    IPyth public pyth;
-    bytes32 public collateralPriceId;
-    bool public isOpen;
-    uint256 public impactFactor = 5 * 10**16; // 0.05 in 1e18 = 5% max sensitivity per 1.0 ratio
+    bool private _initialized;
 
-    mapping(address => uint256[2]) public userCollateral; // userCollateral[user][optionIndex]
+    IERC20          public collateralToken;
+    MarketToken     public approveToken; 
+    MarketToken     public rejectToken;  
+    uint256         public override maxSupply;
+    bytes32 public collateralPriceId;
+
+
+    // 0 = approve side, 1 = reject side
+    MarketType[2]       public marketType;
+    IPyth           public pyth;
+    bool            public override isOpen;
+
+    uint256 public impactFactor; 
+
+    // track per-user deposited collateralToken by MarketType (for settle/refund)
+    mapping(address => mapping(uint8 => uint256)) public override userCollateral;
 
     // Participants tracking for automatic settlement
     address[] private participants0; 
     address[] private participants1; 
     mapping(address => bool[2]) private addedParticipant; 
 
-    // ------------------- Events -------------------
+    event MarketInitialized(address collateralToken, address approveToken, address rejectToken, uint256 maxSupply);
+    event MarketOpened();
+    event MarketClosed();
     event Bought(address indexed user, uint8 indexed optionIndex, uint256 collateralIn, uint256 newPrice);
     event Sold(address indexed user, uint8 indexed optionIndex, uint256 tokenAmount, uint256 collateralOut, uint256 newPrice);
     event PythSet(address indexed pyth);
@@ -65,7 +81,7 @@ contract Market is Ownable {
     event PriceRefreshed(uint8 indexed optionIndex, uint256 price18, uint publishTime);
     event MarketSettled(uint8 winnerIndex, uint8 loserIndex);
 
-    // ------------------- Modifiers -------------------
+   // ------------------- Modifiers -------------------
     modifier isPyth() {
         require(msg.sender == address(pyth), "only pyth");
         _;
@@ -81,25 +97,37 @@ contract Market is Ownable {
         _;
     }
 
-    // ------------------- Constructor -------------------
-    constructor(
-        IERC20 _collateral,
-        string memory _tokenApproveName, 
-        string memory _tokenApproveSymbol,
-        string memory _tokenRejectName, 
-        string memory _tokenRejectSymbol,
+    constructor() Ownable(msg.sender) {}
+
+    function initialize(
+        IERC20 _collateralToken,
         uint256 _maxSupply,
         address _pythAddress,
-        bytes32 _collateralPriceId
-    ) Ownable(msg.sender) {
-        collateral = _collateral;
-        tokenApprove = new MarketToken(_tokenApproveName, _tokenApproveSymbol);
-        tokenReject = new MarketToken(_tokenRejectName, _tokenRejectSymbol);
+        bytes32 _collateralPriceId,
+        address _marketTokenImpl
+    ) external {
+
+        collateralToken = _collateralToken;
+
+        // 0.05 in 1e18 = 5% max sensitivity per 1.0 ratio
+        impactFactor = 5e16; 
+
+
+        // Clone approve token
+        address t0 = Clones.clone(_marketTokenImpl);
+        MarketToken(t0).initialize("Approve Token", "APT");
+        approveToken = MarketToken(t0);
+
+        // Clone reject token
+        address t1 = Clones.clone(_marketTokenImpl);
+        MarketToken(t1).initialize("Reject Token", "RJT");
+        rejectToken = MarketToken(t1);
+        
         maxSupply = _maxSupply;
 
         // initial mint to the contract to act as sellable supply
-        tokenApprove.mint(address(this), _maxSupply);
-        tokenReject.mint(address(this), _maxSupply);
+        approveToken.mint(address(this), _maxSupply);
+        rejectToken.mint(address(this), _maxSupply);
 
         // Initialize marketType with Pyth price if available
         uint256 basePrice = 1e18;
@@ -110,24 +138,26 @@ contract Market is Ownable {
             emit PythSet(_pythAddress);
             emit CollateralPriceIdSet(_collateralPriceId);
         }
-
         marketType[0] = MarketType({asset_price: basePrice, totalCollateral: 0 , totalSupply: _maxSupply});
         marketType[1] = MarketType({asset_price: basePrice, totalCollateral: 0 , totalSupply: _maxSupply});
 
         collateralPriceId = _collateralPriceId;
         isOpen = true;
+        
+        _transferOwnership(msg.sender); // set the proxy owner to caller of initialize()
+        emit MarketInitialized(address(_collateralToken), address(approveToken), address(rejectToken), _maxSupply);
     }
 
-    // ------------------- Owner / Pyth Setup -------------------
+     // ------------------- Owner / Pyth Setup -------------------
     function setPyth(address _pyth) external onlyOwner  {
         require(_pyth != address(0), "zero address");
         pyth = IPyth(_pyth);
         emit PythSet(_pyth);
     }
 
-    function setCollateralPriceId(bytes32 pid) external onlyOwner {
-        collateralPriceId = pid;
-        emit CollateralPriceIdSet(pid);
+    function setCollateralPriceId(bytes32 _pid) external onlyOwner {
+        collateralPriceId = _pid;
+        emit CollateralPriceIdSet(_pid);
     }
 
     function setImpactFactor(uint256 newFactor18) external onlyOwner {
@@ -155,12 +185,6 @@ contract Market is Ownable {
         }
     }
 
-    function updatePriceFeeds(bytes[] calldata priceUpdateData) external payable isPythDefined {
-        uint256 fee = pyth.getUpdateFee(priceUpdateData);
-        require(msg.value >= fee, "insufficient fee");
-        pyth.updatePriceFeeds{ value: fee }(priceUpdateData);
-        if (msg.value > fee) payable(msg.sender).transfer(msg.value - fee);
-    }
 
     // ------------------- Market Logic -------------------
     /**
@@ -209,7 +233,7 @@ contract Market is Ownable {
     function buy(bool optionIndex, uint256 amount) external isMarketOpen {
         require(amount > 0, "zero amount");
 
-        require(collateral.transferFrom(msg.sender, address(this), amount), "transfer failed");
+        require(collateralToken.transferFrom(msg.sender, address(this), amount), "transfer failed");
         uint8 option = optionIndex ? 0 : 1;
 
         uint256 currentPrice = marketType[option].asset_price;
@@ -219,15 +243,15 @@ contract Market is Ownable {
         uint256 tokensToMint = (amount * 1e18) / effectivePrice;
 
         if (optionIndex) {
-            require(tokenApprove.balanceOf(address(this)) >= tokensToMint, "insufficient tokenApprove supply");
-            tokenApprove.transfer(msg.sender, tokensToMint);
+            require(approveToken.balanceOf(address(this)) >= tokensToMint, "insufficient approveToken supply");
+            approveToken.transfer(msg.sender, tokensToMint);
             if (!addedParticipant[msg.sender][option]) {
                 participants0.push(msg.sender);
                 addedParticipant[msg.sender][option] = true;
             }
         } else {
-            require(tokenReject.balanceOf(address(this)) >= tokensToMint, "insufficient tokenReject supply");
-            tokenReject.transfer(msg.sender, tokensToMint);
+            require(rejectToken.balanceOf(address(this)) >= tokensToMint, "insufficient rejectToken supply");
+            rejectToken.transfer(msg.sender, tokensToMint);
             if (!addedParticipant[msg.sender][option]) {
                 participants1.push(msg.sender);
                 addedParticipant[msg.sender][option] = true;
@@ -253,9 +277,9 @@ contract Market is Ownable {
         uint8 option = optionIndex ? 0 : 1;
 
         if (optionIndex) {
-            require(tokenApprove.balanceOf(msg.sender) >= tokenAmount, "insufficient tokenApprove balance");
+            require(approveToken.balanceOf(msg.sender) >= tokenAmount, "insufficient approveToken balance");
         } else {
-            require(tokenReject.balanceOf(msg.sender) >= tokenAmount, "insufficient tokenReject balance");
+            require(rejectToken.balanceOf(msg.sender) >= tokenAmount, "insufficient rejectToken balance");
         }
 
         uint256 currentPrice = marketType[option].asset_price;
@@ -264,19 +288,19 @@ contract Market is Ownable {
         (, uint256 effectiveSellPrice) = _applyTradeImpact(currentPrice, tradeCollateral, marketType[option].totalCollateral);
 
         uint256 collateralOut = (tokenAmount * effectiveSellPrice) / 1e18;
-        require(collateral.balanceOf(address(this)) >= collateralOut, "insufficient collateral in contract");
+        require(collateralToken.balanceOf(address(this)) >= collateralOut, "insufficient collateralToken in contract");
 
         if (optionIndex) {
-            tokenApprove.transferFrom(msg.sender, address(this), tokenAmount);
+            approveToken.transferFrom(msg.sender, address(this), tokenAmount);
         } else {
-            tokenReject.transferFrom(msg.sender, address(this), tokenAmount);
+            rejectToken.transferFrom(msg.sender, address(this), tokenAmount);
         }
 
         marketType[option].totalSupply += tokenAmount;
         marketType[option].totalCollateral -= collateralOut;
         userCollateral[msg.sender][option] -= collateralOut;
 
-        require(collateral.transfer(msg.sender, collateralOut), "payout failed");
+        require(collateralToken.transfer(msg.sender, collateralOut), "payout failed");
 
         // Update option price after trade
         (, marketType[option].asset_price) = _applyTradeImpact(
@@ -301,28 +325,28 @@ contract Market is Ownable {
         // Pay winners using current option_price
         for (uint i = 0; i < winners.length; i++) {
             address user = winners[i];
-            uint256 tokenBalance = winnerIndex == 0 ? tokenApprove.balanceOf(user) : tokenReject.balanceOf(user);
+            uint256 tokenBalance = winnerIndex == 0 ? approveToken.balanceOf(user) : rejectToken.balanceOf(user);
             if (tokenBalance > 0) {
                 uint256 payout = (tokenBalance * marketType[winnerIndex].asset_price) / 1e18;
-                if (winnerIndex == 0) { tokenApprove.transferFrom(user, address(this), tokenBalance); tokenApprove.burn(address(this), tokenBalance); }
-                else { tokenReject.transferFrom(user, address(this), tokenBalance); tokenReject.burn(address(this), tokenBalance); }
-                require(collateral.transfer(user, payout), "payout failed");
+                if (winnerIndex == 0) { approveToken.transferFrom(user, address(this), tokenBalance); approveToken.burn(address(this), tokenBalance); }
+                else { rejectToken.transferFrom(user, address(this), tokenBalance); rejectToken.burn(address(this), tokenBalance); }
+                require(collateralToken.transfer(user, payout), "payout failed");
                 userCollateral[user][winnerIndex] = 0;
             }
         }
 
-        // Return all collateral to losers
+        // Return all collateralToken to losers
         for (uint i = 0; i < losers.length; i++) {
             address user = losers[i];
-            uint256 tokenBalance = loserIndex == 0 ? tokenApprove.balanceOf(user) : tokenReject.balanceOf(user);
+            uint256 tokenBalance = loserIndex == 0 ? approveToken.balanceOf(user) : rejectToken.balanceOf(user);
             if (tokenBalance > 0) {
-                if (loserIndex == 0) { tokenApprove.transferFrom(user, address(this), tokenBalance); tokenApprove.burn(address(this), tokenBalance); }
-                else { tokenReject.transferFrom(user, address(this), tokenBalance); tokenReject.burn(address(this), tokenBalance); }
+                if (loserIndex == 0) { approveToken.transferFrom(user, address(this), tokenBalance); approveToken.burn(address(this), tokenBalance); }
+                else { rejectToken.transferFrom(user, address(this), tokenBalance); rejectToken.burn(address(this), tokenBalance); }
             }
 
             uint256 collat = userCollateral[user][loserIndex];
             if (collat > 0) {
-                require(collateral.transfer(user, collat), "return collateral failed");
+                require(collateralToken.transfer(user, collat), "return collateralToken failed");
                 userCollateral[user][loserIndex] = 0;
             }
         }
@@ -330,29 +354,9 @@ contract Market is Ownable {
         emit MarketSettled(winnerIndex, loserIndex);
     }
 
-    // ------------------- Price Recalculation -------------------
-    function _recomputePrices() internal {
-        uint256 ref = 1e18;
-        if (address(pyth) != address(0) && collateralPriceId != bytes32(0)) {
-            (uint256 pcol, uint tcol) = getPythPrice(collateralPriceId);
-            ref = pcol;
-            emit PriceRefreshed(0, pcol, tcol);
-            emit PriceRefreshed(1, pcol, tcol);
-        }
-
-        uint256 totalCollateralAll = marketType[0].totalCollateral + marketType[1].totalCollateral + 1;
-        uint256 share0 = (marketType[0].totalCollateral * 1e18) / totalCollateralAll;
-        uint256 share1 = (marketType[1].totalCollateral * 1e18) / totalCollateralAll;
-
-        uint256 mult0 = 1e18 + ((impactFactor * share0) / 1e18);
-        uint256 mult1 = 1e18 + ((impactFactor * share1) / 1e18);
-
-        marketType[0].asset_price = (ref * mult0) / 1e18;
-        marketType[1].asset_price = (ref * mult1) / 1e18;
-    }
 
     // ------------------- Views -------------------
-    function getOptionPrice(uint8 idx) external view returns (uint256) {
+    function getMarketTypePrice(uint8 idx) external view returns (uint256) {
         require(idx < 2, "invalid index");
         return marketType[idx].asset_price;
     }
