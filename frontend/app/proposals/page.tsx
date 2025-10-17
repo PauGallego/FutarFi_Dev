@@ -1,36 +1,13 @@
+"use client"
+
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Clock, User } from "lucide-react"
-
-// Mock proposal data
-const mockProposals = [
-  {
-    id: "1",
-    title: "Increase Treasury Allocation for Development",
-    description: "Proposal to allocate 100 ETH from treasury to fund core development team for Q2 2025.",
-    status: "active" as const,
-    createdBy: "0x742d...5f3a",
-    createdAt: "2025-01-10T14:30:00Z",
-  },
-  {
-    id: "2",
-    title: "Implement New Governance Token Distribution",
-    description: "Adjust token distribution mechanism to reward long-term holders and active participants.",
-    status: "pending" as const,
-    createdBy: "0x8a3c...2b1d",
-    createdAt: "2025-01-08T09:15:00Z",
-  },
-  {
-    id: "3",
-    title: "Partnership with DeFi Protocol XYZ",
-    description: "Strategic partnership proposal to integrate liquidity pools with Protocol XYZ.",
-    status: "executed" as const,
-    createdBy: "0x1f9e...7c4b",
-    createdAt: "2024-12-28T16:45:00Z",
-  },
-]
+import { Plus, Clock, User, Loader2, AlertCircle } from "lucide-react"
+// import { useProposalsByAdmin } from "@/hooks/use-proposals-by-admin"
+import { useGetAllProposals } from "@/hooks/use-get-all-proposals"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 const statusColors = {
   active: "bg-green-500/10 text-green-500 border-green-500/20",
@@ -39,6 +16,16 @@ const statusColors = {
 }
 
 export default function ProposalsPage() {
+  // const { proposals, isLoading, error } = useProposalsByAdmin()
+  const { proposals, isLoading, error, refetch } = useGetAllProposals()
+
+  // Helper function to format address
+  const formatAddress = (addr: string) => {
+    if (!addr) return ""
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`
+  }
+
+
   return (
     <div className="container mx-auto px-4 py-12">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
@@ -54,7 +41,28 @@ export default function ProposalsPage() {
         </Button>
       </div>
 
-      {mockProposals.length === 0 ? (
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Failed to load proposals. Please check your connection and try again.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {isLoading ? (
+        <Card className="p-12">
+          <div className="flex flex-col items-center text-center space-y-4">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <div className="space-y-2">
+              <h3 className="text-xl font-semibold">Loading Proposals</h3>
+              <p className="text-muted-foreground">
+                Fetching your proposals from the blockchain...
+              </p>
+            </div>
+          </div>
+        </Card>
+      ) : proposals.length === 0 ? (
         <Card className="p-12">
           <div className="flex flex-col items-center text-center space-y-4">
             <div className="p-4 rounded-full bg-muted">
@@ -63,7 +71,7 @@ export default function ProposalsPage() {
             <div className="space-y-2">
               <h3 className="text-xl font-semibold">No proposals yet</h3>
               <p className="text-muted-foreground max-w-md">
-                Be the first to create a proposal and shape the future of this DAO.
+                No proposals have been created yet. Be the first to create a proposal.
               </p>
             </div>
             <Button asChild size="lg" className="mt-4">
@@ -73,7 +81,7 @@ export default function ProposalsPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {mockProposals.map((proposal) => (
+          {proposals.map((proposal) => (
             <Card key={proposal.id} className="hover:border-primary/50 transition-colors">
               <CardHeader>
                 <div className="flex flex-col sm:flex-row justify-between gap-4">
@@ -92,7 +100,7 @@ export default function ProposalsPage() {
                 <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <User className="h-4 w-4" />
-                    <span>Created by {proposal.createdBy}</span>
+                    <span>Created by {formatAddress(proposal.createdBy)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4" />

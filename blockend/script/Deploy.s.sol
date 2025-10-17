@@ -1,51 +1,67 @@
-// // SPDX-License-Identifier: MIT
-// pragma solidity ^0.8.24;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.30;
 
-// import "forge-std/Script.sol";
+import "forge-std/Script.sol";
+import "forge-std/console.sol";
+import {ProposalManager} from "../src/ProposalManager.sol";
+import {Proposal} from "../src/Proposal.sol";
+import {Market} from "../src/Market.sol";
+import {MarketToken} from "../src/MarketToken.sol";
 
-// // === Your contracts ===
-// // import {MarketToken} from "../src/MarketToken.sol";
-// // import {Proposal} from "../src/Proposal.sol";
-// import {ProposalManager} from "../src/ProposalManager.sol";
-// // import {Market} from "../src/Market.sol";
+contract DeployScript is Script {
+    
+    // Deployed contract addresses will be stored here
+    ProposalManager public proposalManager;
+    Proposal public proposalImpl;
+    Market public marketImpl;
+    MarketToken public marketTokenImpl;
 
-// contract Deploy is Script {
-//     struct Deployed {
-//         ProposalManager manager;
-//     }
+    function run() external {
+        vm.startBroadcast();
 
-//     function run() public returns (Deployed memory d) {
-//         vm.startBroadcast();
+        proposalImpl = new Proposal();
 
-//         d.manager = new ProposalManager();
+        marketImpl = new Market();
 
+        marketTokenImpl = new MarketToken();
 
-//         vm.stopBroadcast();
+        proposalManager = new ProposalManager(
+            address(proposalImpl),
+            address(marketImpl), 
+            address(marketTokenImpl)
+        );
 
-//         // Logs to console
-//         console2.log("=== Deploy summary ===");
-//         console2.log("ChainId         :", block.chainid);
-//         console2.log("ProposalManager :", address(d.manager));
+        console.log("Verifying deployment");
+        require(proposalManager.proposalImpl() == address(proposalImpl), "Proposal impl not set correctly");
+        require(proposalManager.marketImpl() == address(marketImpl), "Market impl not set correctly");
+        require(proposalManager.marketTokenImpl() == address(marketTokenImpl), "MarketToken impl not set correctly");
+        require(proposalManager.owner() == msg.sender, "Owner not set correctly");
+        
+        console.log("All implementations verified successfully");
 
-//         // Persist addresses to JSON for your frontend (chain-specific file)
-//         // e.g. frontend/src/lib/addresses.<chainId>.json
-//         string memory root = vm.projectRoot();
-//         string memory outPath = string.concat(
-//             root,
-//             "/frontend/src/lib/addresses.",
-//             vm.toString(block.chainid),
-//             ".json"
-//         );
+        console.log("\n=== Deployment Summary ===");
+        console.log("ProposalManager:", address(proposalManager));
+        console.log("Proposal Implementation:", address(proposalImpl));
+        console.log("Market Implementation:", address(marketImpl));
+        console.log("MarketToken Implementation:", address(marketTokenImpl));
+        console.log("Owner:", proposalManager.owner());
+        console.log("Proposal Count:", proposalManager.proposalCount());
 
-//         string memory key = "addrs";
-//         vm.serializeAddress(key, "MarketToken", address(d.token));
-//         vm.serializeAddress(key, "ProposalManager", address(d.manager));
-//         vm.serializeAddress(key, "Market", address(d.market));
-//         vm.serializeAddress(key, "Proposal", address(d.proposal));
+        vm.stopBroadcast();
+    }
 
-//         // Add chainId as a field (optional, useful for debugging)
-//         string memory json = vm.serializeString(key, "chainId", vm.toString(block.chainid));
-//         vm.writeJson(json, outPath);
-//         console2.log("Addresses JSON  :", outPath);
-//     }
-// }
+    // Helper function to get deployment addresses
+    function getDeployedAddresses() external view returns (
+        address _proposalManager,
+        address _proposalImpl,
+        address _marketImpl,
+        address _marketTokenImpl
+    ) {
+        return (
+            address(proposalManager),
+            address(proposalImpl),
+            address(marketImpl),
+            address(marketTokenImpl)
+        );
+    }
+}

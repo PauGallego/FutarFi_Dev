@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,10 +14,30 @@ import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 
+import { 
+  type BaseError,
+  useWaitForTransactionReceipt, 
+  useWriteContract,
+  useChainId
+} from 'wagmi'
+import { proposalManager_abi } from '@/contracts/proposalManager-abi'
+import { getContractAddress } from '@/contracts/constants'
+
+
 export default function NewProposalPage() {
+
+  const chainId = useChainId()
+  const contractAddress = getContractAddress(chainId, 'PROPOSAL_MANAGER')
+
+  const { 
+    data: hash,
+    error,
+    isPending,
+    writeContract 
+  } = useWriteContract() 
+
   const router = useRouter()
   const { toast } = useToast()
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -86,19 +106,46 @@ export default function NewProposalPage() {
       return
     }
 
-    setIsSubmitting(true)
+    if (!contractAddress) {
+      toast({
+        title: "Network Error",
+        description: "Contract not found on this network.",
+        variant: "destructive",
+      })
+      return
+    }
 
-    // Simulate submission (no backend yet)
-    await new Promise((resolve) => setTimeout(resolve, 1500))
 
-    toast({
-      title: "Proposal Created",
-      description: "Your proposal has been submitted successfully.",
+    writeContract({
+      address: contractAddress as `0x${string}`,
+      abi: proposalManager_abi,
+      functionName: 'createProposal',
+      args: [
+        formData.title,
+        formData.description,
+        BigInt(formData.duration) * BigInt(86400),
+        formData.collateralToken as `0x${string}`,
+        BigInt(formData.maxSupply),
+        formData.targetAddress as `0x${string}`,
+        formData.calldata as `0x${string}`,
+      ],
     })
-
-    setIsSubmitting(false)
-    router.push("/proposals")
   }
+
+  const { isLoading: isConfirming, isSuccess: isConfirmed } =
+    useWaitForTransactionReceipt({
+      hash,
+  })
+
+  useEffect(() => {
+    if (isConfirmed) {
+      toast({
+        title: "Proposal Created",
+        description: "Your proposal has been submitted successfully.",
+      })
+      router.push("/proposals")
+    }
+  }, [isConfirmed, toast, router])
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
@@ -113,7 +160,7 @@ export default function NewProposalPage() {
         <CardHeader>
           <CardTitle className="text-3xl">Create New Proposal</CardTitle>
           <CardDescription className="text-base">
-            Submit a proposal for the DAO to vote on. Provide clear details about your proposal and its expected impact.
+            Submit a proposal to vote on. Provide clear details about your proposal and its expected impact.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -176,8 +223,8 @@ export default function NewProposalPage() {
                   <SelectValue placeholder="Select a token" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="PYUSD">PYUSD</SelectItem>
-                  <SelectItem value="USDC">USDC</SelectItem>
+                  <SelectItem value="0x5FC8d32690cc91D4c39d9d3abcBD16989F875707">TestToken (Local)</SelectItem>
+                  <SelectItem value="0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48">USDC (Mainnet)</SelectItem>
                   <SelectItem value="DAI">DAI</SelectItem>
                 </SelectContent>
               </Select>
@@ -231,19 +278,25 @@ export default function NewProposalPage() {
             </div>
 
             <div className="flex gap-4 pt-4">
-              <Button type="submit" size="lg" disabled={isSubmitting} className="flex-1">
-                {isSubmitting ? "Creating..." : "Create Proposal"}
+              <Button type="submit" size="lg" disabled={isPending} className="flex-1">
+                {isPending ? "Creating..." : "Create Proposal"}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 size="lg"
                 onClick={() => router.push("/proposals")}
-                disabled={isSubmitting}
+                disabled={isPending}
               >
                 Cancel
               </Button>
             </div>
+            {hash && <div>Transaction Hash: {hash}</div>}
+            {isConfirming && <div>Waiting for confirmation...</div>}
+            {isConfirmed && <div>Transaction confirmed.</div>}
+            {error && (
+              <div>Error: {(error as BaseError).shortMessage || error.message}</div>
+            )}
           </form>
         </CardContent>
       </Card>

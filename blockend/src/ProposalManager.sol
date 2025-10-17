@@ -50,6 +50,10 @@ contract ProposalManager is IProposalManager, Ownable {
     event ProposalExecuted(uint256 indexed proposalId);
 
 
+    // ------ Errors ------
+    error InvalidProposalTarget();
+
+
     modifier onlyAdmin() {
         // TODO: implement admin management
         _;
@@ -82,6 +86,8 @@ contract ProposalManager is IProposalManager, Ownable {
         address _target,
         bytes memory _data
     ) external returns (uint256 id) {
+        if(_target == address(this)) revert InvalidProposalTarget();
+
         id = proposalCount;
 
         address clone = Clones.clone(proposalImpl);
@@ -136,7 +142,6 @@ contract ProposalManager is IProposalManager, Ownable {
         external
         view
         override
-        onlyOwner()
         returns (address[] memory)
     {
         uint256 len = proposalIds.length;

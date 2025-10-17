@@ -1,77 +1,90 @@
-@import 'tailwindcss';
-@import 'tw-animate-css';
+@import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
+/* Updated light theme with electric green crypto palette */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  /* Changed primary from cyan to electric green */
+  --primary: #00ff85;
+  --primary-foreground: #0f172a;
+  /* Changed secondary to darker purple */
+  --secondary: #7c3aed;
+  --secondary-foreground: #ffffff;
+  --muted: #e5e7eb;
+  --muted-foreground: #64748b;
+  /* Changed accent to match primary green */
+  --accent: #00ff85;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  /* Changed ring to bright green for focus states */
+  --ring: #00ff85;
+  --chart-1: #00ff85;
+  --chart-2: #ef4444;
+  --chart-3: #f59e0b;
+  /* Changed chart-4 to darker purple */
+  --chart-4: #7c3aed;
+  --chart-5: #ec4899;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  /* Updated sidebar colors to match new green primary */
+  --sidebar-primary: #00ff85;
+  --sidebar-primary-foreground: #0f172a;
+  --sidebar-accent: #e5e7eb;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #00ff85;
 }
 
+/* Updated dark theme with pure black background */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  /* Changed background to pure black for modern crypto aesthetic */
+  --background: #000000;
+  --foreground: #e2e8f0;
+  /* Changed card background to very dark gray for contrast */
+  --card: #0a0a0a;
+  --card-foreground: #e2e8f0;
+  --popover: #0a0a0a;
+  --popover-foreground: #e2e8f0;
+  --primary: #00ff85;
+  --primary-foreground: #000000;
+  --secondary: #7c3aed;
+  --secondary-foreground: #ffffff;
+  /* Adjusted muted colors for better contrast on black */
+  --muted: #1a1a1a;
+  --muted-foreground: #94a3b8;
+  --accent: #00ff85;
+  --accent-foreground: #000000;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  /* Adjusted border for visibility on black */
+  --border: #262626;
+  --input: #262626;
+  --ring: #00ff85;
+  --chart-1: #00ff85;
+  --chart-2: #ef4444;
+  --chart-3: #f59e0b;
+  --chart-4: #7c3aed;
+  --chart-5: #ec4899;
+  --radius: 0.625rem;
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #e2e8f0;
+  --sidebar-primary: #00ff85;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #e2e8f0;
+  --sidebar-border: #262626;
+  --sidebar-ring: #00ff85;
 }
 
 @theme inline {
@@ -119,7 +132,35 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  /* Added modern gradient background for crypto aesthetic */
   body {
     @apply bg-background text-foreground;
+    position: relative;
+  }
+
+  /* Light mode gradient - subtle and modern */
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: -1;
+    /* Updated gradient to use darker purple */
+    background: radial-gradient(circle at 20% 20%, rgba(0, 255, 133, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(124, 58, 237, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 50% 50%, rgba(236, 72, 153, 0.05) 0%, transparent 50%);
+    background-color: #ffffff;
+  }
+
+  /* Dark mode gradient - vibrant on pure black background */
+  .dark body::before {
+    /* Updated gradient background to pure black base */
+    background: radial-gradient(circle at 20% 20%, rgba(0, 255, 133, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(124, 58, 237, 0.12) 0%, transparent 50%),
+      radial-gradient(circle at 50% 50%, rgba(236, 72, 153, 0.08) 0%, transparent 50%);
+    background-color: #000000;
   }
 }
