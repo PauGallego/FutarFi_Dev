@@ -66,6 +66,9 @@ export default function NewProposalPage() {
     calldata: "",
   })
 
+  // whether to use a target contract address (YES = user must provide one, NO = use zero address)
+  const [useTarget, setUseTarget] = useState<'YES' | 'NO'>('NO')
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -118,13 +121,16 @@ export default function NewProposalPage() {
       return
     }
 
-    if (!formData.targetAddress.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Please provide a target contract address.",
-        variant: "destructive",
-      })
-      return
+    // If user opted to use a target contract, validate it. If NO, we will use zero address.
+    if (useTarget === 'YES') {
+      if (!formData.targetAddress.trim() || !isAddress(formData.targetAddress)) {
+        toast({
+          title: "Validation Error",
+          description: "Please provide a valid target contract address.",
+          variant: "destructive",
+        })
+        return
+      }
     }
 
     if (!contractAddress) {
@@ -137,6 +143,9 @@ export default function NewProposalPage() {
     }
 
 
+    const targetAddressArg = useTarget === 'YES' ? (formData.targetAddress as `0x${string}`) : "0x0000000000000000000000000000000000000000"
+
+
     writeContract({
       address: contractAddress as `0x${string}`,
       abi: proposalManager_abi,
@@ -147,7 +156,7 @@ export default function NewProposalPage() {
         BigInt(formData.duration) * BigInt(86400),
         formData.collateralToken as `0x${string}`,
         BigInt(formData.maxSupply),
-        formData.targetAddress as `0x${string}`,
+        targetAddressArg,
         formData.calldata as `0x${string}`,
         "0x0000000000000000000000000000000000000000",
         "0x0000000000000000000000000000000000000000000000000000000000000001"
@@ -276,18 +285,52 @@ export default function NewProposalPage() {
             </div>
 
             <div className="space-y-2">
+              <Label className="text-sm font-medium">Use Target Contract</Label>
+
+              {/* compact selector: narrower width, smaller height, selected option uses green text + green border (no solid bg) */}
+              <div className="flex items-center gap-1 bg-muted p-0.5 rounded-md w-[220px]">
+                <button
+                  type="button"
+                  onClick={() => setUseTarget("YES")}
+                  className={
+                    `
+                      flex-1 text-center px-3 py-1 rounded-md text-sm font-semibold transition-colors duration-200
+                      ${useTarget === "YES" ? "text-primary border border-primary" : "text-muted-foreground hover:text-foreground"}
+                    `
+                  }
+                >
+                  YES
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setUseTarget("NO")}
+                  className={
+                    `
+                      flex-1 text-center px-3 py-1 rounded-md text-sm font-semibold transition-colors duration-200
+                      ${useTarget === "NO" ? "text-primary border border-primary" : "text-muted-foreground hover:text-foreground"}
+                    `
+                  }
+                >
+                  NO
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="targetAddress" className="text-base">
-                Target Contract Address *
+                Target Contract Address {useTarget === 'YES' ? '*' : ''}
               </Label>
               <Input
                 id="targetAddress"
-                placeholder="0x..."
+                placeholder={useTarget === 'YES' ? '0x...' : 'Not using a target contract'}
                 value={formData.targetAddress}
                 onChange={(e) => setFormData({ ...formData, targetAddress: e.target.value })}
                 className="font-mono text-sm"
-                required
+                required={useTarget === 'YES'}
+                disabled={useTarget === 'NO'}
               />
-              <p className="text-sm text-muted-foreground">The contract address this proposal will interact with</p>
+              <p className="text-sm text-muted-foreground">{useTarget === 'YES' ? 'The contract address this proposal will interact with' : 'No target contract will be executed; zero address will be used.'}</p>
             </div>
 
             <div className="space-y-2">
@@ -296,12 +339,13 @@ export default function NewProposalPage() {
               </Label>
               <Textarea
                 id="calldata"
-                placeholder="0x..."
+                placeholder={useTarget === 'YES' ? '0x...' : 'Disabled when not using a target contract'}
                 value={formData.calldata}
                 onChange={(e) => setFormData({ ...formData, calldata: e.target.value })}
-                className="font-mono text-sm min-h-[100px]"
+                className={`font-mono text-sm min-h-[100px] ${useTarget === 'NO' ? 'opacity-60 cursor-not-allowed' : ''}`}
+                disabled={useTarget === 'NO'}
               />
-              <p className="text-sm text-muted-foreground">Optional: The encoded function call data for execution</p>
+              <p className="text-sm text-muted-foreground">{useTarget === 'YES' ? 'Optional: The encoded function call data for execution' : 'Calldata disabled when not using a target contract.'}</p>
             </div>
 
             <div className="flex gap-4 pt-4">
