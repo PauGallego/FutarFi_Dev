@@ -12,29 +12,11 @@ import { PriceChart } from "@/components/price-chart"
 import { TradePanel } from "@/components/trade-panel"
 import type { Proposal, PricePoint } from "@/lib/types"
 import type { Address } from "viem"
+import { useGetProposalById } from "@/hooks/use-get-proposalById"
 
 interface PageProps {
   params: { id: string }
 }
-
-// // Mock data generator for development
-// function generateMockProposal(id: string): Proposal {
-//   const now = Date.now()
-//   return {
-//     id,
-//     title: "Increase Treasury Allocation for Development",
-//     description:
-//       "This proposal seeks to allocate 100 ETH from the treasury to fund the core development team for Q2 2025. The funds will be used for hiring additional developers, conducting security audits, and improving infrastructure.",
-//     creator: "0x742d35Cc6634C0532925a3b844Bc9e7595f5f3a" as Address,
-//     startTime: BigInt(Math.floor((now - 2 * 24 * 60 * 60 * 1000) / 1000)),
-//     endTime: BigInt(Math.floor((now + 5 * 24 * 60 * 60 * 1000) / 1000)),
-//     executed: false,
-//     passed: false,
-//     yesMarket: "0x1234567890123456789012345678901234567890" as Address,
-//     noMarket: "0x0987654321098765432109876543210987654321" as Address,
-//     status: "active",
-//   }
-// }
 
 function generateMockPriceData(): PricePoint[] {
   const now = Date.now()
@@ -59,43 +41,48 @@ function generateMockPriceData(): PricePoint[] {
 export default function ProposalDetailPage({ params }: PageProps) {
   const { id } = params
   const chainId = useChainId()
+
+  // Use the hook created earlier to fetch the proposal by id
+  const { proposal: hookProposal, isLoading: hookLoading, error: hookError } = useGetProposalById(id)
+
   const [proposal, setProposal] = useState<Proposal | null>(null)
   const [priceData, setPriceData] = useState<PricePoint[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Map the hook's proposal shape to the app Proposal type
   useEffect(() => {
-    // Simulate loading proposal data
-    const loadProposal = async () => {
-      try {
-        setIsLoading(true)
-        // In production, replace with actual contract reads:
-        const data = await readContract({
-          address: contracts.proposalManager,
-          abi: PROPOSAL_MANAGER_ABI,
-          functionName: 'getProposalById',
-          args: [BigInt(id)]
-        })
-
-        // Simulate network delay
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-
-        const mockProposal = data as Proposal
-        const mockPrices = generateMockPriceData()
-
-        setProposal(mockProposal)
-        setPriceData(mockPrices)
-        setError(null)
-      } catch (err) {
-        console.error("[v0] Error loading proposal:", err)
-        setError("Failed to load proposal data")
-      } finally {
-        setIsLoading(false)
-      }
+    if (!hookProposal) {
+      setProposal(null)
+      setError(hookError ? String(hookError) : null)
+      setIsLoading(hookLoading)
+      return
     }
 
-    loadProposal()
+    const mapped: Proposal = {
+      id: hookProposal.id,
+      title: hookProposal.title,
+      description: hookProposal.description,
+      creator: hookProposal.createdBy,
+      startTime: BigInt(Math.floor(hookProposal.startTime || 0)),
+      endTime: BigInt(Math.floor(hookProposal.endTime || 0)),
+      executed: hookProposal.status === 'executed',
+      passed: false,
+      // markets are not read by the hook yet; use zero-address fallback
+      yesMarket: '0x0000000000000000000000000000000000000000',
+      noMarket: '0x0000000000000000000000000000000000000000',
+      status: hookProposal.status === 'pending' ? 'pending' : hookProposal.status === 'active' ? 'active' : hookProposal.status === 'executed' ? 'executed' : 'closed',
+    }
 
+    setProposal(mapped)
+    setError(null)
+    setIsLoading(hookLoading)
+
+    // generate mock price data for the proposal view
+    setPriceData(generateMockPriceData())
+  }, [hookProposal, hookLoading, hookError])
+
+  useEffect(() => {
     // Poll for price updates every 10 seconds
     const interval = setInterval(() => {
       setPriceData((prev) => {
@@ -109,7 +96,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
     }, 10000)
 
     return () => clearInterval(interval)
-  }, [id])
+  }, [])
 
   if (isLoading) {
     return (
