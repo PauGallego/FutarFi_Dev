@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { useIsMounted } from "@/hooks/use-is-mounted"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 export function Navigation() {
   const mounted = useIsMounted()
@@ -14,7 +15,9 @@ export function Navigation() {
           FutarFi
         </Link>
 
-        <div className="flex items-center gap-4">{mounted && <ConnectButton />}</div>
+        <div className="flex items-center gap-4">
+          <ThemeToggle />
+          {mounted && <ConnectButton />}</div>
       </div>
     </nav>
   )

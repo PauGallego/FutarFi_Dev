@@ -8,6 +8,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { WagmiProvider } from 'wagmi'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import { config } from '@/lib/wagmi-config'
+import { ThemeProvider } from "next-themes"
+
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
@@ -17,12 +19,14 @@ export function Providers({ children }: { children: ReactNode }) {
   if (!mounted) return null
 
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={darkTheme()}>
-          {children}
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+          <WagmiProvider config={config}>
+            <QueryClientProvider client={queryClient}>
+              <RainbowKitProvider theme={darkTheme()}>
+                {children}
+              </RainbowKitProvider>
+            </QueryClientProvider>
+          </WagmiProvider>
+        </ThemeProvider>
   )
 }
