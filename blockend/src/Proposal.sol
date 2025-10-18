@@ -44,7 +44,7 @@ contract Proposal is Ownable, IProposal {
 
 
     modifier checkEnded() {
-        if (block.timestamp >= endTime) revert Proposal_NotEnded();
+        if (block.timestamp < endTime) revert Proposal_NotEnded();
         _;
     }
 
@@ -107,12 +107,16 @@ contract Proposal is Ownable, IProposal {
 
       
     // Check winner without settling
-    function checkWinner() internal view checkEnded returns(bool) {
-        uint256 priceMarketApprove = 2;
-        uint256 priceMarketReject = 1;
+    function checkWinner() internal view returns(bool) {
+        uint256 priceMarketApprove = market.getMarketTypePrice(0);
+        uint256 priceMarketReject = market.getMarketTypePrice(1);
+        
+        // If prices are equal, no execution (neither side wins)
+        if (priceMarketApprove == priceMarketReject) {
+            return false; // No execution when prices are equal
+        }
         
         return priceMarketApprove > priceMarketReject;
-       
     }
 
 
@@ -120,26 +124,33 @@ contract Proposal is Ownable, IProposal {
     function _executeProposal(bool isApproveWinner) 
         private 
         onlyOwner 
-        checkEnded 
     {
         if (proposalExecuted) revert Proposal_AlreadyExecuted();
 
-        // Settle the market
+        // Check if prices are equal (no clear winner)
+        uint256 priceMarketApprove = market.getMarketTypePrice(0);
+        uint256 priceMarketReject = market.getMarketTypePrice(1);
+        
+        if (priceMarketApprove == priceMarketReject) {
+            // Equal prices - complete revert, everyone gets original collateral back
+            market.revertMarket();
+            proposalExecuted = true;
+            proposalEnded = true;
+            return;
+        }
+
+        // Settle the market with the determined winner
         market.settleMarket(isApproveWinner);
 
         if(isApproveWinner && target != address(0) && data.length > 0){
-            // Execute the call, Proposal has callData and target
+            // Execute the call only when Approve side wins
             (bool success, bytes memory result) = target.call(data);
-            require(success, "Execution failed");
+            if (!success) revert Proposal_ExecutionFailed();
             emit ProposalExecuted(msg.sender, result);
-            proposalExecuted = true;
-        }else {
-            // When reject market wins or no execution data is provided in Approve win case
-            // No execution, just mark as executed
-            proposalExecuted = true;
         }
+        
+        proposalExecuted = true;
         proposalEnded = true;
-
     }
 
 

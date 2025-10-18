@@ -322,31 +322,43 @@ contract Market is Ownable, IMarket {
         address[] storage winners = winnerIndex == 0 ? participants0 : participants1;
         address[] storage losers = loserIndex == 0 ? participants0 : participants1;
 
-        // Pay winners using current option_price
+        // Pay winners using current option_price and burn their tokens
         for (uint i = 0; i < winners.length; i++) {
             address user = winners[i];
             uint256 tokenBalance = winnerIndex == 0 ? approveToken.balanceOf(user) : rejectToken.balanceOf(user);
             if (tokenBalance > 0) {
                 uint256 payout = (tokenBalance * marketType[winnerIndex].asset_price) / 1e18;
-                if (winnerIndex == 0) { approveToken.transferFrom(user, address(this), tokenBalance); approveToken.burn(address(this), tokenBalance); }
-                else { rejectToken.transferFrom(user, address(this), tokenBalance); rejectToken.burn(address(this), tokenBalance); }
+                
+                // Burn tokens directly from user (Market contract is owner of tokens)
+                if (winnerIndex == 0) {
+                    approveToken.burn(user, tokenBalance);
+                } else {
+                    rejectToken.burn(user, tokenBalance);
+                }
+                
                 require(collateralToken.transfer(user, payout), "payout failed");
                 userCollateral[user][winnerIndex] = 0;
             }
         }
 
-        // Return all collateralToken to losers
+        // Return all collateral to losers and burn their tokens
         for (uint i = 0; i < losers.length; i++) {
             address user = losers[i];
             uint256 tokenBalance = loserIndex == 0 ? approveToken.balanceOf(user) : rejectToken.balanceOf(user);
+            
+            // Burn loser tokens directly
             if (tokenBalance > 0) {
-                if (loserIndex == 0) { approveToken.transferFrom(user, address(this), tokenBalance); approveToken.burn(address(this), tokenBalance); }
-                else { rejectToken.transferFrom(user, address(this), tokenBalance); rejectToken.burn(address(this), tokenBalance); }
+                if (loserIndex == 0) {
+                    approveToken.burn(user, tokenBalance);
+                } else {
+                    rejectToken.burn(user, tokenBalance);
+                }
             }
 
+            // Return original collateral to losers
             uint256 collat = userCollateral[user][loserIndex];
             if (collat > 0) {
-                require(collateralToken.transfer(user, collat), "return collateralToken failed");
+                require(collateralToken.transfer(user, collat), "return collateral failed");
                 userCollateral[user][loserIndex] = 0;
             }
         }
@@ -354,6 +366,51 @@ contract Market is Ownable, IMarket {
         emit MarketSettled(winnerIndex, loserIndex);
     }
 
+    // ------------------- Market Revert (Equal Prices) -------------------
+    function revertMarket() external onlyOwner isMarketOpen {
+        isOpen = false;
+
+        // Return all collateral to all participants on both sides
+        // No winners/losers, everyone gets their original investment back
+
+        // Handle approve side participants
+        for (uint i = 0; i < participants0.length; i++) {
+            address user = participants0[i];
+            uint256 tokenBalance = approveToken.balanceOf(user);
+            
+            // Burn their tokens
+            if (tokenBalance > 0) {
+                approveToken.burn(user, tokenBalance);
+            }
+
+            // Return original collateral
+            uint256 collat = userCollateral[user][0];
+            if (collat > 0) {
+                require(collateralToken.transfer(user, collat), "revert collateral failed");
+                userCollateral[user][0] = 0;
+            }
+        }
+
+        // Handle reject side participants
+        for (uint i = 0; i < participants1.length; i++) {
+            address user = participants1[i];
+            uint256 tokenBalance = rejectToken.balanceOf(user);
+            
+            // Burn their tokens
+            if (tokenBalance > 0) {
+                rejectToken.burn(user, tokenBalance);
+            }
+
+            // Return original collateral
+            uint256 collat = userCollateral[user][1];
+            if (collat > 0) {
+                require(collateralToken.transfer(user, collat), "revert collateral failed");
+                userCollateral[user][1] = 0;
+            }
+        }
+
+        emit MarketSettled(255, 255); // Special event values indicating full revert
+    }
 
     // ------------------- Views -------------------
     function getMarketTypePrice(uint8 idx) external view returns (uint256) {

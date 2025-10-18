@@ -30,42 +30,143 @@ contract MarketTest is ProposalManagerTestBase {
             address(marketTokenImpl)
         );
 
+        /*
+        m2 = Market(clone);
 
-        // m2 = Market(clone);
+        m2.initialize(
+            collateralToken,
+            100000000000 ether,
+            0x4305FB66699C3B2702D4d05CF36551390A4c69C6,    
+            0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace,
+            address(marketTokenImpl)
+        );
 
-        // m2.initialize(
-        //     collateralToken,
-        //     100000000000 ether,
-        //     0x4305FB66699C3B2702D4d05CF36551390A4c69C6,     // pyth
-        //     0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace,
-        //     address(marketTokenImpl)
-        // );
+        */
     }
 
 
-    function testMarketTx() public {
-        vm.startPrank(alice, alice);
-        console.log(m.getMarketTypePrice(0));
-        collateralToken.approve(address(m), 1 ether);
-        m.buy(true, 1 ether);
-        console.log(m.getMarketTypePrice(0));
-        uint balance = m.approveToken().balanceOf(alice);
-        uint256 tokensToSell = balance - (balance / 10);
-        m.sell(true, tokensToSell);
-        console.log(m.getMarketTypePrice(0));
+    // Test Case 1: Approve side wins - Both Alice and Bob have positions on both sides
+    function testSettleMarket_ApproveWins_BothSidesTrading() public {
+        // Alice buys both approve and reject tokens
+        vm.startPrank(alice);
+        collateralToken.approve(address(m), 15 ether);
+        m.buy(true, 10 ether);   // Alice buys approve tokens (winner side)
+        m.buy(false, 5 ether);   // Alice also buys reject tokens (loser side)
+        uint256 aliceApproveTokens = m.approveToken().balanceOf(alice);
+        uint256 aliceRejectTokens = m.rejectToken().balanceOf(alice);
+        vm.stopPrank();
+
+        // Bob also buys both approve and reject tokens
+        vm.startPrank(bob);
+        collateralToken.approve(address(m), 12 ether);
+        m.buy(true, 4 ether);    // Bob buys approve tokens (winner side)
+        m.buy(false, 8 ether);   // Bob buys more reject tokens (loser side)
+        uint256 bobApproveTokens = m.approveToken().balanceOf(bob);
+        uint256 bobRejectTokens = m.rejectToken().balanceOf(bob);
+        vm.stopPrank();
+
+        // Record balances before settlement
+        uint256 aliceInitialCollateral = collateralToken.balanceOf(alice);
+        uint256 bobInitialCollateral = collateralToken.balanceOf(bob);
+        uint256 approvePrice = m.getMarketTypePrice(0);
+
+        console.log("=== APPROVE SIDE WINS TEST ===");
+        console.log("Alice approve tokens:", aliceApproveTokens);
+        console.log("Alice reject tokens:", aliceRejectTokens);
+        console.log("Bob approve tokens:", bobApproveTokens);
+        console.log("Bob reject tokens:", bobRejectTokens);
+        console.log("Approve token price:", approvePrice);
+
+        // Settle market with approve side winning
+        vm.prank(deployer);
+        m.settleMarket(true);
+
+        // Check final balances
+        uint256 aliceFinalCollateral = collateralToken.balanceOf(alice);
+        uint256 bobFinalCollateral = collateralToken.balanceOf(bob);
+
+        // Calculate expected payouts and returns
+        uint256 expectedAliceWinnings = (aliceApproveTokens * approvePrice) / 1e18;
+        uint256 expectedAliceReturns = 5 ether; // Original reject tokens investment
+        uint256 expectedBobWinnings = (bobApproveTokens * approvePrice) / 1e18;
+        uint256 expectedBobReturns = 8 ether; // Original reject tokens investment
+
+        // Verify final balances (winnings from approve + returned reject collateral)
+        assertEq(aliceFinalCollateral, aliceInitialCollateral + expectedAliceWinnings + expectedAliceReturns, 
+                "Alice should get approve winnings + reject collateral back");
+        assertEq(bobFinalCollateral, bobInitialCollateral + expectedBobWinnings + expectedBobReturns, 
+                "Bob should get approve winnings + reject collateral back");
+
+        // All tokens should be burned
+        assertEq(m.approveToken().balanceOf(alice), 0, "Alice's approve tokens should be burned");
+        assertEq(m.rejectToken().balanceOf(alice), 0, "Alice's reject tokens should be burned");
+        assertEq(m.approveToken().balanceOf(bob), 0, "Bob's approve tokens should be burned");
+        assertEq(m.rejectToken().balanceOf(bob), 0, "Bob's reject tokens should be burned");
+
+        console.log("Alice final balance:", aliceFinalCollateral);
+        console.log("Bob final balance:", bobFinalCollateral);
     }
 
-    // function testMarketTxOracle() public {
+    // Test Case 2: Reject side wins - Both Alice and Bob have positions on both sides
+    function testSettleMarket_RejectWins_BothSidesTrading() public {
+        // Alice buys both approve and reject tokens
+        vm.startPrank(alice);
+        collateralToken.approve(address(m), 13 ether);
+        m.buy(true, 6 ether);    // Alice buys approve tokens (loser side)
+        m.buy(false, 7 ether);   // Alice buys reject tokens (winner side)
+        uint256 aliceApproveTokens = m.approveToken().balanceOf(alice);
+        uint256 aliceRejectTokens = m.rejectToken().balanceOf(alice);
+        vm.stopPrank();
 
-    //     vm.startPrank(alice, alice);
-    //     console.log(m2.getMarketTypePrice(0));
-    //     collateralToken.approve(address(m2), 1 ether);
-    //     m2.buy(true, 1 ether);
-    //     console.log(m2.getMarketTypePrice(0));
-    //     uint balance = m2.approveToken().balanceOf(alice);
-    //     uint256 tokensToSell = balance - (balance / 10);
-    //     m2.sell(true, tokensToSell);
-    //     console.log(m2.getMarketTypePrice(0));
-    // }
+        // Bob also buys both approve and reject tokens
+        vm.startPrank(bob);
+        collateralToken.approve(address(m), 14 ether);
+        m.buy(true, 9 ether);    // Bob buys approve tokens (loser side)
+        m.buy(false, 5 ether);   // Bob buys reject tokens (winner side)
+        uint256 bobApproveTokens = m.approveToken().balanceOf(bob);
+        uint256 bobRejectTokens = m.rejectToken().balanceOf(bob);
+        vm.stopPrank();
+
+        // Record balances before settlement
+        uint256 aliceInitialCollateral = collateralToken.balanceOf(alice);
+        uint256 bobInitialCollateral = collateralToken.balanceOf(bob);
+        uint256 rejectPrice = m.getMarketTypePrice(1);
+
+        console.log("=== REJECT SIDE WINS TEST ===");
+        console.log("Alice approve tokens:", aliceApproveTokens);
+        console.log("Alice reject tokens:", aliceRejectTokens);
+        console.log("Bob approve tokens:", bobApproveTokens);
+        console.log("Bob reject tokens:", bobRejectTokens);
+        console.log("Reject token price:", rejectPrice);
+
+        // Settle market with reject side winning
+        vm.prank(deployer);
+        m.settleMarket(false);
+
+        // Check final balances
+        uint256 aliceFinalCollateral = collateralToken.balanceOf(alice);
+        uint256 bobFinalCollateral = collateralToken.balanceOf(bob);
+
+        // Calculate expected payouts and returns
+        uint256 expectedAliceWinnings = (aliceRejectTokens * rejectPrice) / 1e18;
+        uint256 expectedAliceReturns = 6 ether; // Original approve tokens investment
+        uint256 expectedBobWinnings = (bobRejectTokens * rejectPrice) / 1e18;
+        uint256 expectedBobReturns = 9 ether; // Original approve tokens investment
+
+        // Verify final balances (winnings from reject + returned approve collateral)
+        assertEq(aliceFinalCollateral, aliceInitialCollateral + expectedAliceWinnings + expectedAliceReturns, 
+                "Alice should get reject winnings + approve collateral back");
+        assertEq(bobFinalCollateral, bobInitialCollateral + expectedBobWinnings + expectedBobReturns, 
+                "Bob should get reject winnings + approve collateral back");
+
+        // All tokens should be burned
+        assertEq(m.approveToken().balanceOf(alice), 0, "Alice's approve tokens should be burned");
+        assertEq(m.rejectToken().balanceOf(alice), 0, "Alice's reject tokens should be burned");
+        assertEq(m.approveToken().balanceOf(bob), 0, "Bob's approve tokens should be burned");
+        assertEq(m.rejectToken().balanceOf(bob), 0, "Bob's reject tokens should be burned");
+
+        console.log("Alice final balance:", aliceFinalCollateral);
+        console.log("Bob final balance:", bobFinalCollateral);
+    }
 
 }

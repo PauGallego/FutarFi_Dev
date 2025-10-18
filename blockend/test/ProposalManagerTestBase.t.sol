@@ -8,6 +8,7 @@ import {Proposal} from "../src/Proposal.sol";
 import {Market} from "../src/Market.sol";
 import {MarketToken} from "../src/MarketToken.sol";
 import {TestERC20} from "./mocks/TestERC20.sol";
+import {MockObjectiveContract} from "./mocks/MockObjectiveContract.sol";
 
 
 abstract contract ProposalManagerTestBase is Test {
@@ -25,6 +26,9 @@ abstract contract ProposalManagerTestBase is Test {
 
     // collateralToken token for markets
     TestERC20 internal collateralToken;
+    
+    // Mock contract for testing proposal execution
+    MockObjectiveContract internal mockContract;
 
     function setUp() public virtual {
         admin = makeAddr("admin");
@@ -42,5 +46,7 @@ abstract contract ProposalManagerTestBase is Test {
         collateralToken.transfer(admin, 1000 ether);
         collateralToken.transfer(alice, 1000 ether);
         collateralToken.transfer(bob,   1000 ether);
+
+        mockContract = new MockObjectiveContract();
     }
 }
