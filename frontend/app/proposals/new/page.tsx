@@ -128,8 +128,8 @@ export default function NewProposalPage() {
         BigInt(formData.maxSupply),
         formData.targetAddress as `0x${string}`,
         formData.calldata as `0x${string}`,
-        "0x",
-        "0x"
+        "0x0000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000001"
       ],
     })
   }
