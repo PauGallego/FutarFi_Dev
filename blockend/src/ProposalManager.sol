@@ -16,7 +16,9 @@ interface IProposalManager {
         address _collateralToken,
         uint256 _maxSupply,
         address _target,
-        bytes memory _data
+        bytes memory _data,
+        address _pythAddr,
+        bytes32 _pythId
     ) external returns (uint256);
     // function removeProposal(uint256 _proposalId) external;
     function finalizeProposal(uint256 _proposalId) external;
@@ -84,7 +86,9 @@ contract ProposalManager is IProposalManager, Ownable {
         address _collateralToken,
         uint256 _maxSupply,
         address _target,
-        bytes memory _data
+        bytes memory _data,
+        address _pythAddr,
+        bytes32 _pythId
     ) external returns (uint256 id) {
         if(_target == address(this)) revert InvalidProposalTarget();
 
@@ -101,6 +105,8 @@ contract ProposalManager is IProposalManager, Ownable {
             _maxSupply,
             _target,
             _data,
+            _pythAddr,
+            _pythId,
             marketImpl,
             marketTokenImpl
         );

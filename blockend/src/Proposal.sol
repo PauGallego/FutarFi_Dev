@@ -62,6 +62,8 @@ contract Proposal is Ownable, IProposal {
         uint256 _maxSupply,
         address _target,
         bytes memory _data,
+        address _pythAddr,
+        bytes32 _pythId,
         address _marketImpl,
         address _marketTokenImpl
     ) external {
@@ -85,8 +87,8 @@ contract Proposal is Ownable, IProposal {
         Market(m).initialize(
             _collateralToken,
             _maxSupply,
-            address(0),
-            bytes32(""),
+            _pythAddr,
+            _pythId,
             _marketTokenImpl
         );
         market = Market(m);

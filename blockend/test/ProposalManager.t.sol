@@ -25,7 +25,10 @@ contract ProposalManagerTest is ProposalManagerTestBase {
             address(collateralToken),
             10000 ether,
             address(0), // target contract
-            ""         // execution data
+            ""        ,
+            address(0), // pyth address
+            bytes32("") // pyth id
+            
         );
 
         // Verify the proposal was created
