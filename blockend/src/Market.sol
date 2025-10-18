@@ -32,14 +32,7 @@ interface IMarket {
 }
 
 contract Market is Ownable, IMarket {
-    error E_AlreadyInitialized();
-    error E_ZeroAddress();
-    error E_MarketClosed();
-    error E_MarketOpen();
-    error E_InvalidOption();
-    error E_InsufficientSupply();
-    error E_InsufficientBalance();
-    error E_TransferFailed();
+  
 
     struct MarketType {
         uint256 asset_price;     
@@ -80,6 +73,16 @@ contract Market is Ownable, IMarket {
     event CollateralPriceIdSet(bytes32 indexed pid);
     event PriceRefreshed(uint8 indexed optionIndex, uint256 price18, uint publishTime);
     event MarketSettled(uint8 winnerIndex, uint8 loserIndex);
+
+
+    error E_AlreadyInitialized();
+    error E_ZeroAddress();
+    error E_MarketClosed();
+    error E_MarketOpen();
+    error E_InvalidOption();
+    error E_InsufficientSupply();
+    error E_InsufficientBalance();
+    error E_TransferFailed();
 
    // ------------------- Modifiers -------------------
     modifier isPyth() {
@@ -148,17 +151,6 @@ contract Market is Ownable, IMarket {
         emit MarketInitialized(address(_collateralToken), address(approveToken), address(rejectToken), _maxSupply);
     }
 
-     // ------------------- Owner / Pyth Setup -------------------
-    function setPyth(address _pyth) external onlyOwner  {
-        require(_pyth != address(0), "zero address");
-        pyth = IPyth(_pyth);
-        emit PythSet(_pyth);
-    }
-
-    function setCollateralPriceId(bytes32 _pid) external onlyOwner {
-        collateralPriceId = _pid;
-        emit CollateralPriceIdSet(_pid);
-    }
 
     function setImpactFactor(uint256 newFactor18) external onlyOwner {
         impactFactor = newFactor18;
@@ -167,23 +159,7 @@ contract Market is Ownable, IMarket {
     function openMarket() external onlyOwner { isOpen = true; }
     function closeMarket() external onlyOwner { isOpen = false; }
 
-    // ------------------- Pyth Helpers -------------------
-    function getPythPrice(bytes32 priceId) public view isPythDefined returns (uint256 price18, uint publishTime)  {
-        PythStructs.Price memory p = pyth.getPriceUnsafe(priceId);
-        int64 price = p.price;
-        int32 expo = p.expo;
-        publishTime = p.publishTime;
-        require(price > 0, "invalid price");
-
-        uint256 absPrice = uint256(int256(price));
-        int256 combined = int256(expo) + 18;
-
-        if (combined >= 0) {
-            price18 = absPrice * (10 ** uint256(combined));
-        } else {
-            price18 = absPrice / (10 ** uint256(-combined));
-        }
-    }
+   
 
 
     // ------------------- Market Logic -------------------
@@ -208,27 +184,7 @@ contract Market is Ownable, IMarket {
         return (log2x * 693147000000000000) / 1e18;
     }
 
-    function _applyTradeImpact(
-        uint256 currentPrice,
-        uint256 tradeSize,
-        uint256 totalCollateral
-    ) internal view returns (uint256 priceUp, uint256 priceDown) {
-        // Prevent division by zero
-        uint256 adjustedCollateral = totalCollateral + 1e18;
-
-        // Trade ratio relative to pool
-        uint256 ratio = (tradeSize * 1e18) / adjustedCollateral;
-
-        // Logarithmic impact: ln(1 + ratio)
-        uint256 logFactor = _ln(1e18 + ratio);
-
-        // Scale by impact factor
-        uint256 impact = (impactFactor * logFactor) / 1e18;
-
-        // Symmetric effect
-        priceUp = (currentPrice * (1e18 + impact)) / 1e18;
-        priceDown = (currentPrice * 1e18) / (1e18 + impact);
-    }
+  
 
     function buy(bool optionIndex, uint256 amount) external isMarketOpen {
         require(amount > 0, "zero amount");
@@ -412,7 +368,51 @@ contract Market is Ownable, IMarket {
         emit MarketSettled(255, 255); // Special event values indicating full revert
     }
 
+
+
     // ------------------- Views -------------------
+
+    // ------------------- Pyth Helpers -------------------
+    function getPythPrice(bytes32 priceId) public view isPythDefined returns (uint256 price18, uint publishTime)  {
+        PythStructs.Price memory p = pyth.getPriceUnsafe(priceId);
+        int64 price = p.price;
+        int32 expo = p.expo;
+        publishTime = p.publishTime;
+        require(price > 0, "invalid price");
+
+        uint256 absPrice = uint256(int256(price));
+        int256 combined = int256(expo) + 18;
+
+        if (combined >= 0) {
+            price18 = absPrice * (10 ** uint256(combined));
+        } else {
+            price18 = absPrice / (10 ** uint256(-combined));
+        }
+    }
+
+    
+    function _applyTradeImpact(
+        uint256 currentPrice,
+        uint256 tradeSize,
+        uint256 totalCollateral
+    ) internal view returns (uint256 priceUp, uint256 priceDown) {
+        // Prevent division by zero
+        uint256 adjustedCollateral = totalCollateral + 1e18;
+
+        // Trade ratio relative to pool
+        uint256 ratio = (tradeSize * 1e18) / adjustedCollateral;
+
+        // Logarithmic impact: ln(1 + ratio)
+        uint256 logFactor = _ln(1e18 + ratio);
+
+        // Scale by impact factor
+        uint256 impact = (impactFactor * logFactor) / 1e18;
+
+        // Symmetric effect
+        priceUp = (currentPrice * (1e18 + impact)) / 1e18;
+        priceDown = (currentPrice * 1e18) / (1e18 + impact);
+    }
+
     function getMarketTypePrice(uint8 idx) external view returns (uint256) {
         require(idx < 2, "invalid index");
         return marketType[idx].asset_price;

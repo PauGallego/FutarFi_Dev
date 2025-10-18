@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
@@ -13,6 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import { getSupportedCollaterals, type Collateral } from "@/lib/collaterals"
+import { isAddress } from "viem"
+
 
 import { 
   type BaseError,
@@ -28,6 +31,21 @@ export default function NewProposalPage() {
 
   const chainId = useChainId()
   const contractAddress = getContractAddress(chainId, 'PROPOSAL_MANAGER')
+
+  // Derive per-chain token options
+  const tokenOptions: Collateral[] = React.useMemo(
+    () => getSupportedCollaterals(chainId),
+    [chainId]
+  )
+
+   // --- ADD: ensure selected token stays valid when chain changes ---
+  useEffect(() => {
+    // If current selected token is not in the available options, reset it
+    if (!formData.collateralToken || !tokenOptions.some(t => t.address.toLowerCase() === formData.collateralToken.toLowerCase())) {
+      setFormData((prev) => ({ ...prev, collateralToken: tokenOptions[0]?.address ?? "" }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chainId]) // re-run when chain changes
 
   const { 
     data: hash,
@@ -79,14 +97,17 @@ export default function NewProposalPage() {
       return
     }
 
-    if (!formData.collateralToken) {
+
+    if (!formData.collateralToken || !isAddress(formData.collateralToken)) {
       toast({
         title: "Validation Error",
-        description: "Please select a collateral token.",
+        description: "Please select a valid collateral token address.",
         variant: "destructive",
       })
       return
     }
+
+   
 
     if (!formData.maxSupply || Number(formData.maxSupply) <= 0) {
       toast({
@@ -218,19 +239,23 @@ export default function NewProposalPage() {
               </Label>
               <Select
                 value={formData.collateralToken}
-                onValueChange={(value) => setFormData({ ...formData, collateralToken: value })}
+                onValueChange={(value) => setFormData({ ...formData, collateralToken: value as `0x${string}` })}
                 required
               >
                 <SelectTrigger id="collateralToken" className="text-base">
-                  <SelectValue placeholder="Select a token" />
+                  <SelectValue placeholder={tokenOptions.length ? "Select a token" : "No tokens for this chain"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="0x5FC8d32690cc91D4c39d9d3abcBD16989F875707">TestToken (Local)</SelectItem>
-                  <SelectItem value="0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48">USDC (Mainnet)</SelectItem>
-                  <SelectItem value="DAI">DAI</SelectItem>
+                  {tokenOptions.map((t) => (
+                    <SelectItem key={t.address} value={t.address}>
+                      {t.symbol}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              <p className="text-sm text-muted-foreground">The stablecoin token used as collateral for this proposal</p>
+              <p className="text-sm text-muted-foreground">
+                The stablecoin token used as collateral for this proposal
+              </p>
             </div>
 
             <div className="space-y-2">

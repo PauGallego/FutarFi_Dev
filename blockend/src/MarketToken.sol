@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity ^0.8.20;
 
-import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
-
+import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import { Ownable } from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 interface IMarketToken is IERC20 {
     function initialize(string memory _name, string memory _symbol) external;
@@ -15,7 +14,6 @@ interface IMarketToken is IERC20 {
 }
 
 contract MarketToken is IMarketToken, Ownable {
-
     bool private _initialized;
 
     string public name;
@@ -24,6 +22,7 @@ contract MarketToken is IMarketToken, Ownable {
     uint256 private _totalSupply;
 
     mapping(address => uint256) private _balances;
+    mapping(address => mapping(address => uint256)) private _allowances;
 
     constructor() Ownable(msg.sender) {}
 
@@ -32,45 +31,42 @@ contract MarketToken is IMarketToken, Ownable {
         _initialized = true;
         name = _name;
         symbol = _symbol;
-        _transferOwnership(msg.sender); // set the proxy owner to caller of initialize()
+        _transferOwnership(msg.sender); // proxy owner = market
     }
 
-    // IERC20 totalSupply
-    function totalSupply() external view override returns (uint256) {
-        return _totalSupply;
+    // --- ERC20 ---
+    function totalSupply() external view override returns (uint256) { return _totalSupply; }
+    function balanceOf(address a) external view override returns (uint256) { return _balances[a]; }
+
+    function allowance(address o, address s) external view override returns (uint256) {
+        return _allowances[o][s];
+    }
+    function approve(address s, uint256 a) external override returns (bool) {
+        _allowances[msg.sender][s] = a; return true;
+    }
+    function transfer(address to, uint256 a) external override returns (bool) {
+        _transfer(msg.sender, to, a); return true;
+    }
+    function transferFrom(address from, address to, uint256 a) external override returns (bool) {
+        uint256 alw = _allowances[from][msg.sender];
+        require(alw >= a, "insufficient allowance");
+        _allowances[from][msg.sender] = alw - a;
+        _transfer(from, to, a); return true;
     }
 
-    // IERC20 balanceOf
-    function balanceOf(address account) external view override returns (uint256) {
-        return _balances[account];
+    // --- Controlled supply (owner = Market) ---
+    function mint(address to, uint256 a) external override onlyOwner {
+        _totalSupply += a; _balances[to] += a;
+    }
+    function burn(address from, uint256 a) external override onlyOwner {
+        require(_balances[from] >= a, "burn exceeds balance");
+        _balances[from] -= a; _totalSupply -= a;
     }
 
-    // Only owner can mint tokens
-    function mint(address to, uint256 amount) external onlyOwner {
-        require(to != address(0), "Mint to zero address");
-        _balances[to] += amount;
-        _totalSupply += amount;
+    // --- internal ---
+    function _transfer(address from, address to, uint256 a) internal {
+        require(to != address(0), "transfer to zero");
+        require(_balances[from] >= a, "insufficient balance");
+        _balances[from] -= a; _balances[to] += a;
     }
-
-    // Only owner can burn tokens
-    function burn(address from, uint256 amount) external onlyOwner {
-        require(from != address(0), "Burn from zero address");
-        require(_balances[from] >= amount, "Burn amount exceeds balance");
-        _balances[from] -= amount;
-        _totalSupply -= amount;
-    }
-
-    // Simple transfer between users if needed
-    function transfer(address to, uint256 amount) external override returns (bool) {
-        require(to != address(0), "Transfer to zero address");
-        require(_balances[msg.sender] >= amount, "Insufficient balance");
-        _balances[msg.sender] -= amount;
-        _balances[to] += amount;
-        return true;
-    }
-
-    // Optional: no allowance/approve logic if transfers are only simple
-    function allowance(address, address) external pure override returns (uint256) { return 0; }
-    function approve(address, uint256) external pure override returns (bool) { return false; }
-    function transferFrom(address, address, uint256) external pure override returns (bool) { return false; }
 }

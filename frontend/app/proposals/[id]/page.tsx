@@ -17,24 +17,24 @@ interface PageProps {
   params: { id: string }
 }
 
-// Mock data generator for development
-function generateMockProposal(id: string): Proposal {
-  const now = Date.now()
-  return {
-    id,
-    title: "Increase Treasury Allocation for Development",
-    description:
-      "This proposal seeks to allocate 100 ETH from the treasury to fund the core development team for Q2 2025. The funds will be used for hiring additional developers, conducting security audits, and improving infrastructure.",
-    creator: "0x742d35Cc6634C0532925a3b844Bc9e7595f5f3a" as Address,
-    startTime: BigInt(Math.floor((now - 2 * 24 * 60 * 60 * 1000) / 1000)),
-    endTime: BigInt(Math.floor((now + 5 * 24 * 60 * 60 * 1000) / 1000)),
-    executed: false,
-    passed: false,
-    yesMarket: "0x1234567890123456789012345678901234567890" as Address,
-    noMarket: "0x0987654321098765432109876543210987654321" as Address,
-    status: "active",
-  }
-}
+// // Mock data generator for development
+// function generateMockProposal(id: string): Proposal {
+//   const now = Date.now()
+//   return {
+//     id,
+//     title: "Increase Treasury Allocation for Development",
+//     description:
+//       "This proposal seeks to allocate 100 ETH from the treasury to fund the core development team for Q2 2025. The funds will be used for hiring additional developers, conducting security audits, and improving infrastructure.",
+//     creator: "0x742d35Cc6634C0532925a3b844Bc9e7595f5f3a" as Address,
+//     startTime: BigInt(Math.floor((now - 2 * 24 * 60 * 60 * 1000) / 1000)),
+//     endTime: BigInt(Math.floor((now + 5 * 24 * 60 * 60 * 1000) / 1000)),
+//     executed: false,
+//     passed: false,
+//     yesMarket: "0x1234567890123456789012345678901234567890" as Address,
+//     noMarket: "0x0987654321098765432109876543210987654321" as Address,
+//     status: "active",
+//   }
+// }
 
 function generateMockPriceData(): PricePoint[] {
   const now = Date.now()
@@ -70,17 +70,17 @@ export default function ProposalDetailPage({ params }: PageProps) {
       try {
         setIsLoading(true)
         // In production, replace with actual contract reads:
-        // const data = await readContract({
-        //   address: contracts.proposalManager,
-        //   abi: PROPOSAL_MANAGER_ABI,
-        //   functionName: 'getProposalById',
-        //   args: [BigInt(id)]
-        // })
+        const data = await readContract({
+          address: contracts.proposalManager,
+          abi: PROPOSAL_MANAGER_ABI,
+          functionName: 'getProposalById',
+          args: [BigInt(id)]
+        })
 
         // Simulate network delay
         await new Promise((resolve) => setTimeout(resolve, 1000))
 
-        const mockProposal = generateMockProposal(id)
+        const mockProposal = data as Proposal
         const mockPrices = generateMockPriceData()
 
         setProposal(mockProposal)

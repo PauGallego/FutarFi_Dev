@@ -17,8 +17,8 @@ export const config = getDefaultConfig({
   chains: [mainnet, sepolia, hederaWithIcon, hederaTestnetWithIcon, anvil],
   transports: {
     [mainnet.id]: http(),
-    [sepolia.id]: http(),
-    [hederaWithIcon.id]: http(),
+    [sepolia.id]: http(),         
+    [hederaWithIcon.id]: http(),          
     [hederaTestnetWithIcon.id]: http(),
     [anvil.id]: http(),
   },
