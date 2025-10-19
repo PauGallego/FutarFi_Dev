@@ -30,18 +30,7 @@ contract MarketTest is ProposalManagerTestBase {
             address(marketTokenImpl)
         );
 
-        /*
-        m2 = Market(clone);
-
-        m2.initialize(
-            collateralToken,
-            100000000000 ether,
-            0x4305FB66699C3B2702D4d05CF36551390A4c69C6,    
-            0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace,
-            address(marketTokenImpl)
-        );
-
-        */
+        
     }
 
 
@@ -52,8 +41,8 @@ contract MarketTest is ProposalManagerTestBase {
         collateralToken.approve(address(m), 15 ether);
         m.buy(true, 10 ether);   // Alice buys approve tokens (winner side)
         m.buy(false, 5 ether);   // Alice also buys reject tokens (loser side)
-        uint256 aliceApproveTokens = m.approveToken().balanceOf(alice);
-        uint256 aliceRejectTokens = m.rejectToken().balanceOf(alice);
+        uint256 aliceApproveTokens = MarketToken(m.approveToken()).balanceOf(alice);
+        uint256 aliceRejectTokens = MarketToken(m.rejectToken()).balanceOf(alice);
         vm.stopPrank();
 
         // Bob also buys both approve and reject tokens
@@ -61,8 +50,8 @@ contract MarketTest is ProposalManagerTestBase {
         collateralToken.approve(address(m), 12 ether);
         m.buy(true, 4 ether);    // Bob buys approve tokens (winner side)
         m.buy(false, 8 ether);   // Bob buys more reject tokens (loser side)
-        uint256 bobApproveTokens = m.approveToken().balanceOf(bob);
-        uint256 bobRejectTokens = m.rejectToken().balanceOf(bob);
+        uint256 bobApproveTokens = MarketToken(m.approveToken()).balanceOf(bob);
+        uint256 bobRejectTokens = MarketToken(m.rejectToken()).balanceOf(bob);
         vm.stopPrank();
 
         // Record balances before settlement
@@ -98,10 +87,10 @@ contract MarketTest is ProposalManagerTestBase {
                 "Bob should get approve winnings + reject collateral back");
 
         // All tokens should be burned
-        assertEq(m.approveToken().balanceOf(alice), 0, "Alice's approve tokens should be burned");
-        assertEq(m.rejectToken().balanceOf(alice), 0, "Alice's reject tokens should be burned");
-        assertEq(m.approveToken().balanceOf(bob), 0, "Bob's approve tokens should be burned");
-        assertEq(m.rejectToken().balanceOf(bob), 0, "Bob's reject tokens should be burned");
+        assertEq(MarketToken(m.approveToken()).balanceOf(alice), 0, "Alice's approve tokens should be burned");
+        assertEq(MarketToken(m.rejectToken()).balanceOf(alice), 0, "Alice's reject tokens should be burned");
+        assertEq(MarketToken(m.approveToken()).balanceOf(bob), 0, "Bob's approve tokens should be burned");
+        assertEq(MarketToken(m.rejectToken()).balanceOf(bob), 0, "Bob's reject tokens should be burned");
 
         console.log("Alice final balance:", aliceFinalCollateral);
         console.log("Bob final balance:", bobFinalCollateral);
@@ -114,8 +103,8 @@ contract MarketTest is ProposalManagerTestBase {
         collateralToken.approve(address(m), 13 ether);
         m.buy(true, 6 ether);    // Alice buys approve tokens (loser side)
         m.buy(false, 7 ether);   // Alice buys reject tokens (winner side)
-        uint256 aliceApproveTokens = m.approveToken().balanceOf(alice);
-        uint256 aliceRejectTokens = m.rejectToken().balanceOf(alice);
+        uint256 aliceApproveTokens = MarketToken(m.approveToken()).balanceOf(alice);
+        uint256 aliceRejectTokens = MarketToken(m.rejectToken()).balanceOf(alice);
         vm.stopPrank();
 
         // Bob also buys both approve and reject tokens
@@ -123,8 +112,8 @@ contract MarketTest is ProposalManagerTestBase {
         collateralToken.approve(address(m), 14 ether);
         m.buy(true, 9 ether);    // Bob buys approve tokens (loser side)
         m.buy(false, 5 ether);   // Bob buys reject tokens (winner side)
-        uint256 bobApproveTokens = m.approveToken().balanceOf(bob);
-        uint256 bobRejectTokens = m.rejectToken().balanceOf(bob);
+        uint256 bobApproveTokens = MarketToken(m.approveToken()).balanceOf(bob);
+        uint256 bobRejectTokens = MarketToken(m.rejectToken()).balanceOf(bob);
         vm.stopPrank();
 
         // Record balances before settlement
@@ -160,10 +149,10 @@ contract MarketTest is ProposalManagerTestBase {
                 "Bob should get reject winnings + approve collateral back");
 
         // All tokens should be burned
-        assertEq(m.approveToken().balanceOf(alice), 0, "Alice's approve tokens should be burned");
-        assertEq(m.rejectToken().balanceOf(alice), 0, "Alice's reject tokens should be burned");
-        assertEq(m.approveToken().balanceOf(bob), 0, "Bob's approve tokens should be burned");
-        assertEq(m.rejectToken().balanceOf(bob), 0, "Bob's reject tokens should be burned");
+        assertEq(MarketToken(m.approveToken()).balanceOf(alice), 0, "Alice's approve tokens should be burned");
+        assertEq(MarketToken(m.rejectToken()).balanceOf(alice), 0, "Alice's reject tokens should be burned");
+        assertEq(MarketToken(m.approveToken()).balanceOf(bob), 0, "Bob's approve tokens should be burned");
+        assertEq(MarketToken(m.rejectToken()).balanceOf(bob), 0, "Bob's reject tokens should be burned");
 
         console.log("Alice final balance:", aliceFinalCollateral);
         console.log("Bob final balance:", bobFinalCollateral);

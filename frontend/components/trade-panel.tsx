@@ -42,23 +42,49 @@ export function TradePanel({ yesMarketAddress, noMarketAddress, proposalStatus }
     const [amount, setAmount] = useState("")
     const [slippage, setSlippage] = useState("0.5")
 
-    const marketAddress = selectedMarket === "YES" ? yesMarketAddress : noMarketAddress
-    const optionIndex = selectedMarket === "YES" ? 0 : 1
+    const optionIndex: bigint = selectedMarket === "YES" ? BigInt(0) : BigInt(1)
+    const optionBool = selectedMarket === "YES" ? true : false
 
-    // Read base token balance
-    const { data: baseBalance } = useReadContract({
-        address: contracts.baseToken as Address,
+    // Determine which market contract to interact with based on selection
+    const marketAddress = selectedMarket === "YES" ? yesMarketAddress : noMarketAddress
+
+    // Read proposal market collateral token address
+    const { data: collateralAddress } = useReadContract({
+        address: marketAddress,
+        abi: market_abi,
+        functionName: "collateralToken",
+        query: { enabled: !!marketAddress },
+    })
+
+    // Read selected market option details (marketType) — 0 for YES, 1 for NO
+    const { data: marketTypeData } = useReadContract({
+        address: marketAddress,
+        abi: market_abi,
+        functionName: "marketType",
+        args: [optionIndex],
+        query: { enabled: !!marketAddress },
+    })
+
+    // Derive current price from marketTypeData (marketType returns: asset_price, totalCollateral, totalSupply)
+    const currentPrice = marketTypeData
+        ? (Array.isArray(marketTypeData) ? marketTypeData[0] : (marketTypeData as any).asset_price)
+        : undefined
+
+    // Read collateral token balance (the token this market accepts)
+    const { data: collateralBalance } = useReadContract({
+        address: collateralAddress as Address,
         abi: marketToken_abi,
         functionName: "balanceOf",
         args: address ? [address] : undefined,
-        query: { enabled: !!address },
+        query: { enabled: !!address && !!collateralAddress },
     })
 
-    // Read base token decimals
-    const { data: baseDecimals } = useReadContract({
-        address: contracts.baseToken as Address,
+    // Read collateral token decimals
+    const { data: collateralDecimals } = useReadContract({
+        address: collateralAddress as Address,
         abi: marketToken_abi,
         functionName: "decimals",
+        query: { enabled: !!collateralAddress },
     })
 
     // Read market token balance
@@ -70,27 +96,19 @@ export function TradePanel({ yesMarketAddress, noMarketAddress, proposalStatus }
         query: { enabled: !!address },
     })
 
-    // Read current price
-    const { data: currentPrice } = useReadContract({
-        address: marketAddress,
-        abi: market_abi,
-        functionName: "getMarketTypePrice",
-        args: [optionIndex],
-    })
-
-    // Read allowance for buy action
+    // Read allowance for buy action (on the collateral token)
     const { data: allowance } = useReadContract({
-        address: contracts.baseToken as Address,
+        address: collateralAddress as Address,
         abi: marketToken_abi,
         functionName: "allowance",
         args: address ? [address, marketAddress] : undefined,
-        query: { enabled: !!address && tradeAction === "BUY" },
+        query: { enabled: !!address && !!collateralAddress && tradeAction === "BUY" },
     })
 
     const { writeContract, data: txHash, isPending: isWritePending } = useWriteContract()
     const { isLoading: isTxPending, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({ hash: txHash })
 
-    const decimals = baseDecimals || 6
+    const decimals = collateralDecimals || 6
     const needsApproval =
         tradeAction === "BUY" && amount && allowance !== undefined && parseUnits(amount, decimals) > allowance
 
@@ -115,7 +133,7 @@ export function TradePanel({ yesMarketAddress, noMarketAddress, proposalStatus }
 
         try {
             writeContract({
-                address: contracts.baseToken as Address,
+                address: collateralAddress as Address,
                 abi: marketToken_abi,
                 functionName: "approve",
                 args: [marketAddress, parseUnits(amount, decimals)],
@@ -137,14 +155,14 @@ export function TradePanel({ yesMarketAddress, noMarketAddress, proposalStatus }
                     address: marketAddress,
                     abi: market_abi,
                     functionName: "buy",
-                    args: [optionIndex, parseUnits(amount, decimals)],
+                    args: [optionBool, parseUnits(amount, decimals)],
                 })
             } else {
                 writeContract({
                     address: marketAddress,
                     abi: market_abi,
                     functionName: "sell",
-                    args: [optionIndex, parseUnits(amount, 18)],
+                    args: [optionBool, parseUnits(amount, 18)],
                 })
             }
             toast.loading("Processing transaction...")
@@ -207,8 +225,8 @@ export function TradePanel({ yesMarketAddress, noMarketAddress, proposalStatus }
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                            <span className="text-muted-foreground">Base Token:</span>
-                            <span className="font-mono">{baseBalance ? formatUnits(baseBalance, decimals) : "0.00"}</span>
+                            <span className="text-muted-foreground">Collateral Token:</span>
+                            <span className="font-mono">{collateralBalance ? formatUnits(collateralBalance, decimals) : "0.00"}</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">{selectedMarket} Token:</span>

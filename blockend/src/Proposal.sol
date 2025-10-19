@@ -7,8 +7,49 @@ import {Market} from "./Market.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 interface IProposal {
+    function initialize(
+        uint256 _id,
+        address _admin,
+        string memory _title,
+        string memory _description,
+        uint256 _duration,
+        IERC20 _collateralToken,
+        uint256 _maxSupply,
+        address _target,
+        bytes memory _data,
+        address _pythAddr,
+        bytes32 _pythId,
+        address _marketImpl,
+        address _marketTokenImpl
+    ) external;
+
     function closeProposal() external;
-    function isActive() external view returns(bool);
+    function isActive() external view returns (bool);
+
+    // Public getters (auto-generated for public state vars in the contract)
+    function id() external view returns (uint256);
+    function admin() external view returns (address);
+    function title() external view returns (string memory);
+    function description() external view returns (string memory);
+    function startTime() external view returns (uint256);
+    function endTime() external view returns (uint256);
+    function collateralToken() external view returns (address);
+    function maxSupply() external view returns (uint256);
+    function target() external view returns (address);
+    function data() external view returns (bytes memory);
+
+    function approveName() external view returns (string memory);
+    function approveSymbol() external view returns (string memory);
+    function rejectName() external view returns (string memory);
+    function rejectSymbol() external view returns (string memory);
+
+    function proposalExecuted() external view returns (bool);
+    function proposalEnded() external view returns (bool);
+
+    function market() external view returns (Market);
+    function marketAddr() external view returns (address);
+    function marketImpl() external view returns (address);
+    function marketTokenImpl() external view returns (address);
 }
 
 contract Proposal is Ownable, IProposal {
@@ -16,10 +57,15 @@ contract Proposal is Ownable, IProposal {
 
     uint256 public id;
     address public admin; 
-    string public name;
+    string public title;
     string public description;
     uint256 public startTime;
     uint256 public endTime;
+    address public collateralToken;
+    uint256 public maxSupply;
+    address public target;     
+    bytes public data;       
+
     string public approveName;
     string public approveSymbol;
     string public rejectName;
@@ -27,12 +73,10 @@ contract Proposal is Ownable, IProposal {
     bool public proposalExecuted;
     bool public proposalEnded;
     Market public market;
+    address public marketAddr;
     address public marketImpl; 
     address public marketTokenImpl;
 
-    // Execution
-    address public target;     
-    bytes public data;       
 
     // Events
     event ProposalExecuted(address executor, bytes result);
@@ -50,12 +94,13 @@ contract Proposal is Ownable, IProposal {
 
 
 
+
     constructor() Ownable(msg.sender) {}
 
     function initialize(
         uint256 _id,
         address _admin,
-        string memory _name,
+        string memory _title,
         string memory _description,
         uint256 _duration,
         IERC20 _collateralToken,
@@ -72,10 +117,12 @@ contract Proposal is Ownable, IProposal {
 
         id = _id;
         admin = _admin;
-        name = _name;
+        title = _title;
         description = _description;
         startTime = block.timestamp;
         endTime = block.timestamp + _duration;
+        collateralToken = address(_collateralToken);
+        maxSupply = _maxSupply;
         target = _target;
         data = _data;
 
@@ -85,13 +132,14 @@ contract Proposal is Ownable, IProposal {
         // Clone Market and initialize
         address m = Clones.clone(marketImpl);
         Market(m).initialize(
-            _collateralToken,
-            _maxSupply,
+            IERC20(collateralToken),
+            maxSupply,
             _pythAddr,
             _pythId,
-            _marketTokenImpl
+            marketTokenImpl
         );
         market = Market(m);
+        marketAddr = address(market);
 
         _transferOwnership(msg.sender); // set the proxy owner to caller of initialize()
     }

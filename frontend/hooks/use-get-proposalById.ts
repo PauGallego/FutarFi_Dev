@@ -1,6 +1,7 @@
 import { useReadContract, useChainId, usePublicClient } from 'wagmi'
 import { proposalManager_abi } from '@/contracts/proposalManager-abi'
 import { proposal_abi } from '@/contracts/proposal-abi'
+import { market_abi } from '@/contracts/market-abi'
 import { getContractAddress } from '@/contracts/constants'
 import { useEffect, useState } from 'react'
 
@@ -14,6 +15,8 @@ export interface Proposal {
   address: string
   endTime: number
   startTime: number
+  collateralToken?: string
+  marketAddress?: string
 }
 
 export function useGetProposalById(id: string) {
@@ -61,13 +64,15 @@ export function useGetProposalById(id: string) {
         const [
           pid,
           admin,
-          name,
+          title,
           description,
           startTime,
           endTime,
+          collateralAddr,
           proposalExecuted,
           proposalEnded,
           isActive,
+          marketAddress,
         ] = await Promise.all([
           publicClient.readContract({
             address: proposalAddr as `0x${string}`,
@@ -82,7 +87,7 @@ export function useGetProposalById(id: string) {
           publicClient.readContract({
             address: proposalAddr as `0x${string}`,
             abi: proposal_abi,
-            functionName: 'name',
+            functionName: 'title',
           }),
           publicClient.readContract({
             address: proposalAddr as `0x${string}`,
@@ -102,6 +107,11 @@ export function useGetProposalById(id: string) {
           publicClient.readContract({
             address: proposalAddr as `0x${string}`,
             abi: proposal_abi,
+            functionName: 'collateralToken',
+          }),
+          publicClient.readContract({
+            address: proposalAddr as `0x${string}`,
+            abi: proposal_abi,
             functionName: 'proposalExecuted',
           }),
           publicClient.readContract({
@@ -114,7 +124,14 @@ export function useGetProposalById(id: string) {
             abi: proposal_abi,
             functionName: 'isActive',
           }),
+          publicClient.readContract({
+            address: proposalAddr as `0x${string}`,
+            abi: proposal_abi,
+            functionName: 'marketAddr',
+          }),
         ])
+
+      
 
         let status: 'active' | 'pending' | 'executed'
         if (proposalExecuted || proposalEnded) {
@@ -127,7 +144,7 @@ export function useGetProposalById(id: string) {
 
         const proposalObj: Proposal = {
           id: (pid as bigint)?.toString() || '0',
-          title: (name as string) || 'Untitled Proposal',
+          title: (title as string) || 'Untitled Proposal',
           description: (description as string) || 'No description available',
           status,
           createdBy: (admin as string) || '',
@@ -135,8 +152,12 @@ export function useGetProposalById(id: string) {
           address: proposalAddr,
           endTime: Number((endTime as bigint) || 0),
           startTime: Number((startTime as bigint) || 0),
+          collateralToken: collateralAddr || undefined,
+          marketAddress: marketAddress || undefined,
         }
-
+        console.log("Market address fetched:", proposalObj.marketAddress);
+        console.log("Collateral token fetched:", proposalObj.collateralToken);
+        
         setProposal(proposalObj)
       } catch (proposalError) {
         console.error(`Error fetching data for proposal ${proposalAddr}:`, proposalError)

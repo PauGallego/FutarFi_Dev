@@ -18,7 +18,7 @@ export const SUPPORTED_COLLATERALS: Record<number, Collateral[]> = {
     { symbol: "MOCK18", address: "0x2222222222222222222222222222222222222222", decimals: 18, note: "Mock DAI (18d)" },
   ],
 
-  // Hedera Mainnet (295): example (fill with HTS EVM alias)
+  // Hedera Mainnet (295): 
   295: [
     { symbol: "USDC", address: "0x3333333333333333333333333333333333333333", decimals: 6, note: "USDC (HTS EVM alias)" },
     // Add DAI/PYUSD only if you want to allow their bridged/native versions on Hedera mainnet
@@ -39,6 +39,7 @@ export const SUPPORTED_COLLATERALS: Record<number, Collateral[]> = {
 
   // Local Anvil (31337): dev-only mock
   31337: [
+    { symbol: "wETH", address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", decimals: 18, note: "Wrapped ETH (Anvil-funded accounts)" },
     { symbol: "MarketTest", address: getContractAddress(31337, 'MARKET_TOKEN_IMPL') || "0x0000000000000000000000000000000000000000", decimals: 18, note: "Local mock token (18d)" },
   ],
 }

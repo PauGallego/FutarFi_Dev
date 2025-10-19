@@ -26,9 +26,19 @@ interface IMarket {
 
     function getMarketTypePrice(uint8 idx) external view returns (uint256);
     function totalSupply() external view returns (uint256 tot0, uint256 tot1);
+    function totalCollateralSupply() external view returns (uint256 tot0, uint256 tot1);
     function maxSupply() external view returns (uint256);
     function isOpen() external view returns (bool);
     function userCollateral(address user, uint8 optionIndex) external view returns (uint256);
+
+    // Getters for public state variables
+    function collateralToken() external view returns (IERC20);
+    function approveToken() external view returns (address);
+    function rejectToken() external view returns (address);
+    function collateralPriceId() external view returns (bytes32);
+    function marketType(uint256 idx) external view returns (uint256 asset_price, uint256 totalCollateral, uint256 totalSupply);
+    function impactFactor() external view returns (uint256);
+    function pyth() external view returns (IPyth);
 }
 
 contract Market is Ownable, IMarket {
@@ -43,8 +53,8 @@ contract Market is Ownable, IMarket {
     bool private _initialized;
 
     IERC20          public collateralToken;
-    MarketToken     public approveToken; 
-    MarketToken     public rejectToken;  
+    address     public approveToken; 
+    address     public rejectToken;  
     uint256         public override maxSupply;
     bytes32 public collateralPriceId;
 
@@ -119,18 +129,18 @@ contract Market is Ownable, IMarket {
         // Clone approve token
         address t0 = Clones.clone(_marketTokenImpl);
         MarketToken(t0).initialize("Approve Token", "APT");
-        approveToken = MarketToken(t0);
+        approveToken = address(MarketToken(t0));
 
         // Clone reject token
         address t1 = Clones.clone(_marketTokenImpl);
         MarketToken(t1).initialize("Reject Token", "RJT");
-        rejectToken = MarketToken(t1);
-        
+        rejectToken = address(MarketToken(t1));
+
         maxSupply = _maxSupply;
 
         // initial mint to the contract to act as sellable supply
-        approveToken.mint(address(this), _maxSupply);
-        rejectToken.mint(address(this), _maxSupply);
+        MarketToken(t0).mint(address(this), _maxSupply);
+        MarketToken(t1).mint(address(this), _maxSupply);
 
         // Initialize marketType with Pyth price if available
         uint256 basePrice = 1e18;
@@ -199,15 +209,15 @@ contract Market is Ownable, IMarket {
         uint256 tokensToMint = (amount * 1e18) / effectivePrice;
 
         if (optionIndex) {
-            require(approveToken.balanceOf(address(this)) >= tokensToMint, "insufficient approveToken supply");
-            approveToken.transfer(msg.sender, tokensToMint);
+            require(MarketToken(approveToken).balanceOf(address(this)) >= tokensToMint, "insufficient approveToken supply");
+            MarketToken(approveToken).transfer(msg.sender, tokensToMint);
             if (!addedParticipant[msg.sender][option]) {
                 participants0.push(msg.sender);
                 addedParticipant[msg.sender][option] = true;
             }
         } else {
-            require(rejectToken.balanceOf(address(this)) >= tokensToMint, "insufficient rejectToken supply");
-            rejectToken.transfer(msg.sender, tokensToMint);
+            require(MarketToken(rejectToken).balanceOf(address(this)) >= tokensToMint, "insufficient rejectToken supply");
+            MarketToken(rejectToken).transfer(msg.sender, tokensToMint);
             if (!addedParticipant[msg.sender][option]) {
                 participants1.push(msg.sender);
                 addedParticipant[msg.sender][option] = true;
@@ -233,9 +243,9 @@ contract Market is Ownable, IMarket {
         uint8 option = optionIndex ? 0 : 1;
 
         if (optionIndex) {
-            require(approveToken.balanceOf(msg.sender) >= tokenAmount, "insufficient approveToken balance");
+            require(MarketToken(approveToken).balanceOf(msg.sender) >= tokenAmount, "insufficient approveToken balance");
         } else {
-            require(rejectToken.balanceOf(msg.sender) >= tokenAmount, "insufficient rejectToken balance");
+            require(MarketToken(rejectToken).balanceOf(msg.sender) >= tokenAmount, "insufficient rejectToken balance");
         }
 
         uint256 currentPrice = marketType[option].asset_price;
@@ -247,9 +257,9 @@ contract Market is Ownable, IMarket {
         require(collateralToken.balanceOf(address(this)) >= collateralOut, "insufficient collateralToken in contract");
 
         if (optionIndex) {
-            approveToken.transferFrom(msg.sender, address(this), tokenAmount);
+            MarketToken(approveToken).transferFrom(msg.sender, address(this), tokenAmount);
         } else {
-            rejectToken.transferFrom(msg.sender, address(this), tokenAmount);
+            MarketToken(rejectToken).transferFrom(msg.sender, address(this), tokenAmount);
         }
 
         marketType[option].totalSupply += tokenAmount;
@@ -281,15 +291,15 @@ contract Market is Ownable, IMarket {
         // Pay winners using current option_price and burn their tokens
         for (uint i = 0; i < winners.length; i++) {
             address user = winners[i];
-            uint256 tokenBalance = winnerIndex == 0 ? approveToken.balanceOf(user) : rejectToken.balanceOf(user);
+            uint256 tokenBalance = winnerIndex == 0 ? MarketToken(approveToken).balanceOf(user) : MarketToken(rejectToken).balanceOf(user);
             if (tokenBalance > 0) {
                 uint256 payout = (tokenBalance * marketType[winnerIndex].asset_price) / 1e18;
                 
                 // Burn tokens directly from user (Market contract is owner of tokens)
                 if (winnerIndex == 0) {
-                    approveToken.burn(user, tokenBalance);
+                    MarketToken(approveToken).burn(user, tokenBalance);
                 } else {
-                    rejectToken.burn(user, tokenBalance);
+                    MarketToken(rejectToken).burn(user, tokenBalance);
                 }
                 
                 require(collateralToken.transfer(user, payout), "payout failed");
@@ -300,14 +310,14 @@ contract Market is Ownable, IMarket {
         // Return all collateral to losers and burn their tokens
         for (uint i = 0; i < losers.length; i++) {
             address user = losers[i];
-            uint256 tokenBalance = loserIndex == 0 ? approveToken.balanceOf(user) : rejectToken.balanceOf(user);
-            
+            uint256 tokenBalance = loserIndex == 0 ? MarketToken(approveToken).balanceOf(user) : MarketToken(rejectToken).balanceOf(user);
+
             // Burn loser tokens directly
             if (tokenBalance > 0) {
                 if (loserIndex == 0) {
-                    approveToken.burn(user, tokenBalance);
+                    MarketToken(approveToken).burn(user, tokenBalance);
                 } else {
-                    rejectToken.burn(user, tokenBalance);
+                    MarketToken(rejectToken).burn(user, tokenBalance);
                 }
             }
 
@@ -332,11 +342,11 @@ contract Market is Ownable, IMarket {
         // Handle approve side participants
         for (uint i = 0; i < participants0.length; i++) {
             address user = participants0[i];
-            uint256 tokenBalance = approveToken.balanceOf(user);
-            
+            uint256 tokenBalance = MarketToken(approveToken).balanceOf(user);
+
             // Burn their tokens
             if (tokenBalance > 0) {
-                approveToken.burn(user, tokenBalance);
+                MarketToken(approveToken).burn(user, tokenBalance);
             }
 
             // Return original collateral
@@ -350,11 +360,11 @@ contract Market is Ownable, IMarket {
         // Handle reject side participants
         for (uint i = 0; i < participants1.length; i++) {
             address user = participants1[i];
-            uint256 tokenBalance = rejectToken.balanceOf(user);
-            
+            uint256 tokenBalance = MarketToken(rejectToken).balanceOf(user);
+
             // Burn their tokens
             if (tokenBalance > 0) {
-                rejectToken.burn(user, tokenBalance);
+                MarketToken(rejectToken).burn(user, tokenBalance);
             }
 
             // Return original collateral

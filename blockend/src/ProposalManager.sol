@@ -10,7 +10,7 @@ interface IProposalManager {
     // TODO: function addAdmin(uint256 proposalId, address newAdmin) external;
     // TODO: function removeAdmin(uint256 proposalId, address admin) external;
     function createProposal(
-        string memory _name,
+        string memory _title,
         string memory _description,
         uint256 _duration,
         address _collateralToken,
@@ -80,7 +80,7 @@ contract ProposalManager is IProposalManager, Ownable {
     
 
     function createProposal(
-        string memory _name,
+        string memory _title,
         string memory _description,
         uint256 _duration,
         address _collateralToken,
@@ -98,7 +98,7 @@ contract ProposalManager is IProposalManager, Ownable {
         Proposal(clone).initialize(
             id,
             msg.sender,
-            _name,
+            _title,
             _description,
             _duration,
             IERC20(_collateralToken),

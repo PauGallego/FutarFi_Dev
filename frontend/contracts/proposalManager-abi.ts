@@ -4,7 +4,7 @@ export const proposalManager_abi = [
         "type": "function",
         "name": "createProposal",
         "inputs": [
-            { "name": "_name", "type": "string", "internalType": "string" },
+            { "name": "_title", "type": "string", "internalType": "string" },
             { "name": "_description", "type": "string", "internalType": "string" },
             { "name": "_duration", "type": "uint256", "internalType": "uint256" },
             {

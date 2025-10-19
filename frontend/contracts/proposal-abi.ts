@@ -1,5 +1,4 @@
 export const proposal_abi = [
-    { "type": "constructor", "inputs": [], "stateMutability": "nonpayable" },
     {
         "type": "function",
         "name": "admin",
@@ -27,6 +26,13 @@ export const proposal_abi = [
         "inputs": [],
         "outputs": [],
         "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "collateralToken",
+        "inputs": [],
+        "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+        "stateMutability": "view"
     },
     {
         "type": "function",
@@ -62,7 +68,7 @@ export const proposal_abi = [
         "inputs": [
             { "name": "_id", "type": "uint256", "internalType": "uint256" },
             { "name": "_admin", "type": "address", "internalType": "address" },
-            { "name": "_name", "type": "string", "internalType": "string" },
+            { "name": "_title", "type": "string", "internalType": "string" },
             { "name": "_description", "type": "string", "internalType": "string" },
             { "name": "_duration", "type": "uint256", "internalType": "uint256" },
             {
@@ -73,6 +79,8 @@ export const proposal_abi = [
             { "name": "_maxSupply", "type": "uint256", "internalType": "uint256" },
             { "name": "_target", "type": "address", "internalType": "address" },
             { "name": "_data", "type": "bytes", "internalType": "bytes" },
+            { "name": "_pythAddr", "type": "address", "internalType": "address" },
+            { "name": "_pythId", "type": "bytes32", "internalType": "bytes32" },
             { "name": "_marketImpl", "type": "address", "internalType": "address" },
             {
                 "name": "_marketTokenImpl",
@@ -101,6 +109,13 @@ export const proposal_abi = [
     },
     {
         "type": "function",
+        "name": "marketAddr",
+        "inputs": [],
+        "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
         "name": "marketImpl",
         "inputs": [],
         "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
@@ -115,16 +130,9 @@ export const proposal_abi = [
     },
     {
         "type": "function",
-        "name": "name",
+        "name": "maxSupply",
         "inputs": [],
-        "outputs": [{ "name": "", "type": "string", "internalType": "string" }],
-        "stateMutability": "view"
-    },
-    {
-        "type": "function",
-        "name": "owner",
-        "inputs": [],
-        "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
@@ -157,13 +165,6 @@ export const proposal_abi = [
     },
     {
         "type": "function",
-        "name": "renounceOwnership",
-        "inputs": [],
-        "outputs": [],
-        "stateMutability": "nonpayable"
-    },
-    {
-        "type": "function",
         "name": "startTime",
         "inputs": [],
         "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
@@ -178,76 +179,10 @@ export const proposal_abi = [
     },
     {
         "type": "function",
-        "name": "transferOwnership",
-        "inputs": [
-            { "name": "newOwner", "type": "address", "internalType": "address" }
-        ],
-        "outputs": [],
-        "stateMutability": "nonpayable"
-    },
-    {
-        "type": "event",
-        "name": "OwnershipTransferred",
-        "inputs": [
-            {
-                "name": "previousOwner",
-                "type": "address",
-                "indexed": true,
-                "internalType": "address"
-            },
-            {
-                "name": "newOwner",
-                "type": "address",
-                "indexed": true,
-                "internalType": "address"
-            }
-        ],
-        "anonymous": false
-    },
-    {
-        "type": "event",
-        "name": "ProposalExecuted",
-        "inputs": [
-            {
-                "name": "executor",
-                "type": "address",
-                "indexed": false,
-                "internalType": "address"
-            },
-            {
-                "name": "result",
-                "type": "bytes",
-                "indexed": false,
-                "internalType": "bytes"
-            }
-        ],
-        "anonymous": false
-    },
-    { "type": "error", "name": "FailedDeployment", "inputs": [] },
-    {
-        "type": "error",
-        "name": "InsufficientBalance",
-        "inputs": [
-            { "name": "balance", "type": "uint256", "internalType": "uint256" },
-            { "name": "needed", "type": "uint256", "internalType": "uint256" }
-        ]
-    },
-    {
-        "type": "error",
-        "name": "OwnableInvalidOwner",
-        "inputs": [
-            { "name": "owner", "type": "address", "internalType": "address" }
-        ]
-    },
-    {
-        "type": "error",
-        "name": "OwnableUnauthorizedAccount",
-        "inputs": [
-            { "name": "account", "type": "address", "internalType": "address" }
-        ]
-    },
-    { "type": "error", "name": "Proposal_AlreadyExecuted", "inputs": [] },
-    { "type": "error", "name": "Proposal_ExecutionFailed", "inputs": [] },
-    { "type": "error", "name": "Proposal_NotEnded", "inputs": [] }
+        "name": "title",
+        "inputs": [],
+        "outputs": [{ "name": "", "type": "string", "internalType": "string" }],
+        "stateMutability": "view"
+    }
 
 ] as const

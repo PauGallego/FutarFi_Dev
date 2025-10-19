@@ -71,7 +71,7 @@ export function useGetAllProposals() {
             const [
               id,
               admin,
-              name,
+              title,
               description,
               startTime,
               endTime,
@@ -92,7 +92,7 @@ export function useGetAllProposals() {
               publicClient.readContract({
                 address: proposalAddress as `0x${string}`,
                 abi: proposal_abi,
-                functionName: 'name',
+                functionName: 'title',
               }),
               publicClient.readContract({
                 address: proposalAddress as `0x${string}`,
@@ -138,7 +138,7 @@ export function useGetAllProposals() {
 
             return {
               id: (id as bigint)?.toString() || '0',
-              title: (name as string) || 'Untitled Proposal',
+              title: (title as string) || 'Untitled Proposal',
               description: (description as string) || 'No description available',
               status,
               createdBy: (admin as string) || '',

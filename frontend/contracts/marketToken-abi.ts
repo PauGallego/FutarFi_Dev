@@ -1,24 +1,23 @@
 export const marketToken_abi = [
-    { "type": "constructor", "inputs": [], "stateMutability": "nonpayable" },
     {
         "type": "function",
         "name": "allowance",
         "inputs": [
-            { "name": "", "type": "address", "internalType": "address" },
-            { "name": "", "type": "address", "internalType": "address" }
+            { "name": "owner", "type": "address", "internalType": "address" },
+            { "name": "spender", "type": "address", "internalType": "address" }
         ],
         "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
-        "stateMutability": "pure"
+        "stateMutability": "view"
     },
     {
         "type": "function",
         "name": "approve",
         "inputs": [
-            { "name": "", "type": "address", "internalType": "address" },
-            { "name": "", "type": "uint256", "internalType": "uint256" }
+            { "name": "spender", "type": "address", "internalType": "address" },
+            { "name": "value", "type": "uint256", "internalType": "uint256" }
         ],
         "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }],
-        "stateMutability": "pure"
+        "stateMutability": "nonpayable"
     },
     {
         "type": "function",
@@ -75,20 +74,6 @@ export const marketToken_abi = [
     },
     {
         "type": "function",
-        "name": "owner",
-        "inputs": [],
-        "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
-        "stateMutability": "view"
-    },
-    {
-        "type": "function",
-        "name": "renounceOwnership",
-        "inputs": [],
-        "outputs": [],
-        "stateMutability": "nonpayable"
-    },
-    {
-        "type": "function",
         "name": "symbol",
         "inputs": [],
         "outputs": [{ "name": "", "type": "string", "internalType": "string" }],
@@ -106,7 +91,7 @@ export const marketToken_abi = [
         "name": "transfer",
         "inputs": [
             { "name": "to", "type": "address", "internalType": "address" },
-            { "name": "amount", "type": "uint256", "internalType": "uint256" }
+            { "name": "value", "type": "uint256", "internalType": "uint256" }
         ],
         "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }],
         "stateMutability": "nonpayable"
@@ -115,20 +100,61 @@ export const marketToken_abi = [
         "type": "function",
         "name": "transferFrom",
         "inputs": [
-            { "name": "", "type": "address", "internalType": "address" },
-            { "name": "", "type": "address", "internalType": "address" },
-            { "name": "", "type": "uint256", "internalType": "uint256" }
+            { "name": "from", "type": "address", "internalType": "address" },
+            { "name": "to", "type": "address", "internalType": "address" },
+            { "name": "value", "type": "uint256", "internalType": "uint256" }
         ],
         "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }],
-        "stateMutability": "pure"
+        "stateMutability": "nonpayable"
     },
     {
-        "type": "function",
-        "name": "transferOwnership",
+        "type": "event",
+        "name": "Approval",
         "inputs": [
-            { "name": "newOwner", "type": "address", "internalType": "address" }
+            {
+                "name": "owner",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
+                "name": "spender",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
+                "name": "value",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
         ],
-        "outputs": [],
-        "stateMutability": "nonpayable"
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "Transfer",
+        "inputs": [
+            {
+                "name": "from",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
+                "name": "to",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
+                "name": "value",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
     }
 ] as const
