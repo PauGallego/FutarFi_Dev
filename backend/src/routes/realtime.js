@@ -6,6 +6,48 @@ const Proposal = require('../models/Proposal');
 
 const { validateOrder } = require('../middleware/validation');
 
+/**
+ * @swagger
+ * tags:
+ *   name: Realtime
+ *   description: Real-time data and monitoring endpoints
+ */
+
+/**
+ * @swagger
+ * /api/realtime/dashboard:
+ *   get:
+ *     summary: Get real-time dashboard data
+ *     tags: [Realtime]
+ *     responses:
+ *       200:
+ *         description: Dashboard data with active proposals, recent orders, and statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 activeProposals:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Proposal'
+ *                 recentOrders:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Order'
+ *                 topVolumeProposals:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 systemStats:
+ *                   type: object
+ *                 recentTrades:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       500:
+ *         description: Server error
+ */
 router.get('/dashboard', async (req, res) => {
   try {
     const activeProposals = await Proposal.find({ isActive: true });
@@ -87,6 +129,34 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/realtime/health:
+ *   get:
+ *     summary: Get system health and metrics
+ *     tags: [Realtime]
+ *     responses:
+ *       200:
+ *         description: System health status and recent activity metrics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "healthy"
+ *                 database:
+ *                   type: object
+ *                 recentActivity:
+ *                   type: object
+ *                 uptime:
+ *                   type: number
+ *                 memoryUsage:
+ *                   type: object
+ *       500:
+ *         description: Server error
+ */
 router.get('/health', async (req, res) => {
   try {
     const dbStatus = await Order.db.db.admin().ping();

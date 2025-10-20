@@ -10,7 +10,47 @@ const {
   notifyMarketData
 } = require('../middleware/websocket');
 
-// Get order book for a proposal side
+/**
+ * @swagger
+ * tags:
+ *   name: Orderbooks
+ *   description: Order book and trading endpoints
+ */
+
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}:
+ *   get:
+ *     summary: Get order book for a proposal side
+ *     tags: [Orderbooks]
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Proposal ID
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject]
+ *         description: Order book side
+ *     responses:
+ *       200:
+ *         description: Order book data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/OrderBook'
+ *       400:
+ *         description: Invalid parameters
+ *       404:
+ *         description: Order book not found
+ *       500:
+ *         description: Server error
+ */
 router.get('/:proposalId/:side', async (req, res) => {
   try {
     const { proposalId, side } = req.params;
@@ -49,7 +89,65 @@ router.get('/:proposalId', async (req, res) => {
   }
 });
 
-// Create new order
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/orders:
+ *   post:
+ *     summary: Create a new order
+ *     tags: [Orderbooks]
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Proposal ID
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject]
+ *         description: Order book side
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Order'
+ *           examples:
+ *             limitOrder:
+ *               summary: Limit Order
+ *               value:
+ *                 orderType: "buy"
+ *                 orderExecution: "limit"
+ *                 price: "1.5"
+ *                 amount: "100"
+ *                 userAddress: "0x742d35Cc6634C0532925a3b8D4c4B2B1"
+ *             marketOrder:
+ *               summary: Market Order
+ *               value:
+ *                 orderType: "sell"
+ *                 orderExecution: "market"
+ *                 amount: "50"
+ *                 userAddress: "0x742d35Cc6634C0532925a3b8D4c4B2B1"
+ *     responses:
+ *       201:
+ *         description: Order created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 order:
+ *                   $ref: '#/components/schemas/Order'
+ *                 orderBook:
+ *                   $ref: '#/components/schemas/OrderBook'
+ *       400:
+ *         description: Invalid order data
+ *       500:
+ *         description: Server error
+ */
 router.post('/:proposalId/:side/orders', async (req, res) => {
   try {
     const { proposalId, side } = req.params;

@@ -5,6 +5,35 @@ const OrderBook = require('../models/OrderBook');
 const { notifyProposalUpdate } = require('../middleware/websocket');
 const { validateProposal } = require('../middleware/validation');
 
+/**
+ * @swagger
+ * tags:
+ *   name: Proposals
+ *   description: Proposal management endpoints
+ */
+
+/**
+ * @swagger
+ * /api/proposals:
+ *   get:
+ *     summary: Get all proposals
+ *     tags: [Proposals]
+ *     responses:
+ *       200:
+ *         description: List of all proposals
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Proposal'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/', async (req, res) => {
   try {
     const proposals = await Proposal.find().sort({ createdAt: -1 });
@@ -14,6 +43,31 @@ router.get('/', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/proposals/{id}:
+ *   get:
+ *     summary: Get proposal by ID
+ *     tags: [Proposals]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Proposal ID
+ *     responses:
+ *       200:
+ *         description: Proposal details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Proposal'
+ *       404:
+ *         description: Proposal not found
+ *       500:
+ *         description: Server error
+ */
 router.get('/:id', async (req, res) => {
   try {
     const proposal = await Proposal.findOne({ id: req.params.id });
@@ -26,6 +80,30 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/proposals:
+ *   post:
+ *     summary: Create a new proposal
+ *     tags: [Proposals]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Proposal'
+ *     responses:
+ *       201:
+ *         description: Proposal created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Proposal'
+ *       400:
+ *         description: Invalid proposal data
+ *       500:
+ *         description: Server error
+ */
 router.post('/', validateProposal, async (req, res) => {
   try {
     const io = req.app.get('io');
