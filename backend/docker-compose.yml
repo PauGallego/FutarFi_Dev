@@ -1,63 +1,56 @@
 version: '3.8'
 
 services:
-  # MongoDB Database
   mongodb:
     image: mongo:7.0
-    container_name: futarfi-mongodb
+    container_name: futarfi-mongo
     restart: unless-stopped
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: futarfi123
-      MONGO_INITDB_DATABASE: futarfi-price-history
     ports:
       - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: futarfi
     volumes:
       - mongodb_data:/data/db
-      - ./scripts/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     networks:
       - futarfi-network
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
 
-  # Backend API
-  backend:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: futarfi-backend
+    container_name: futarfi-api
     restart: unless-stopped
-    environment:
-      - NODE_ENV=development
-      - PORT=3001
-      - MONGODB_URI=mongodb://admin:futarfi123@mongodb:27017/futarfi-price-history?authSource=admin
-      - RPC_URL=http://172.17.0.1:8545
-      - CHAIN_ID=31337
-      - PRICE_POLLING_INTERVAL=30000
     ports:
       - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://admin:password123@mongodb:27017/futarfi?authSource=admin
+      - PORT=3001
     depends_on:
       mongodb:
         condition: service_healthy
     volumes:
-      - ./logs:/app/logs
-      - ../frontend/contracts/deployed-addresses.json:/app/contracts/deployed-addresses.json:ro
+      - ./src:/app/src:ro
+      - ./package.json:/app/package.json:ro
+      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml:ro
     networks:
       - futarfi-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      test: curl -f http://localhost:3001/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
 
 volumes:
   mongodb_data:
-    driver: local
 
 networks:
   futarfi-network:

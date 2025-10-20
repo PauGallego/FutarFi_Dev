@@ -2,27 +2,18 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install pnpm
+RUN npm install -g pnpm
 
-# Copy package files
-COPY package*.json ./
+# Copy package files first for better caching
+COPY package*.json pnpm-lock.yaml ./
 
 # Install dependencies
-RUN npm install
+RUN pnpm install --frozen-lockfile
 
-# Copy application code
+# Copy source code
 COPY . .
 
-# Create logs directory
-RUN mkdir -p logs
-
-# Expose port
 EXPOSE 3001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:3001/health || exit 1
-
-# Start the application
-CMD ["npm", "start"]
+CMD ["pnpm", "dev"]
