@@ -25,12 +25,11 @@ import type { MarketOption, TradeAction } from "@/lib/types"
 
 
 interface TradePanelProps {
-    yesMarketAddress: Address
-    noMarketAddress: Address
+    marketAddress: Address
     proposalStatus: string
 }
 
-export function TradePanel({ yesMarketAddress, noMarketAddress, proposalStatus }: TradePanelProps) {
+export function TradePanel({ marketAddress, proposalStatus }: TradePanelProps) {
     const { address, isConnected } = useAccount()
     const { switchChain } = useSwitchChain()
 
@@ -46,8 +45,7 @@ export function TradePanel({ yesMarketAddress, noMarketAddress, proposalStatus }
     const optionBool = selectedMarket === "YES" ? true : false
 
     // Determine which market contract to interact with based on selection
-    const marketAddress = selectedMarket === "YES" ? yesMarketAddress : noMarketAddress
-
+º
     // Read proposal market collateral token address
     const { data: collateralAddress } = useReadContract({
         address: marketAddress,
