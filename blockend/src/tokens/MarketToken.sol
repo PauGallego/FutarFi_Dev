@@ -13,20 +13,22 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 /// @dev Owner = Proposal. A single `minter` (DutchAuction) can mint until disabled.
 contract MarketToken is ERC20, ERC20Permit, ERC20Pausable, ERC20Capped, Ownable {
     address public minter;
+    address public redeemer;      // Address allowed to receive transfers while paused
 
     // --- custom errors ---
     error MinterZero();
     error NotMinter();
+    error RedeemerZero();
 
     // --- events ---
     event MinterUpdated(address indexed oldMinter, address indexed newMinter);
     event FinalizedAsLoser(address indexed by);
 
     /// @param _name   e.g., "FutarFi YES #123 (#number is the ID of the proposal)"
-    /// @param symbol_ e.g., "YES-123"
-    /// @param owner_  Proposal address 
-    /// @param minter_ DutchAuction 
-    /// @param cap_    Max total supply (18 decimals)
+    /// @param _symbol e.g., "YES-123"
+    /// @param _owner  Proposal address
+    /// @param _minter DutchAuction
+    /// @param _cap    Max total supply (18 decimals)
     constructor(
         string memory _name,
         string memory _symbol,
@@ -60,12 +62,16 @@ contract MarketToken is ERC20, ERC20Permit, ERC20Pausable, ERC20Capped, Ownable 
         minter = address(0);
     }
 
-    /// @notice Mark this token as the losing leg; freezes transfers/mints.
-    /// @dev Called by Proposal in resolve(). Uses Pausable to block `_update`.
-    function finalizeAsLoser() external onlyOwner {
+    /// @notice Mark this token as the losing leg and set the Redeemer allowed to receive transfers.
+    /// @dev While paused, only transfers *to* `redeemer` are allowed. Burns are done by the redeemer later.
+    function finalizeAsLoser(address redeemer_) external onlyOwner {
+        if (redeemer_ == address(0)) revert RedeemerZero();
+        redeemer = redeemer_;
         _pause();
         emit FinalizedAsLoser(msg.sender);
     }
+
+
 
     // ========= Mint control =========
 
@@ -75,11 +81,31 @@ contract MarketToken is ERC20, ERC20Permit, ERC20Pausable, ERC20Capped, Ownable 
         _mint(to, amount);
     }
 
-    // ========= OZ v5 multiple inheritance hook =========
+    // --- Redeemer-only burn of its own balance ---
+    /// @notice Burn tokens held by the Redeemer (after receiving redemptions).
+    function redeemerBurn(uint256 amount) external {
+        require(msg.sender == redeemer, "MarketToken:not-redeemer");
+        _burn(msg.sender, amount);
+    }
+    
+    // --- Multiple inheritance hook (OZ v5 routes all through _update) ---
     function _update(address from, address to, uint256 value)
-        internal
-        override(ERC20, ERC20Pausable, ERC20Capped)
+    internal
+    override(ERC20, ERC20Pausable, ERC20Capped)
     {
+        if (paused()) {
+            bool isRedeem = (to == redeemer && from != address(0));
+            bool isRedeemerBurn = (from == redeemer && to == address(0));
+
+            require(redeemer != address(0), "MarketToken:redeemer=0");
+            require(isRedeem || isRedeemerBurn, "MarketToken:paused");
+
+            ERC20._update(from, to, value);
+            return;
+        }
+
+        // Not paused: apply the full normal chain includes Pausable, Capped
         super._update(from, to, value);
     }
+
 }
