@@ -11,6 +11,7 @@ const swaggerSpecs = require('./config/swagger');
 const connectDB = require('./config/database');
 const proposalsRouter = require('./routes/proposals');
 const orderbooksRouter = require('./routes/orderbooks');
+const authRouter = require('./routes/auth');
 const realtimeRouter = require('./routes/realtime');
 const rateLimit = require('./middleware/rateLimit');
 
@@ -69,6 +70,7 @@ app.use(rateLimit);
 
 app.use('/api/proposals', proposalsRouter);
 app.use('/api/orderbooks', orderbooksRouter);
+app.use('/api/auth', authRouter);
 app.use('/api/realtime', realtimeRouter);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {

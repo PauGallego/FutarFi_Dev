@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Proposal = require('../models/Proposal');
 const OrderBook = require('../models/OrderBook');
+const { verifyWalletSignature } = require('../middleware/walletAuth');
 const { notifyProposalUpdate } = require('../middleware/websocket');
 const { validateProposal } = require('../middleware/validation');
 
@@ -84,14 +85,33 @@ router.get('/:id', async (req, res) => {
  * @swagger
  * /api/proposals:
  *   post:
- *     summary: Create a new proposal
+ *     summary: Create proposal (requires wallet signature)
+ *     description: Creates a new proposal. User must provide wallet signature for authentication.
  *     tags: [Proposals]
+ *     security:
+ *       - WalletSignature: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/Proposal'
+ *             allOf:
+ *               - $ref: '#/components/schemas/Proposal'
+ *               - type: object
+ *                 required: [address, signature, message, timestamp]
+ *                 properties:
+ *                   address:
+ *                     type: string
+ *                     description: Wallet address
+ *                   signature:
+ *                     type: string
+ *                     description: Wallet signature
+ *                   message:
+ *                     type: string
+ *                     description: Signed message
+ *                   timestamp:
+ *                     type: number
+ *                     description: Message timestamp
  *     responses:
  *       201:
  *         description: Proposal created successfully
@@ -101,10 +121,12 @@ router.get('/:id', async (req, res) => {
  *               $ref: '#/components/schemas/Proposal'
  *       400:
  *         description: Invalid proposal data
+ *       401:
+ *         description: Invalid wallet signature
  *       500:
  *         description: Server error
  */
-router.post('/', validateProposal, async (req, res) => {
+router.post('/', verifyWalletSignature, validateProposal, async (req, res) => {
   try {
     const io = req.app.get('io');
     
@@ -112,6 +134,7 @@ router.post('/', validateProposal, async (req, res) => {
     const now = Math.floor(Date.now() / 1000);
     const proposalData = {
       ...req.body,
+      creator: req.userAddress, // Use authenticated wallet address
       startTime: req.body.startTime || now,
       endTime: req.body.endTime || (now + (req.body.duration || 86400))
     };
@@ -164,17 +187,69 @@ router.post('/', validateProposal, async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+/**
+ * @swagger
+ * /api/proposals/{id}:
+ *   put:
+ *     summary: Update proposal (requires wallet signature, creator only)
+ *     description: Updates a proposal. Only the proposal creator can update it.
+ *     tags: [Proposals]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Proposal ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             allOf:
+ *               - $ref: '#/components/schemas/Proposal'
+ *               - type: object
+ *                 required: [address, signature, message, timestamp]
+ *                 properties:
+ *                   address:
+ *                     type: string
+ *                   signature:
+ *                     type: string
+ *                   message:
+ *                     type: string
+ *                   timestamp:
+ *                     type: number
+ *     responses:
+ *       200:
+ *         description: Proposal updated successfully
+ *       401:
+ *         description: Invalid wallet signature
+ *       403:
+ *         description: Only proposal creator can update
+ *       404:
+ *         description: Proposal not found
+ */
+router.put('/:id', verifyWalletSignature, async (req, res) => {
   try {
     const io = req.app.get('io');
+    
+    // First check if proposal exists and user is the creator
+    const existingProposal = await Proposal.findOne({ id: req.params.id });
+    if (!existingProposal) {
+      return res.status(404).json({ error: 'Proposal not found' });
+    }
+    
+    if (existingProposal.creator.toLowerCase() !== req.userAddress) {
+      return res.status(403).json({ error: 'Only proposal creator can update this proposal' });
+    }
+    
     const proposal = await Proposal.findOneAndUpdate(
       { id: req.params.id },
       req.body,
       { new: true }
     );
-    if (!proposal) {
-      return res.status(404).json({ error: 'Proposal not found' });
-    }
 
     // Notify clients about proposal update
     if (io) {
@@ -367,5 +442,72 @@ function calculateSpread(bids, asks) {
   const spread = ((lowestAsk - highestBid) / lowestAsk) * 100;
   return spread.toFixed(4);
 }
+
+/**
+ * @swagger
+ * /api/proposals/{id}:
+ *   delete:
+ *     summary: Delete proposal (requires wallet signature, creator only)
+ *     description: Deletes a proposal. Only the proposal creator can delete it.
+ *     tags: [Proposals]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Proposal ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Proposal deleted successfully
+ *       401:
+ *         description: Invalid wallet signature
+ *       403:
+ *         description: Only proposal creator can delete
+ *       404:
+ *         description: Proposal not found
+ */
+router.delete('/:id', verifyWalletSignature, async (req, res) => {
+  try {
+    const io = req.app.get('io');
+    
+    // Check if proposal exists and user is the creator
+    const existingProposal = await Proposal.findOne({ id: req.params.id });
+    if (!existingProposal) {
+      return res.status(404).json({ error: 'Proposal not found' });
+    }
+    
+    if (existingProposal.creator.toLowerCase() !== req.userAddress) {
+      return res.status(403).json({ error: 'Only proposal creator can delete this proposal' });
+    }
+    
+    await Proposal.findOneAndDelete({ id: req.params.id });
+    
+    // Notify clients
+    notifyProposalUpdate(io, { id: req.params.id, deleted: true });
+    
+    res.json({ message: 'Proposal deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;

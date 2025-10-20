@@ -15,6 +15,14 @@ const options = {
       }
     ],
     components: {
+      securitySchemes: {
+        WalletSignature: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'WalletSignature',
+          description: 'Wallet signature authentication. Requires address, signature, message, and timestamp in request body.'
+        }
+      },
       schemas: {
         Proposal: {
           type: 'object',

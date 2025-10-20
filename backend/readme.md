@@ -5,6 +5,21 @@ Backend API for the FutarFi DeFi Protocol with real-time WebSocket support, limi
 
 ## Features
 
+### Wallet Authentication System
+- Cryptographic signature verification using ethers.js
+- Time-based message validation (5-minute expiry)
+- Address recovery from signature to prevent spoofing
+- Protected endpoints requiring valid wallet signatures
+- Middleware-based authentication for secure operations
+
+### Order Matching Engine
+- Automatic order execution on creation
+- Price-time priority matching algorithm
+- Same-side, opposite-type matching logic
+- Supports both limit and market orders
+- Partial fill handling with remaining order management
+- Cross-order matching for existing orders
+
 ### WebSocket Real-time Updates
 - Real-time order book updates
 - Live order status changes
@@ -15,8 +30,8 @@ Backend API for the FutarFi DeFi Protocol with real-time WebSocket support, limi
 ### Market Orders Support
 - Limit Orders: Traditional orders with specific price
 - Market Orders: Execute immediately at best available price
-- Order matching engine for market orders
-- Partial fills support
+- Order matching engine with automatic execution
+- Partial fills support with status tracking
 
 ### Enhanced Market Data
 - 24h volume tracking
@@ -34,37 +49,39 @@ Backend API for the FutarFi DeFi Protocol with real-time WebSocket support, limi
 
 ## API Endpoints
 
-### Orderbooks
+### Authentication
 ```
-GET /api/orderbooks/:proposalId/:side - Get order book
-GET /api/orderbooks/:proposalId - Get both order books
-POST /api/orderbooks/:proposalId/:side/orders - Create order (limit/market)
-GET /api/orderbooks/:proposalId/:side/orders - Get all orders
-GET /api/orderbooks/:proposalId/:side/orders/filled - Get only filled orders
-GET /api/orderbooks/:proposalId/:side/orders/open - Get open + partial orders
-GET /api/orderbooks/:proposalId/:side/orders/partial - Get only partial orders
-GET /api/orderbooks/:proposalId/:side/orders/status/:status - Get orders by status
-GET /api/orderbooks/:proposalId/:side/orders/summary/:userAddress - Get user order summary
-DELETE /api/orderbooks/orders/:orderId - Cancel order
-GET /api/orderbooks/orders/:orderId/executions - Get order execution history
+POST /api/auth/message - Generate authentication message
+POST /api/auth/verify - Verify wallet signature
 ```
 
-### Market Data
+### Orderbooks (Protected Endpoints)
 ```
-GET /api/orderbooks/:proposalId/:side/market-data - Market statistics (includes TWAP)
-GET /api/orderbooks/:proposalId/:side/trades - Recent trades
-GET /api/orderbooks/:proposalId/:side/depth - Order book depth
-GET /api/orderbooks/:proposalId/:side/candles - Price history/candlesticks
-GET /api/orderbooks/:proposalId/:side/twap - TWAP data only
+POST /api/orderbooks/:proposalId/:side/orders - Create order (requires wallet signature)
+DELETE /api/orderbooks/orders/:orderId - Cancel order (requires wallet signature)
+POST /api/orderbooks/my-orders - Get user's orders (requires wallet signature)
+POST /api/orderbooks/my-orders/:proposalId - Get user's orders for proposal (requires wallet signature)
+POST /api/orderbooks/my-trades - Get user's trading history (requires wallet signature)
 ```
+
+### Orderbooks (Public Endpoints)
+```
+GET /api/orderbooks/:proposalId/:side/market-data - Public market data
+GET /api/orderbooks/:proposalId/:side/twap - TWAP data
+GET /api/orderbooks/:proposalId/:side/candles - Candlestick data
+```
+
+
 
 ### Proposals
 ```
-GET /api/proposals - Get all proposals
-POST /api/proposals - Create proposal
-GET /api/proposals/:id - Get proposal by ID
-GET /api/proposals/:id/stats - Proposal statistics
-GET /api/proposals/with-market-data - Proposals with market data
+GET /api/proposals - Get all proposals (public)
+GET /api/proposals/:id - Get proposal by ID (public)
+GET /api/proposals/:id/stats - Proposal statistics (public)
+GET /api/proposals/with-market-data - Proposals with market data (public)
+POST /api/proposals - Create proposal (requires wallet signature)
+PUT /api/proposals/:id - Update proposal (requires wallet signature, creator only)
+DELETE /api/proposals/:id - Delete proposal (requires wallet signature, creator only)
 ```
 
 ### Real-time Data
@@ -75,28 +92,94 @@ GET /api/realtime/market-overview - Market overview
 GET /api/realtime/websocket-info - WebSocket connection info
 ```
 
-## Order Types
+## Authentication Flow
 
-### Limit Orders
+### 1. Generate Authentication Message
+```bash
+curl -X POST http://localhost:3001/api/auth/message \
+  -H "Content-Type: application/json" \
+  -d '{"address": "0x1234..."}'
+```
+
+Response:
 ```json
 {
+  "message": "FutarFi Authentication\nAddress: 0x1234...\nTimestamp: 1698765432000",
+  "timestamp": 1698765432000,
+  "instructions": "Sign this message with your wallet"
+}
+```
+
+### 2. Sign Message with Wallet
+Use your wallet (MetaMask, etc.) to sign the message received from step 1.
+
+### 3. Use Signature for Protected Endpoints
+Include authentication data in request body for protected endpoints:
+```json
+{
+  "address": "0x1234...",
+  "signature": "0xabcdef...",
+  "message": "FutarFi Authentication\nAddress: 0x1234...\nTimestamp: 1698765432000",
+  "timestamp": 1698765432000,
+  
+  "orderType": "buy",
+  "orderExecution": "limit",
+  "price": "1.5",
+  "amount": "100"
+}
+```
+
+## Order Types
+
+### Limit Orders (with Authentication)
+```json
+{
+  "address": "0x1234...",
+  "signature": "0xabcdef...",
+  "message": "FutarFi Authentication\nAddress: 0x1234...\nTimestamp: 1698765432000",
+  "timestamp": 1698765432000,
+  
   "orderType": "buy|sell",
   "orderExecution": "limit",
   "price": "1.5",
-  "amount": "100",
-  "userAddress": "0x..."
+  "amount": "100"
 }
 ```
 
-### Market Orders
+### Market Orders (with Authentication)
 ```json
 {
+  "address": "0x1234...",
+  "signature": "0xabcdef...",
+  "message": "FutarFi Authentication\nAddress: 0x1234...\nTimestamp: 1698765432000",
+  "timestamp": 1698765432000,
+  
   "orderType": "buy|sell",
   "orderExecution": "market",
-  "amount": "100",
-  "userAddress": "0x..."
+  "amount": "100"
 }
 ```
+
+## Order Matching Logic
+
+### Same-Side Matching
+Orders are matched on the same side (approve/reject) with opposite types (buy/sell):
+- Buy approve tokens matches with Sell approve tokens
+- Buy reject tokens matches with Sell reject tokens
+- Sell approve tokens matches with Buy approve tokens  
+- Sell reject tokens matches with Buy reject tokens
+
+### Price Priority
+- Buy orders: Match with sells at or below the buy price (best price first)
+- Sell orders: Match with buys at or above the sell price (best price first)
+- Market orders: Execute at best available price immediately
+
+### Execution Flow
+1. Order created and saved to database
+2. Automatic execution attempt against existing orders
+3. Re-check existing orders for new matches
+4. WebSocket notifications sent to clients
+5. Order book updated with new state
 
 ## WebSocket Usage
 
@@ -255,14 +338,70 @@ socket.on('market-data', (data) => console.log('Market data:', data));
 - Order matching engine
 - Comprehensive market data analytics
 
+## Security Features
+
+### Wallet Authentication Validation
+- Cryptographic signature verification prevents address spoofing
+- Message format validation ensures consistent authentication
+- Time-based expiry (5 minutes) prevents replay attacks
+- Address recovery from signature confirms wallet ownership
+
+### Protected Endpoints
+All trading operations require valid wallet signatures:
+- Order creation and cancellation (user can only cancel their own orders)
+- User-specific data retrieval (users can only see their own orders and trades)
+- Proposal management (creator-only operations)
+
+### Data Isolation
+- Each user can only access their own orders and trading history
+- Order cancellation restricted to order creator only  
+- Address verification through cryptographic signature prevents spoofing
+- Database queries automatically filter by authenticated user address
+
+### Public Endpoints
+Market data endpoints remain public for transparency:
+- Market statistics and TWAP data
+- Candlestick/price history
+- Proposal information
+
 ## Testing
 
+### Public Endpoints
 ```bash
 curl http://localhost:3001/health
 curl http://localhost:3001/api/realtime/dashboard
-curl -X POST http://localhost:3001/api/orderbooks/proposal-1/approve/orders \
+curl http://localhost:3001/api/proposals
+curl http://localhost:3001/api/orderbooks/111/approve/market-data
+```
+
+### Protected Endpoints (require wallet signature)
+```bash
+# 1. Generate message
+curl -X POST http://localhost:3001/api/auth/message \
   -H "Content-Type: application/json" \
-  -d '{"orderType": "buy", "orderExecution": "market", "amount": "100", "userAddress": "0x123"}'
+  -d '{"address": "0x1234567890123456789012345678901234567890"}'
+
+# 2. Sign the message with your wallet, then use signature:
+curl -X POST http://localhost:3001/api/orderbooks/111/approve/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "0x1234567890123456789012345678901234567890",
+    "signature": "0xYOUR_SIGNATURE_HERE",
+    "message": "FutarFi Authentication\nAddress: 0x1234567890123456789012345678901234567890\nTimestamp: 1698765432000",
+    "timestamp": 1698765432000,
+    "orderType": "buy",
+    "orderExecution": "limit",
+    "price": "1.2",
+    "amount": "100"
+  }'
+```
+
+### Testing Without Valid Signature (should fail)
+```bash
+curl -X POST http://localhost:3001/api/orderbooks/my-orders \
+  -H "Content-Type: application/json" \
+  -d '{}'
+# Expected: {"error":"Wallet authentication required","required":["address","signature","message","timestamp"]}
 ```
 
 ## Dependencies

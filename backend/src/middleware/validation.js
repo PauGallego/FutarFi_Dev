@@ -2,6 +2,12 @@ const Joi = require('joi');
 
 const validateProposal = (req, res, next) => {
   const schema = Joi.object({
+    // Authentication fields (required by verifyWalletSignature middleware)
+    address: Joi.string().optional(),
+    signature: Joi.string().optional(),
+    message: Joi.string().optional(),
+    timestamp: Joi.number().optional(),
+    // Proposal fields
     id: Joi.number().required(),
     admin: Joi.string().required(),
     title: Joi.string().required(),
@@ -28,15 +34,21 @@ const validateProposal = (req, res, next) => {
 
 const validateOrder = (req, res, next) => {
   const schema = Joi.object({
+    // Authentication fields (required by verifyWalletSignature middleware)
+    address: Joi.string().optional(),
+    signature: Joi.string().optional(),
+    message: Joi.string().optional(),
+    timestamp: Joi.number().optional(),
+    // Order fields
     orderType: Joi.string().valid('buy', 'sell').required(),
     orderExecution: Joi.string().valid('limit', 'market').optional().default('limit'),
-    price: Joi.string().when('orderExecution', {
+    price: Joi.number().when('orderExecution', {
       is: 'limit',
       then: Joi.required(),
       otherwise: Joi.optional()
     }),
-    amount: Joi.string().required(),
-    userAddress: Joi.string().required(),
+    amount: Joi.number().required(),
+    userAddress: Joi.string().optional(),
     slippage: Joi.string().optional(),
     txHash: Joi.string().optional()
   });

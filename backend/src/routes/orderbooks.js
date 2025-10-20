@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
 const OrderBook = require('../models/OrderBook');
+const Proposal = require('../models/Proposal');
+const { verifyWalletSignature, requireWalletAddress } = require('../middleware/walletAuth');
 const { 
   notifyOrderBookUpdate, 
   notifyNewOrder, 
@@ -17,11 +19,14 @@ const {
  *   description: Order book and trading endpoints
  */
 
+// ===== PUBLIC MARKET DATA ENDPOINTS =====
+
 /**
  * @swagger
- * /api/orderbooks/{proposalId}/{side}:
+ * /api/orderbooks/{proposalId}/{side}/market-data:
  *   get:
- *     summary: Get order book for a proposal side
+ *     summary: Get public market data (price, volume, TWAP only)
+ *     description: Returns aggregated market data without exposing individual orders
  *     tags: [Orderbooks]
  *     parameters:
  *       - in: path
@@ -29,226 +34,16 @@ const {
  *         required: true
  *         schema:
  *           type: string
- *         description: Proposal ID
  *       - in: path
  *         name: side
  *         required: true
  *         schema:
  *           type: string
  *           enum: [approve, reject]
- *         description: Order book side
  *     responses:
  *       200:
- *         description: Order book data
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/OrderBook'
- *       400:
- *         description: Invalid parameters
- *       404:
- *         description: Order book not found
- *       500:
- *         description: Server error
+ *         description: Public market data
  */
-router.get('/:proposalId/:side', async (req, res) => {
-  try {
-    const { proposalId, side } = req.params;
-    
-    if (!['approve', 'reject'].includes(side)) {
-      return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
-    }
-
-    const orderBook = await OrderBook.findOne({ proposalId, side });
-    if (!orderBook) {
-      return res.status(404).json({ error: 'Order book not found' });
-    }
-
-    res.json(orderBook);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get both order books for a proposal
-router.get('/:proposalId', async (req, res) => {
-  try {
-    const { proposalId } = req.params;
-    
-    const orderBooks = await OrderBook.find({ proposalId });
-    
-    const result = {
-      proposalId,
-      approve: orderBooks.find(ob => ob.side === 'approve') || null,
-      reject: orderBooks.find(ob => ob.side === 'reject') || null
-    };
-
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * @swagger
- * /api/orderbooks/{proposalId}/{side}/orders:
- *   post:
- *     summary: Create a new order
- *     tags: [Orderbooks]
- *     parameters:
- *       - in: path
- *         name: proposalId
- *         required: true
- *         schema:
- *           type: string
- *         description: Proposal ID
- *       - in: path
- *         name: side
- *         required: true
- *         schema:
- *           type: string
- *           enum: [approve, reject]
- *         description: Order book side
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/Order'
- *           examples:
- *             limitOrder:
- *               summary: Limit Order
- *               value:
- *                 orderType: "buy"
- *                 orderExecution: "limit"
- *                 price: "1.5"
- *                 amount: "100"
- *                 userAddress: "0x742d35Cc6634C0532925a3b8D4c4B2B1"
- *             marketOrder:
- *               summary: Market Order
- *               value:
- *                 orderType: "sell"
- *                 orderExecution: "market"
- *                 amount: "50"
- *                 userAddress: "0x742d35Cc6634C0532925a3b8D4c4B2B1"
- *     responses:
- *       201:
- *         description: Order created successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 order:
- *                   $ref: '#/components/schemas/Order'
- *                 orderBook:
- *                   $ref: '#/components/schemas/OrderBook'
- *       400:
- *         description: Invalid order data
- *       500:
- *         description: Server error
- */
-router.post('/:proposalId/:side/orders', async (req, res) => {
-  try {
-    const { proposalId, side } = req.params;
-    const { orderType, orderExecution = 'limit', price, amount, userAddress } = req.body;
-    const io = req.app.get('io');
-
-    if (!['approve', 'reject'].includes(side)) {
-      return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
-    }
-
-    if (!['buy', 'sell'].includes(orderType)) {
-      return res.status(400).json({ error: 'Invalid orderType. Must be buy or sell' });
-    }
-
-    if (!['limit', 'market'].includes(orderExecution)) {
-      return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
-    }
-
-    // For market orders, price is not required but we'll calculate it
-    let orderPrice = price;
-    if (orderExecution === 'market') {
-      orderPrice = await getMarketPrice(proposalId, side, orderType);
-      if (!orderPrice) {
-        return res.status(400).json({ error: 'No market price available for market order' });
-      }
-    }
-
-    // Create order
-    const order = new Order({
-      proposalId,
-      side,
-      orderType,
-      orderExecution,
-      price: orderPrice,
-      amount,
-      userAddress
-    });
-
-    await order.save();
-
-    // If it's a market order, try to match immediately
-    if (orderExecution === 'market') {
-      await executeMarketOrder(order, io);
-    }
-
-    // Update order book
-    await updateOrderBook(proposalId, side, io);
-
-    // Notify clients
-    notifyNewOrder(io, order);
-
-    res.status(201).json(order);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Get orders for a proposal side
-router.get('/:proposalId/:side/orders', async (req, res) => {
-  try {
-    const { proposalId, side } = req.params;
-    const { userAddress, status } = req.query;
-
-    const filter = { proposalId, side };
-    if (userAddress) filter.userAddress = userAddress;
-    if (status) filter.status = status;
-
-    const orders = await Order.find(filter).sort({ createdAt: -1 });
-    res.json(orders);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Cancel order
-router.delete('/orders/:orderId', async (req, res) => {
-  try {
-    const io = req.app.get('io');
-    const order = await Order.findByIdAndUpdate(
-      req.params.orderId,
-      { status: 'cancelled' },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    // Update order book
-    await updateOrderBook(order.proposalId, order.side, io);
-
-    // Notify clients
-    notifyOrderStatusChange(io, order, 'open');
-
-    res.json(order);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get market data for a proposal side
 router.get('/:proposalId/:side/market-data', async (req, res) => {
   try {
     const { proposalId, side } = req.params;
@@ -258,23 +53,34 @@ router.get('/:proposalId/:side/market-data', async (req, res) => {
     }
 
     const orderBook = await OrderBook.findOne({ proposalId, side });
-    const lastPrice = await getLastTradePrice(proposalId, side);
-    const volume24h = await get24hVolume(proposalId, side);
-    const priceChange24h = await get24hPriceChange(proposalId, side);
     
-    const bids = orderBook ? orderBook.bids : [];
-    const asks = orderBook ? orderBook.asks : [];
-    const spread = calculateSpread(bids, asks);
+    if (!orderBook) {
+      return res.json({
+        proposalId,
+        side,
+        lastPrice: '0',
+        volume24h: '0',
+        high24h: '0',
+        low24h: '0',
+        priceChange24h: '0',
+        priceChangePercent24h: '0',
+        twap1h: '0',
+        twap4h: '0',
+        twap24h: '0',
+        twapLastUpdate: null,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     res.json({
       proposalId,
       side,
-      lastPrice: lastPrice || '0',
-      volume24h: volume24h || '0',
-      priceChange24h: priceChange24h || '0',
-      spread,
-      highestBid: bids.length > 0 ? bids[0].price : '0',
-      lowestAsk: asks.length > 0 ? asks[0].price : '0',
+      lastPrice: orderBook.lastPrice || '0',
+      volume24h: orderBook.volume24h || '0',
+      high24h: orderBook.high24h || '0',
+      low24h: orderBook.low24h || '0',
+      priceChange24h: orderBook.priceChange24h || '0',
+      priceChangePercent24h: orderBook.priceChangePercent24h || '0',
       twap1h: orderBook?.twap1h || '0',
       twap4h: orderBook?.twap4h || '0',
       twap24h: orderBook?.twap24h || '0',
@@ -286,81 +92,46 @@ router.get('/:proposalId/:side/market-data', async (req, res) => {
   }
 });
 
-// Get recent trades for a proposal side
-router.get('/:proposalId/:side/trades', async (req, res) => {
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/twap:
+ *   get:
+ *     summary: Get TWAP data
+ *     description: Time-weighted average price data
+ *     tags: [Orderbooks]
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject]
+ *     responses:
+ *       200:
+ *         description: TWAP data
+ */
+router.get('/:proposalId/:side/twap', async (req, res) => {
   try {
     const { proposalId, side } = req.params;
-    const { limit = 50 } = req.query;
-    
-    if (!['approve', 'reject'].includes(side)) {
-      return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
-    }
-
-    const trades = await Order.find({
-      proposalId,
-      side,
-      filledAmount: { $gt: '0' }
-    })
-    .sort({ updatedAt: -1 })
-    .limit(parseInt(limit))
-    .select('price filledAmount orderType updatedAt userAddress');
-
-    res.json(trades.map(trade => ({
-      price: trade.price,
-      amount: trade.filledAmount,
-      side: trade.orderType,
-      timestamp: trade.updatedAt,
-      userAddress: trade.userAddress
-    })));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get order book depth
-router.get('/:proposalId/:side/depth', async (req, res) => {
-  try {
-    const { proposalId, side } = req.params;
-    const { levels = 20 } = req.query;
     
     if (!['approve', 'reject'].includes(side)) {
       return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
     }
 
     const orderBook = await OrderBook.findOne({ proposalId, side });
-    if (!orderBook) {
-      return res.json({ bids: [], asks: [] });
-    }
-
-    const maxLevels = parseInt(levels);
-    const bids = orderBook.bids.slice(0, maxLevels);
-    const asks = orderBook.asks.slice(0, maxLevels);
-
-    // Calculate cumulative amounts
-    let cumulativeBidAmount = BigInt(0);
-    let cumulativeAskAmount = BigInt(0);
-
-    const bidsWithCumulative = bids.map(bid => {
-      cumulativeBidAmount += BigInt(bid.amount);
-      return {
-        ...bid,
-        cumulative: cumulativeBidAmount.toString()
-      };
-    });
-
-    const asksWithCumulative = asks.map(ask => {
-      cumulativeAskAmount += BigInt(ask.amount);
-      return {
-        ...ask,
-        cumulative: cumulativeAskAmount.toString()
-      };
-    });
-
+    
     res.json({
       proposalId,
       side,
-      bids: bidsWithCumulative,
-      asks: asksWithCumulative,
+      twap1h: orderBook?.twap1h || '0',
+      twap4h: orderBook?.twap4h || '0',
+      twap24h: orderBook?.twap24h || '0',
+      lastUpdate: orderBook?.twapLastUpdate || orderBook?.updatedAt,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -368,7 +139,40 @@ router.get('/:proposalId/:side/depth', async (req, res) => {
   }
 });
 
-// Get price history/candlestick data
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/candles:
+ *   get:
+ *     summary: Get candlestick data
+ *     description: Price history in candlestick format
+ *     tags: [Orderbooks]
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject]
+ *       - in: query
+ *         name: interval
+ *         schema:
+ *           type: string
+ *           enum: [1m, 5m, 15m, 1h, 4h, 1d]
+ *           default: 1h
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *     responses:
+ *       200:
+ *         description: Candlestick data
+ */
 router.get('/:proposalId/:side/candles', async (req, res) => {
   try {
     const { proposalId, side } = req.params;
@@ -386,45 +190,44 @@ router.get('/:proposalId/:side/candles', async (req, res) => {
       '1h': 60 * 60 * 1000,
       '4h': 4 * 60 * 60 * 1000,
       '1d': 24 * 60 * 60 * 1000
-    }[interval] || 60 * 60 * 1000;
+    }[interval];
 
-    const now = new Date();
-    const startTime = new Date(now.getTime() - parseInt(limit) * intervalMs);
+    if (!intervalMs) {
+      return res.status(400).json({ error: 'Invalid interval' });
+    }
 
-    // Get trades in the time range
-    const trades = await Order.find({
+    // Get aggregated price data (not individual trades)
+    const PriceHistory = require('../models/PriceHistory');
+    const priceData = await PriceHistory.find({
       proposalId,
       side,
-      filledAmount: { $gt: '0' },
-      updatedAt: { $gte: startTime }
-    }).sort({ updatedAt: 1 });
+      timestamp: { $gte: new Date(Date.now() - parseInt(limit) * intervalMs) }
+    }).sort({ timestamp: 1 });
 
-    // Group trades into candles
+    // Group into candles
     const candles = [];
-    let currentTime = startTime.getTime();
-
-    while (currentTime < now.getTime()) {
+    let currentTime = Date.now() - parseInt(limit) * intervalMs;
+    
+    for (let i = 0; i < parseInt(limit); i++) {
       const candleStart = new Date(currentTime);
       const candleEnd = new Date(currentTime + intervalMs);
       
-      const candleTrades = trades.filter(trade => 
-        trade.updatedAt >= candleStart && trade.updatedAt < candleEnd
+      const candleData = priceData.filter(data => 
+        data.timestamp >= candleStart && data.timestamp < candleEnd
       );
 
-      if (candleTrades.length > 0) {
-        const prices = candleTrades.map(t => parseFloat(t.price));
-        const volumes = candleTrades.map(t => parseFloat(t.filledAmount));
-        
+      if (candleData.length > 0) {
+        const prices = candleData.map(d => parseFloat(d.price));
         candles.push({
-          timestamp: currentTime,
+          timestamp: candleStart.toISOString(),
           open: prices[0],
           high: Math.max(...prices),
           low: Math.min(...prices),
           close: prices[prices.length - 1],
-          volume: volumes.reduce((sum, vol) => sum + vol, 0)
+          volume: candleData.reduce((sum, d) => sum + parseFloat(d.volume), 0)
         });
       }
-
+      
       currentTime += intervalMs;
     }
 
@@ -439,159 +242,401 @@ router.get('/:proposalId/:side/candles', async (req, res) => {
   }
 });
 
-// Get TWAP data for a proposal side
-router.get('/:proposalId/:side/twap', async (req, res) => {
+// ===== PROTECTED ENDPOINTS (REQUIRE WALLET SIGNATURE) =====
+
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/orders:
+ *   post:
+ *     summary: Create order (requires wallet signature)
+ *     description: Creates a new order. User must provide wallet signature for authentication.
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp, orderType, price, amount]
+ *             properties:
+ *               address:
+ *                 type: string
+ *                 description: Wallet address
+ *               signature:
+ *                 type: string
+ *                 description: Wallet signature
+ *               message:
+ *                 type: string
+ *                 description: Signed message
+ *               timestamp:
+ *                 type: number
+ *                 description: Message timestamp
+ *               orderType:
+ *                 type: string
+ *                 enum: [buy, sell]
+ *               price:
+ *                 type: number
+ *               amount:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Order created successfully
+ *       401:
+ *         description: Invalid wallet signature
+ */
+router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res) => {
   try {
     const { proposalId, side } = req.params;
-    
-    const orderBook = await OrderBook.findOne({ proposalId, side });
-    if (!orderBook) {
-      return res.status(404).json({ error: 'Order book not found' });
+    const { orderType, orderExecution = 'limit', price, amount } = req.body;
+    const userAddress = req.userAddress; // From wallet authentication
+    const io = req.app.get('io');
+
+    // Validate inputs
+    if (!proposalId) {
+      return res.status(400).json({ error: 'Proposal ID is required' });
     }
 
-    res.json({
+    if (!userAddress) {
+      return res.status(401).json({ error: 'User address not found in authentication' });
+    }
+
+    if (!['approve', 'reject'].includes(side)) {
+      return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
+    }
+
+    if (!['buy', 'sell'].includes(orderType)) {
+      return res.status(400).json({ error: 'Invalid orderType. Must be buy or sell' });
+    }
+
+    if (!['limit', 'market'].includes(orderExecution)) {
+      return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
+    }
+
+    // Verify that the proposal exists
+    const proposal = await Proposal.findOne({ id: proposalId });
+    if (!proposal) {
+      return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
+    }
+
+    // Check if proposal has required fields
+    if (!proposal.id || !proposal.admin) {
+      return res.status(400).json({ error: 'Proposal data is incomplete' });
+    }
+
+    // Check if proposal is active
+    if (!proposal.isActive) {
+      return res.status(400).json({ error: 'Proposal is not active for trading' });
+    }
+
+    // For market orders, price is not required but we'll calculate it
+    if (orderExecution === 'limit' && (!price || parseFloat(price) <= 0)) {
+      return res.status(400).json({ error: 'Price required for limit orders and must be greater than 0' });
+    }
+
+    if (!amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Amount is required and must be greater than 0' });
+    }
+
+    const order = new Order({
       proposalId,
       side,
-      twap1h: orderBook.twap1h || '0',
-      twap4h: orderBook.twap4h || '0',
-      twap24h: orderBook.twap24h || '0',
-      lastUpdate: orderBook.twapLastUpdate || orderBook.updatedAt,
-      timestamp: new Date().toISOString()
+      orderType,
+      orderExecution,
+      price: price?.toString() || '0',
+      amount: amount.toString(),
+      userAddress,
+      filledAmount: '0',
+      status: 'open',
+      createdAt: new Date(),
+      updatedAt: new Date()
     });
+
+    await order.save();
+
+    if (!order || !order._id) {
+      return res.status(500).json({ error: 'Failed to create order' });
+    }
+
+    // Update order book (with error handling)
+    try {
+      await updateOrderBook(proposalId, side, io);
+    } catch (updateError) {
+      console.error('Error updating order book after creation:', updateError);
+      // Don't fail the whole operation if order book update fails
+    }
+
+    // Execute order if it's a market order or if there are matching orders (with error handling)
+    try {
+      await executeOrder(order, io);
+      
+      // Also try to execute existing orders that might now have a match
+      const existingOrders = await Order.find({
+        proposalId: order.proposalId,
+        side: order.side,
+        orderType: order.orderType === 'buy' ? 'sell' : 'buy', // Opposite type
+        status: 'open',
+        _id: { $ne: order._id } // Exclude the order we just created
+      }).sort({ createdAt: 1 }); // Oldest first
+      
+      console.log(`Found ${existingOrders.length} existing orders to re-check for matching`);
+      
+      for (const existingOrder of existingOrders) {
+        try {
+          await executeOrder(existingOrder, io);
+        } catch (existingExecuteError) {
+          console.error('Error executing existing order:', existingExecuteError);
+        }
+      }
+    } catch (executeError) {
+      console.error('Error executing order:', executeError);
+      // Don't fail the whole operation if order execution fails
+    }
+
+    // Notify clients (with error handling)
+    try {
+      if (io && typeof notifyNewOrder === 'function') {
+        notifyNewOrder(io, order);
+      }
+    } catch (notifyError) {
+      console.error('Error notifying new order:', notifyError);
+      // Don't fail the whole operation if notification fails
+    }
+
+    res.status(201).json(order);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error creating order:', error);
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Get execution history for an order
-router.get('/orders/:orderId/executions', async (req, res) => {
+/**
+ * @swagger
+ * /api/orderbooks/orders/{orderId}:
+ *   delete:
+ *     summary: Cancel order (requires wallet signature)
+ *     description: Cancels an order. Only the order creator can cancel it.
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Order cancelled successfully
+ *       401:
+ *         description: Invalid wallet signature
+ *       403:
+ *         description: Not authorized to cancel this order
+ *       404:
+ *         description: Order not found
+ */
+router.delete('/orders/:orderId', verifyWalletSignature, async (req, res) => {
   try {
     const { orderId } = req.params;
+    const userAddress = req.userAddress; // From wallet authentication
+    const io = req.app.get('io');
+
+    // Validate inputs
+    if (!orderId) {
+      return res.status(400).json({ error: 'Order ID is required' });
+    }
+
+    if (!userAddress) {
+      return res.status(401).json({ error: 'User address not found in authentication' });
+    }
     
-    const order = await Order.findById(orderId);
-    if (!order) {
+    // First check if order exists and belongs to authenticated user
+    const existingOrder = await Order.findById(orderId);
+    if (!existingOrder) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Get all executions for this order by looking at price history
-    const PriceHistory = require('../models/PriceHistory');
-    const executions = await PriceHistory.find({
-      proposalId: order.proposalId,
-      side: order.side,
-      timestamp: { 
-        $gte: order.createdAt,
-        $lte: order.updatedAt 
-      }
-    }).sort({ timestamp: 1 });
-
-    res.json({
-      orderId,
-      order: {
-        amount: order.amount,
-        filledAmount: order.filledAmount,
-        status: order.status,
-        executedPrice: order.executedPrice
-      },
-      executions: executions.map(exec => ({
-        price: exec.price,
-        amount: exec.volume,
-        timestamp: exec.timestamp
-      })),
-      summary: {
-        totalExecutions: executions.length,
-        averagePrice: order.executedPrice || '0',
-        fillPercentage: order.amount !== '0' ? 
-          ((BigInt(order.filledAmount) * BigInt(100)) / BigInt(order.amount)).toString() + '%' : '0%'
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get filled orders for a proposal side
-router.get('/:proposalId/:side/orders/filled', async (req, res) => {
-  try {
-    const { proposalId, side } = req.params;
-    const { userAddress, limit = 50 } = req.query;
-
-    const filter = { 
-      proposalId, 
-      side, 
-      status: 'filled'
-    };
-    if (userAddress) filter.userAddress = userAddress;
-
-    const orders = await Order.find(filter)
-      .sort({ updatedAt: -1 })
-      .limit(parseInt(limit));
-    
-    res.json(orders);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get open orders (including partial) for a proposal side
-router.get('/:proposalId/:side/orders/open', async (req, res) => {
-  try {
-    const { proposalId, side } = req.params;
-    const { userAddress } = req.query;
-
-    const filter = { 
-      proposalId, 
-      side, 
-      status: { $in: ['open', 'partial'] }
-    };
-    if (userAddress) filter.userAddress = userAddress;
-
-    const orders = await Order.find(filter)
-      .sort({ createdAt: -1 });
-    
-    res.json(orders);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get only partial orders for a proposal side
-router.get('/:proposalId/:side/orders/partial', async (req, res) => {
-  try {
-    const { proposalId, side } = req.params;
-    const { userAddress } = req.query;
-
-    const filter = { 
-      proposalId, 
-      side, 
-      status: 'partial'
-    };
-    if (userAddress) filter.userAddress = userAddress;
-
-    const orders = await Order.find(filter)
-      .sort({ updatedAt: -1 });
-    
-    res.json(orders);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get orders by specific status
-router.get('/:proposalId/:side/orders/status/:status', async (req, res) => {
-  try {
-    const { proposalId, side, status } = req.params;
-    const { userAddress, limit = 100 } = req.query;
-
-    if (!['open', 'filled', 'cancelled', 'partial'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status. Must be: open, filled, cancelled, partial' });
+    // Check if order has required fields
+    if (!existingOrder.userAddress) {
+      return res.status(400).json({ error: 'Order userAddress is missing' });
     }
 
-    const filter = { proposalId, side, status };
-    if (userAddress) filter.userAddress = userAddress;
+    if (!existingOrder.proposalId || !existingOrder.side) {
+      return res.status(400).json({ error: 'Order data is incomplete' });
+    }
+    
+    if (existingOrder.userAddress.toLowerCase() !== userAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Not authorized to cancel this order' });
+    }
 
-    const orders = await Order.find(filter)
-      .sort({ updatedAt: -1 })
-      .limit(parseInt(limit));
+    // Check if order can be cancelled
+    if (existingOrder.status === 'cancelled') {
+      return res.status(400).json({ error: 'Order is already cancelled' });
+    }
+
+    if (existingOrder.status === 'filled') {
+      return res.status(400).json({ error: 'Cannot cancel a filled order' });
+    }
+    
+    const order = await Order.findByIdAndUpdate(
+      orderId,
+      { 
+        status: 'cancelled',
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
+
+    if (!order) {
+      return res.status(500).json({ error: 'Failed to update order status' });
+    }
+
+    // Update order book (with error handling)
+    try {
+      await updateOrderBook(order.proposalId, order.side, io);
+    } catch (updateError) {
+      console.error('Error updating order book after cancellation:', updateError);
+      // Don't fail the whole operation if order book update fails
+    }
+
+    // Notify clients (with error handling)
+    try {
+      if (io && typeof notifyOrderStatusChange === 'function') {
+        notifyOrderStatusChange(io, order, 'cancelled');
+      }
+    } catch (notifyError) {
+      console.error('Error notifying order status change:', notifyError);
+      // Don't fail the whole operation if notification fails
+    }
+
+    res.json(order);
+  } catch (error) {
+    console.error('Error cancelling order:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/my-orders:
+ *   post:
+ *     summary: Get my orders (requires wallet signature)
+ *     description: Get all orders for the authenticated user
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *               status:
+ *                 type: string
+ *                 enum: [open, filled, cancelled, partial]
+ *               proposalId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User orders
+ *       401:
+ *         description: Authentication required
+ */
+router.post('/my-orders', verifyWalletSignature, async (req, res) => {
+  try {
+    const { status, proposalId } = req.body;
+    const filter = { userAddress: req.userAddress };
+    
+    if (status) filter.status = status;
+    if (proposalId) filter.proposalId = proposalId;
+    
+    const orders = await Order.find(filter).sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/my-orders/{proposalId}:
+ *   post:
+ *     summary: Get my orders for specific proposal (requires wallet signature)
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: User orders for proposal
+ */
+router.post('/my-orders/:proposalId', verifyWalletSignature, async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    const orders = await Order.find({ 
+      userAddress: req.userAddress,
+      proposalId 
+    }).sort({ createdAt: -1 });
     
     res.json(orders);
   } catch (error) {
@@ -599,357 +644,232 @@ router.get('/:proposalId/:side/orders/status/:status', async (req, res) => {
   }
 });
 
-// Get user's order summary for a proposal side
-router.get('/:proposalId/:side/orders/summary/:userAddress', async (req, res) => {
+/**
+ * @swagger
+ * /api/orderbooks/my-trades:
+ *   post:
+ *     summary: Get my trading history (requires wallet signature)
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: User trading history
+ */
+router.post('/my-trades', verifyWalletSignature, async (req, res) => {
   try {
-    const { proposalId, side, userAddress } = req.params;
-
-    const [openOrders, partialOrders, filledOrders, cancelledOrders] = await Promise.all([
-      Order.countDocuments({ proposalId, side, userAddress, status: 'open' }),
-      Order.countDocuments({ proposalId, side, userAddress, status: 'partial' }),
-      Order.countDocuments({ proposalId, side, userAddress, status: 'filled' }),
-      Order.countDocuments({ proposalId, side, userAddress, status: 'cancelled' })
-    ]);
-
-    // Calculate total volumes
-    const volumeStats = await Order.aggregate([
-      { $match: { proposalId, side, userAddress } },
-      {
-        $group: {
-          _id: '$status',
-          totalAmount: { $sum: { $toDouble: '$amount' } },
-          totalFilled: { $sum: { $toDouble: '$filledAmount' } },
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    res.json({
-      proposalId,
-      side,
-      userAddress,
-      counts: {
-        open: openOrders,
-        partial: partialOrders,
-        filled: filledOrders,
-        cancelled: cancelledOrders,
-        total: openOrders + partialOrders + filledOrders + cancelledOrders
-      },
-      volumes: volumeStats,
-      timestamp: new Date().toISOString()
-    });
+    const trades = await Order.find({ 
+      userAddress: req.userAddress,
+      status: { $in: ['filled', 'partial'] }
+    }).sort({ updatedAt: -1 });
+    
+    res.json(trades);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Helper function to get market price
-async function getMarketPrice(proposalId, side, orderType) {
-  const orderBook = await OrderBook.findOne({ proposalId, side });
-  if (!orderBook) return null;
+// ===== HELPER FUNCTIONS =====
 
-  // For buy market orders, get the lowest ask price
-  // For sell market orders, get the highest bid price
-  if (orderType === 'buy' && orderBook.asks.length > 0) {
-    return orderBook.asks[0].price;
-  } else if (orderType === 'sell' && orderBook.bids.length > 0) {
-    return orderBook.bids[0].price;
+async function updateOrderBook(proposalId, side, io) {
+  try {
+    if (!proposalId || !side) {
+      console.error('Invalid proposalId or side for updateOrderBook');
+      return;
+    }
+
+    let orderBook = await OrderBook.findOne({ proposalId, side });
+    if (!orderBook) {
+      // Create new order book if it doesn't exist
+      orderBook = new OrderBook({
+        proposalId,
+        side,
+        bids: [],
+        asks: [],
+        lastPrice: '0',
+        volume24h: '0',
+        priceChange24h: '0'
+      });
+      await orderBook.save();
+    }
+
+    // Recalculate order book from current orders
+    const orders = await Order.find({ 
+      proposalId, 
+      side, 
+      status: 'open' 
+    }).sort({ price: side === 'approve' ? -1 : 1 });
+
+    const bids = [];
+    const asks = [];
+
+    for (const order of orders) {
+      const orderData = {
+        price: order.price,
+        amount: order.amount,
+        filledAmount: order.filledAmount || '0'
+      };
+      
+      if (order.orderType === 'buy') {
+        bids.push(orderData);
+      } else {
+        asks.push(orderData);
+      }
+    }
+
+    orderBook.bids = bids;
+    orderBook.asks = asks;
+    await orderBook.save();
+
+    if (io && typeof notifyOrderBookUpdate === 'function') {
+      notifyOrderBookUpdate(io, orderBook);
+    }
+  } catch (error) {
+    console.error('Error updating order book:', error);
   }
-  
-  return null;
 }
 
-// Helper function to execute market order
-async function executeMarketOrder(order, io) {
-  const PriceHistory = require('../models/PriceHistory');
-  
-  const oppositeOrders = await Order.find({
-    proposalId: order.proposalId,
-    side: order.side,
-    orderType: order.orderType === 'buy' ? 'sell' : 'buy',
-    status: 'open'
-  }).sort({ 
-    price: order.orderType === 'buy' ? 1 : -1, // buy orders want lowest sell prices, sell orders want highest buy prices
-    createdAt: 1 
-  });
-
-  let remainingAmount = BigInt(order.amount);
-  let totalValue = BigInt(0);
-  let totalExecutedAmount = BigInt(0);
-  
-  for (const oppositeOrder of oppositeOrders) {
-    if (remainingAmount <= 0) break;
-
-    const currentPrice = parseFloat(oppositeOrder.price);
-    const availableAmount = BigInt(oppositeOrder.amount) - BigInt(oppositeOrder.filledAmount);
-    const matchedAmount = remainingAmount > availableAmount ? availableAmount : remainingAmount;
-
-    // Update filled amounts
-    oppositeOrder.filledAmount = (BigInt(oppositeOrder.filledAmount) + matchedAmount).toString();
-    order.filledAmount = (BigInt(order.filledAmount) + matchedAmount).toString();
-
-    // Track execution details for price calculation
-    const executionValue = matchedAmount * BigInt(Math.floor(currentPrice * 1000000)) / BigInt(1000000);
-    totalValue += executionValue;
-    totalExecutedAmount += matchedAmount;
-
-    // Update statuses
-    if (BigInt(oppositeOrder.filledAmount) >= BigInt(oppositeOrder.amount)) {
-      oppositeOrder.status = 'filled';
-    } else {
-      oppositeOrder.status = 'partial';
+async function executeOrder(order, io) {
+  try {
+    if (!order || !order.proposalId || !order.side) {
+      console.error('Invalid order data for executeOrder');
+      return;
     }
 
-    remainingAmount -= matchedAmount;
+    console.log(`Executing order: ${order._id}, side: ${order.side}, type: ${order.orderType}, execution: ${order.orderExecution}, price: ${order.price}, amount: ${order.amount}`);
 
-    if (BigInt(order.filledAmount) >= BigInt(order.amount)) {
-      order.status = 'filled';
+    const oppositeOrderType = order.orderType === 'buy' ? 'sell' : 'buy';
+    
+    // Find matching orders based on order execution type
+    // Key fix: Match with orders on the SAME SIDE but OPPOSITE ORDER TYPE
+    // This is because both parties are trading the same token (approve/reject)
+    let matchingOrders;
+    
+    if (order.orderExecution === 'market') {
+      // Market orders: match with any price, best price first
+      matchingOrders = await Order.find({
+        proposalId: order.proposalId,
+        side: order.side, // Same side (same token)
+        orderType: oppositeOrderType, // Opposite order type (buy vs sell)
+        status: 'open'
+      }).sort({ 
+        price: order.orderType === 'buy' ? 1 : -1, // Best price first
+        createdAt: 1
+      });
     } else {
-      order.status = 'partial';
-    }
-
-    // Save updated orders
-    await oppositeOrder.save();
-
-    // Record price history for TWAP calculation
-    if (matchedAmount > 0) {
-      await PriceHistory.create({
+      // Limit orders: match with orders at same or better price
+      const priceFilter = order.orderType === 'buy' 
+        ? { $lte: parseFloat(order.price) } // Buy: match with sells at or below our price
+        : { $gte: parseFloat(order.price) }; // Sell: match with buys at or above our price
+      
+      console.log(`Searching for matching orders with filter:`, {
         proposalId: order.proposalId,
         side: order.side,
-        price: oppositeOrder.price,
-        volume: matchedAmount.toString(),
-        timestamp: new Date()
+        orderType: oppositeOrderType,
+        priceFilter,
+        orderPrice: order.price,
+        status: 'open'
+      });
+      
+      matchingOrders = await Order.find({
+        proposalId: order.proposalId,
+        side: order.side, // Same side (same token)
+        orderType: oppositeOrderType, // Opposite order type (buy vs sell)
+        price: priceFilter,
+        status: 'open'
+      }).sort({ 
+        price: order.orderType === 'buy' ? 1 : -1, // Best price first
+        createdAt: 1
       });
     }
 
-    // Notify about the match
-    notifyOrderMatched(io, 
-      order.orderType === 'buy' ? order : oppositeOrder,
-      order.orderType === 'buy' ? oppositeOrder : order,
-      matchedAmount.toString(),
-      oppositeOrder.price
-    );
+    console.log(`Found ${matchingOrders.length} potential matching orders`);
+    if (matchingOrders.length > 0) {
+      console.log('Matching orders found:', matchingOrders.map(o => ({
+        id: o._id,
+        price: o.price,
+        amount: o.amount,
+        orderType: o.orderType,
+        side: o.side
+      })));
+    }
 
-    notifyOrderStatusChange(io, oppositeOrder, 'open');
-  }
-
-  // Calculate weighted average execution price
-  if (totalExecutedAmount > 0) {
-    const avgPrice = Number(totalValue) / Number(totalExecutedAmount);
-    order.executedPrice = avgPrice.toFixed(6);
-  }
-
-  if (remainingAmount > 0) {
-    order.status = BigInt(order.filledAmount) > 0 ? 'partial' : 'open';
-  }
-
-  await order.save();
-  
-  // Update TWAP after execution
-  await updateTWAP(order.proposalId, order.side);
-}
-
-// Helper function to update order book
-async function updateOrderBook(proposalId, side, io) {
-  const orders = await Order.find({ 
-    proposalId, 
-    side, 
-    status: { $in: ['open', 'partial'] }
-  }).sort({ price: -1 });
-
-  const bids = {};
-  const asks = {};
-
-  orders.forEach(order => {
-    const book = order.orderType === 'buy' ? bids : asks;
-    const key = order.price;
+    let remainingAmount = parseFloat(order.amount);
+    let totalExecuted = 0;
     
-    if (!book[key]) {
-      book[key] = { price: order.price, amount: '0', orderCount: 0 };
+    for (const matchingOrder of matchingOrders) {
+      if (remainingAmount <= 0) break;
+      
+      const availableAmount = parseFloat(matchingOrder.amount) - parseFloat(matchingOrder.filledAmount || '0');
+      const tradeAmount = Math.min(remainingAmount, availableAmount);
+      
+      if (tradeAmount > 0) {
+        console.log(`Executing trade: ${tradeAmount} at price ${matchingOrder.price}`);
+        
+        // Update the matching order
+        const newFilledAmount = parseFloat(matchingOrder.filledAmount || '0') + tradeAmount;
+        matchingOrder.filledAmount = newFilledAmount.toString();
+        
+        if (newFilledAmount >= parseFloat(matchingOrder.amount)) {
+          matchingOrder.status = 'filled';
+        } else {
+          matchingOrder.status = 'partially_filled';
+        }
+        matchingOrder.updatedAt = new Date();
+        
+        await matchingOrder.save();
+        
+        // Update our order
+        remainingAmount -= tradeAmount;
+        totalExecuted += tradeAmount;
+        
+        // For market orders, use the matching order's price
+        if (order.orderExecution === 'market') {
+          order.price = matchingOrder.price;
+        }
+        
+        console.log(`Trade executed: ${tradeAmount}, remaining: ${remainingAmount}`);
+      }
     }
     
-    const remainingAmount = BigInt(order.amount) - BigInt(order.filledAmount);
-    book[key].amount = (BigInt(book[key].amount) + remainingAmount).toString();
-    book[key].orderCount += 1;
-  });
-
-  const bidsArray = Object.values(bids)
-    .filter(item => BigInt(item.amount) > 0)
-    .sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
-  const asksArray = Object.values(asks)
-    .filter(item => BigInt(item.amount) > 0)
-    .sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
-
-  // Calculate market data
-  const lastPrice = await getLastTradePrice(proposalId, side);
-  const volume24h = await get24hVolume(proposalId, side);
-  const priceChange24h = await get24hPriceChange(proposalId, side);
-
-  const updatedOrderBook = await OrderBook.findOneAndUpdate(
-    { proposalId, side },
-    { 
-      bids: bidsArray,
-      asks: asksArray,
-      lastPrice: lastPrice || '0',
-      volume24h: volume24h || '0',
-      updatedAt: new Date()
-    },
-    { upsert: true, new: true }
-  );
-
-  // Notify clients about order book update
-  if (io) {
-    notifyOrderBookUpdate(io, proposalId, side, updatedOrderBook);
+    // Update the original order
+    order.filledAmount = totalExecuted.toString();
     
-    // Also send market data
-    notifyMarketData(io, proposalId, side, {
-      lastPrice: lastPrice || '0',
-      volume24h: volume24h || '0',
-      priceChange24h: priceChange24h || '0',
-      spread: calculateSpread(bidsArray, asksArray)
-    });
-  }
+    if (totalExecuted >= parseFloat(order.amount)) {
+      order.status = 'filled';
+    } else if (totalExecuted > 0) {
+      order.status = 'partially_filled';
+    }
+    
+    order.updatedAt = new Date();
+    await order.save();
+    
+    console.log(`Order ${order._id} final status: ${order.status}, filled: ${order.filledAmount}/${order.amount}`);
 
-  return updatedOrderBook;
-}
-
-// Helper function to get last trade price
-async function getLastTradePrice(proposalId, side) {
-  const lastOrder = await Order.findOne({
-    proposalId,
-    side,
-    status: { $in: ['filled', 'partial'] },
-    filledAmount: { $gt: '0' }
-  }).sort({ updatedAt: -1 });
-
-  return lastOrder ? lastOrder.price : null;
-}
-
-// Helper function to get 24h volume
-async function get24hVolume(proposalId, side) {
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  
-  const orders = await Order.find({
-    proposalId,
-    side,
-    updatedAt: { $gte: yesterday },
-    filledAmount: { $gt: '0' }
-  });
-
-  let totalVolume = BigInt(0);
-  orders.forEach(order => {
-    totalVolume += BigInt(order.filledAmount);
-  });
-
-  return totalVolume.toString();
-}
-
-// Helper function to get 24h price change
-async function get24hPriceChange(proposalId, side) {
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  
-  const oldestOrder = await Order.findOne({
-    proposalId,
-    side,
-    updatedAt: { $gte: yesterday },
-    filledAmount: { $gt: '0' }
-  }).sort({ updatedAt: 1 });
-
-  const newestOrder = await Order.findOne({
-    proposalId,
-    side,
-    filledAmount: { $gt: '0' }
-  }).sort({ updatedAt: -1 });
-
-  if (!oldestOrder || !newestOrder) return '0';
-
-  const oldPrice = parseFloat(oldestOrder.price);
-  const newPrice = parseFloat(newestOrder.price);
-  
-  if (oldPrice === 0) return '0';
-  
-  const change = ((newPrice - oldPrice) / oldPrice) * 100;
-  return change.toFixed(2);
-}
-
-// Helper function to calculate spread
-function calculateSpread(bids, asks) {
-  if (bids.length === 0 || asks.length === 0) return '0';
-  
-  const highestBid = parseFloat(bids[0].price);
-  const lowestAsk = parseFloat(asks[0].price);
-  
-  if (lowestAsk === 0) return '0';
-  
-  const spread = ((lowestAsk - highestBid) / lowestAsk) * 100;
-  return spread.toFixed(4);
-}
-
-// Helper function to calculate and update TWAP
-async function updateTWAP(proposalId, side) {
-  const PriceHistory = require('../models/PriceHistory');
-  const OrderBook = require('../models/OrderBook');
-  
-  const now = new Date();
-  const oneHour = new Date(now.getTime() - 60 * 60 * 1000);
-  const fourHours = new Date(now.getTime() - 4 * 60 * 60 * 1000);
-  const twentyFourHours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-  try {
-    // Calculate TWAP for different timeframes
-    const twap1h = await calculateTWAP(proposalId, side, oneHour, now);
-    const twap4h = await calculateTWAP(proposalId, side, fourHours, now);
-    const twap24h = await calculateTWAP(proposalId, side, twentyFourHours, now);
-
-    // Update orderbook with TWAP values
-    await OrderBook.findOneAndUpdate(
-      { proposalId, side },
-      {
-        twap1h: twap1h.toFixed(6),
-        twap4h: twap4h.toFixed(6),
-        twap24h: twap24h.toFixed(6),
-        twapLastUpdate: now
-      }
-    );
-
-    console.log(`TWAP updated for ${proposalId}/${side}: 1h=${twap1h.toFixed(6)}, 4h=${twap4h.toFixed(6)}, 24h=${twap24h.toFixed(6)}`);
+    // Notify clients
+    if (io && typeof notifyOrderMatched === 'function' && totalExecuted > 0) {
+      notifyOrderMatched(io, order);
+    }
+    
   } catch (error) {
-    console.error('Error updating TWAP:', error);
+    console.error('Error executing order:', error);
   }
-}
-
-// Helper function to calculate TWAP for a specific timeframe
-async function calculateTWAP(proposalId, side, startTime, endTime) {
-  const PriceHistory = require('../models/PriceHistory');
-  
-  const priceData = await PriceHistory.find({
-    proposalId,
-    side,
-    timestamp: { $gte: startTime, $lte: endTime }
-  }).sort({ timestamp: 1 });
-
-  if (priceData.length === 0) {
-    return 0;
-  }
-
-  let totalWeightedPrice = 0;
-  let totalVolume = 0;
-  let previousTime = startTime.getTime();
-
-  for (let i = 0; i < priceData.length; i++) {
-    const current = priceData[i];
-    const currentTime = current.timestamp.getTime();
-    const volume = parseFloat(current.volume);
-    const price = parseFloat(current.price);
-    
-    // Weight by volume
-    totalWeightedPrice += price * volume;
-    totalVolume += volume;
-    
-    previousTime = currentTime;
-  }
-
-  return totalVolume > 0 ? totalWeightedPrice / totalVolume : 0;
 }
 
 module.exports = router;
