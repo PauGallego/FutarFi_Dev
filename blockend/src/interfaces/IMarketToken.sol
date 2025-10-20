@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.30;
+pragma solidity ^0.8.26;
 
-import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-
-
-interface IMarketToken is IERC20 {
-    function initialize(string memory _name, string memory _symbol) external;
+interface IMarketTokenMinimal {
     function mint(address to, uint256 amount) external;
-    function burn(address from, uint256 amount) external;
-    function name() external view returns (string memory);
-    function symbol() external view returns (string memory);
-    function decimals() external view returns (uint8);
+    function setMinter(address newMinter) external;
+    function disableMinting() external;
+    function finalizeAsLoser() external;
 }
