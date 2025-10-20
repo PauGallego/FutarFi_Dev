@@ -1,100 +1,95 @@
 const mongoose = require('mongoose');
 
-const priceHistorySchema = new mongoose.Schema({
-  timestamp: {
-    type: Date,
-    default: Date.now,
-    required: true
-  },
-  approvePrice: {
-    type: String,
-    required: true
-  },
-  rejectPrice: {
-    type: String,
-    required: true
-  }
-}, { _id: true });
-
 const proposalSchema = new mongoose.Schema({
-  proposalId: {
+  id: {
     type: Number,
     required: true,
-    unique: true,
-    index: true
+    unique: true
   },
-  name: {
+  admin: {
     type: String,
-    required: true,
-    trim: true
+    required: true
+  },
+  title: {
+    type: String,
+    required: true
   },
   description: {
     type: String,
     required: true
   },
-  admin: {
-    type: String,
-    required: true,
-    lowercase: true
-  },
-  contractAddress: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true
-  },
-  marketAddress: {
-    type: String,
-    required: true,
-    lowercase: true
-  },
-  approveTokenAddress: {
-    type: String,
-    required: true,
-    lowercase: true
-  },
-  rejectTokenAddress: {
-    type: String,
-    required: true,
-    lowercase: true
-  },
   startTime: {
-    type: Date,
+    type: Number,
     required: true
   },
   endTime: {
-    type: Date,
+    type: Number,
     required: true
   },
-  status: {
+  duration: {
+    type: Number,
+    required: true
+  },
+  collateralToken: {
     type: String,
-    enum: ['active', 'ended', 'executed'],
-    default: 'active'
+    required: true
   },
-  currentApprovePrice: {
+  maxSupply: {
     type: String,
-    default: '0'
+    required: true
   },
-  currentRejectPrice: {
+  target: {
     type: String,
-    default: '0'
+    required: true
   },
-  priceHistory: [priceHistorySchema],
-  createdAt: {
-    type: Date,
-    default: Date.now
+  data: {
+    type: String,
+    required: true
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+  marketAddress: {
+    type: String,
+    required: false
+  },
+  proposalExecuted: {
+    type: Boolean,
+    default: false
+  },
+  proposalEnded: {
+    type: Boolean,
+    default: false
+  },
+  isActive: {
+    type: Boolean,
+    default: function() {
+      const now = Date.now() / 1000;
+      return now >= this.startTime && now <= this.endTime && !this.proposalEnded;
+    }
   }
 }, {
   timestamps: true
 });
 
-// Index for efficient queries
-proposalSchema.index({ status: 1 });
-proposalSchema.index({ contractAddress: 1 });
-proposalSchema.index({ 'priceHistory.timestamp': 1 });
+// Virtual fields for compatibility
+proposalSchema.virtual('approveToken').get(function() {
+  return this.marketAddress ? `${this.marketAddress}-approve` : null;
+});
+
+proposalSchema.virtual('rejectToken').get(function() {
+  return this.marketAddress ? `${this.marketAddress}-reject` : null;
+});
+
+proposalSchema.set('toJSON', { virtuals: true });
+
+// Check if proposal is active
+proposalSchema.methods.checkIsActive = function() {
+  const now = Date.now() / 1000;
+  return now >= this.startTime && now <= this.endTime && !this.proposalEnded;
+};
+
+// Update isActive before saving
+proposalSchema.pre('save', function(next) {
+  this.isActive = this.checkIsActive();
+  next();
+});
 
 module.exports = mongoose.model('Proposal', proposalSchema);
