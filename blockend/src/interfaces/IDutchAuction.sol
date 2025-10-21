@@ -1,19 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-interface IDutchAuction {
-    function initialize(
-        address pyUSD,
-        address tokenToMint,
-        uint256 tStart,
-        uint256 tEnd,
-        uint256 basePrice,     
-        uint256 minSupplySold, // min sold to activate
-        uint256 maxSupply,     // hard cap
-        address proposal       // back-reference
-    ) external;
+import {MarketToken} from "../tokens/MarketToken.sol";
 
-    function sold() external view returns (uint256);
-    function minSupplySold() external view returns (uint256);
-    function maxSupply() external view returns (uint256);
+interface IDutchAuction {
+    // --- Actions ---
+    function buyLiquidity(uint256 _payAmount) external;
+    function finalize() external;
+    function refundTokens() external;
+
+    // --- Views ---
+    function priceNow() external view returns (uint256);
+    function ADMIN() external view returns (address);
+    function TREASURY() external view returns (address);
+    function MARKET_TOKEN() external view returns (MarketToken);
+    function PYUSD() external view returns (address);
+    function START_TIME() external view returns (uint256);
+    function END_TIME() external view returns (uint256);
+    function PRICE_START() external view returns (uint256);
+    function finalized() external view returns (bool);
+    function isValid() external view returns (bool);
+    function isCanceled() external view returns (bool);
+    function MIN_TO_OPEN() external view returns (uint256);
 }

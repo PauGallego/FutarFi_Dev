@@ -9,7 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract Escrow {
 
     // tokens
-    IERC20 public immutable pyUSD; 
+    IERC20 public  pyUSD; 
     address public attestor;            
     address public tokenYes;           
     address public tokenNo; 

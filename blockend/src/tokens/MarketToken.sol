@@ -7,11 +7,12 @@ import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20P
 import {ERC20Pausable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import {ERC20Capped} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Capped.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IMarketToken} from "../interfaces/IMarketToken.sol";
 
 /// @title MarketToken (YES/NO) 
 /// @notice Outcome token per proposal. Supports Permit, Capped (supply guard), and Pausable (freeze loser).
 /// @dev Owner = Proposal. A single `minter` (DutchAuction) can mint until disabled.
-contract MarketToken is ERC20Permit, ERC20Pausable, ERC20Capped, Ownable {
+contract MarketToken is ERC20Permit, ERC20Pausable, ERC20Capped, Ownable, IMarketToken {
     address public minter;
     address public redeemer;      // Address allowed to receive transfers while paused
 
@@ -45,7 +46,7 @@ contract MarketToken is ERC20Permit, ERC20Pausable, ERC20Capped, Ownable {
         minter = _minter;
     }
 
-    function decimals() public pure override returns (uint8) { return 18; }
+    function decimals() public pure override(ERC20, IMarketToken) returns (uint8) { return 18; }
 
     /// @notice Disable minting forever (sets minter to address(0)).
     function disableMinting() external onlyOwner {
@@ -72,7 +73,6 @@ contract MarketToken is ERC20Permit, ERC20Pausable, ERC20Capped, Ownable {
         _mint(to, amount);
     }
 
-    // --- Redeemer-only burn of its own balance ---
     /// @notice Burn tokens held by the Redeemer (after receiving redemptions).
     function redeemerBurn(uint256 amount) external {
         require(msg.sender == redeemer, "MarketToken:not-redeemer");

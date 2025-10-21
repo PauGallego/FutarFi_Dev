@@ -8,12 +8,12 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {MarketToken} from "../tokens/MarketToken.sol";
 import {Treasury} from "./Treasury.sol";
 import {DutchAuction} from "./DutchAuction.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {Treasury} from "./Treasury.sol";
 
-contract Proposal is Ownable {
+contract Proposal is Ownable, IProposal {
 
-    enum State { Auction, Live, Resolved, Cancelled }
     State public state;
-
 
     // core identifiers / metadata
     uint256 public id;
@@ -24,6 +24,7 @@ contract Proposal is Ownable {
     uint256 public auctionEndTime;
     uint256 public liveStart;
     uint256 public liveEnd;
+    uint256 public liveDuration;
     address public subjectToken;
     uint256 public minToOpen;
     uint256 public maxCap;
@@ -35,12 +36,15 @@ contract Proposal is Ownable {
     MarketToken public yesToken;
     MarketToken public noToken;
 
-    address public immutable treasury;
-    address public immutable escrow;
-    address public attestor;
+    Treasury public treasury;
+    address public escrowImpl;
+    address public escrow;
+
 
     event ProposalActivated(uint256 indexed id, uint256 liveStart, uint256 liveEnd);
     event ProposalResolved(uint256 indexed id, uint256 when);
+    event ProposalCancelled(uint256 when);
+    event ProposalLive(uint256 liveEnd);
 
     constructor() Ownable(msg.sender) {}
     
@@ -55,9 +59,9 @@ contract Proposal is Ownable {
         address _pyUSD,
         uint256 _minToOpen,
         uint256 _maxCap,
-        address _escrowImpl,
-        address _attestor
+        address _escrowImpl
     ) external override {
+        // Initialize proposal metadata and auction parameters
         id = _id;
         admin = _admin;
         title = _title;
@@ -67,50 +71,91 @@ contract Proposal is Ownable {
 
         subjectToken = _subjectToken;
         pyUSD = _pyUSD;
+        liveDuration = _liveDuration;
         minToOpen = _minToOpen;
         maxCap = _maxCap;
 
         treasury= new Treasury(pyUSD);
-        escrow = _escrowImpl;
+        escrowImpl = _escrowImpl;
 
+        // Deploy market tokens for YES and NO
         yesToken = new MarketToken(
-            string.concat("FutarFi tYES #", string(id)),
-            string.concat("tYES-", string(id)),
+            string.concat("FutarFi tYES #", Strings.toString(id)),
+            string.concat("tYES-", Strings.toString(id)),
             address(this),
+            address(yesAuction),
             _maxCap
         );
         noToken = new MarketToken(
-            string.concat("FutarFi tNO #", string(id)),
-            string.concat("tNO-", string(id)),
+            string.concat("FutarFi tNO #", Strings.toString(id)),
+            string.concat("tNO-", Strings.toString(id)),
             address(this),
+            address(noAuction),
             _maxCap
         );
 
+        // Deploy Dutch auctions for YES and NO
         yesAuction = new DutchAuction(
             pyUSD,
             address(yesToken),
-            treasury,
-            auctionStartTime,
-            auctionEndTime,
+            address(treasury),
+            _auctionDuration,
             1_000_000,   // pyth
-            minToOpen
+            minToOpen,
+            admin
         );
 
         noAuction = new DutchAuction(
             pyUSD,
             address(noToken),
-            treasury,
-            auctionStartTime,
-            auctionEndTime,
+            address(treasury),
+            _auctionDuration,
             1_000_000,   // pyth
-            minToOpen
+            minToOpen,
+            admin
         );
 
+        // Set auction addresses in Treasury
         Treasury(treasury).setAuctions(address(yesAuction), address(noAuction));
         state = State.Auction;
     }
 
+    // Settle the auctions and handles cancellation or activation
+    function settleAuctions() external { // TODO:maybe onlyAuction if not called by front/back
+        require(state == State.Auction, "Bad state");
 
+        bool yesAuctionCanceled = yesAuction.isCanceled();
+        bool noAuctionCanceled  = noAuction.isCanceled();
+
+        if (yesAuctionCanceled || noAuctionCanceled) {
+            // If either auction is canceled, cancel both markets and enable refunds in Treasury
+            state = State.Cancelled;
+
+            yesToken.finalizeAsLoser(address(treasury));
+            noToken.finalizeAsLoser(address(treasury));
+
+            Treasury(treasury).enableRefunds();
+
+            auctionEndTime = block.timestamp;
+            emit ProposalCancelled(block.timestamp);
+            return;
+        }
+
+        bool yesAuctionReady = yesAuction.isValid();
+        bool noAuctionReady  = noAuction.isValid();
+        if (yesAuctionReady && noAuctionReady) {
+            // If both auctions are ready, activate proposal
+            auctionEndTime = block.timestamp;
+            liveStart = block.timestamp;
+            liveEnd = liveStart + liveDuration;
+
+            state = State.Live;
+            emit ProposalLive(liveEnd);
+        }
+
+    }
+
+    // Finalizes the specified auction and activates proposal if both are finalized
     function finalizeAuction(bool auctionType) external override {
         require(state == State.Auction, "Proposal: not Auction");
 
@@ -120,31 +165,31 @@ contract Proposal is Ownable {
         activateIfReady();
     }
 
-    function activateIfReady() internal override {
+    function activateIfReady() internal {
         require(state == State.Auction, "Proposal: not Auction");
 
         if (yesAuction.finalized() && noAuction.finalized()) {
             activateProposal();
-            state = State.Live;
             return;
         }
     
     }
 
+    // Internal: sets live period and emits activation event
     function activateProposal() internal {
+        state = State.Live;
+
         liveStart = block.timestamp;
-        liveEnd = liveStart + ; // maintain live duration
+        liveEnd = liveStart + liveDuration;
         emit ProposalActivated(id, liveStart, liveEnd);
     }
 
-
     // ---- Resolve only after Live ends ----
     function resolve() external override {
-        require(_state == State.Live, "Proposal: bad state");
+        require(state == State.Live, "Proposal: bad state");
         require(block.timestamp >= liveEnd, "Proposal: Live not finished");
 
-        // read TWAP, decide winner, escrow.burnAll(loser), optionsAdapter.settleAndDistribute(...)
-        _state = State.Resolved;
+        state = State.Resolved;
         emit ProposalResolved(id, block.timestamp);
     }
 
