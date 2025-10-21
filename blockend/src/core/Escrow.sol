@@ -21,7 +21,7 @@ contract Escrow {
     event BatchApplied(uint256 ops, uint256 ts);
 
 
-    error InsufficientPayUSDBalance();
+    error InsufficientPyUSDBalance();
     error InsufficientOutcomeBalance();
 
     modifier onlyAttestor() {

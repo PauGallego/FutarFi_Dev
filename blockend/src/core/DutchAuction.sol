@@ -5,30 +5,28 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {MarketToken} from "../tokens/MarketToken.sol";
- 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+
 interface ITreasury {
     function fundFromAuction(address payer, uint256 amount) external;
 }
 
 /// @notice Buyer supplies PYUSD and receives YES/NO tokens at the linear price at that moment.
 /// @dev Collects PYUSD into Treasury and mints tokens to the buyer (mint-on-buy).
-contract DutchAuction is ReentrancyGuard {
+contract DutchAuction is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
 
-    address       public immutable pyUSD;      // PYUSD token (6 decimals)
-    address       public immutable tokenYes;    // 18 decimals
-    address       public immutable tokenNo;     // 18 decimals
+    address       public immutable pyUSD;      // PYUSD token
+    MarketToken   public immutable marketToken;    // YES/NO token, in constructor we decide which one this auction is for
     address       public immutable treasury;
 
-    uint256 public immutable tStart;           // auction start
-    uint256 public immutable tEnd;             // auction end
+    uint256 public immutable startTime;           // auction start
+    uint256 public immutable endTime;             // auction end
     uint256 public immutable priceStart;       // starting price (PYUSD 6d per 1 token)
-    uint256 public constant priceEnd = 0;    
+    uint256 public constant priceEnd = 0;
+    uint256 public immutable minToOpen;        // marketToken sold threshold to open market    
 
-    // ---------------- Metrics ----------------
-    uint256 public soldYes;
-    uint256 public soldNo;
     bool    public finalized;
 
     // ---------------- Errors ----------------
@@ -52,45 +50,38 @@ contract DutchAuction is ReentrancyGuard {
 
     constructor(
         address _pyUSD,
-        address _tokenYes,
-        address _tokenNo,
+        address _marketToken,
         address _treasury,
-        uint256 _tStart,
-        uint256 _tEnd,
-        uint256 _priceStart
-    ) {
-        if (
-            _pyUSD   == address(0) ||
-            _tokenYes == address(0) ||
-            _tokenNo  == address(0) ||
-            _treasury == address(0)
-        ) revert ZeroAddress();
-        if (_tEnd <= _tStart) revert NotLive();
+        uint256 _duration,
+        uint256 _priceStart,
+        uint256 _minToOpen
+    ) Ownable(msg.sender) {
         require(_priceStart >= 0, "bad prices"); 
-
         pyUSD    = _pyUSD;
-        tokenYes  = _tokenYes;
-        tokenNo   = _tokenNo;
+        marketToken  = MarketToken(_marketToken);
         treasury  = _treasury;
-        tStart    = _tStart;
-        tEnd      = _tEnd;
+        startTime    = block.timestamp;
+        endTime      = block.timestamp + _duration;
+        priceStart   = _priceStart;
+        minToOpen    = _minToOpen;
 
     }
+
 
     // ---------------- Helpers ----------------
 
     function _isLive() internal view returns (bool) {
-        return block.timestamp >= tStart && block.timestamp <= tEnd && !finalized;
+        return block.timestamp >= startTime && block.timestamp <= endTime && !finalized;
     }
 
 
     /// @notice Current price (PYUSD, 6 decimals) per 1 token
     function priceNow() public view returns (uint256) {
         uint256 ts = block.timestamp;
-        if (ts <= tStart) return priceStart;
-        if (ts >= tEnd)   return priceEnd;
-        uint256 dt   = tEnd - tStart;
-        uint256 gone = ts - tStart;
+        if (ts <= startTime) return priceStart;
+        if (ts >= endTime)   return priceEnd;
+        uint256 dt   = endTime - startTime;
+        uint256 gone = ts - startTime;
         uint256 diff = priceStart - priceEnd;
         return priceStart - (diff * gone) / dt;
     }
@@ -98,24 +89,25 @@ contract DutchAuction is ReentrancyGuard {
    
 
     /// @notice Buyer specifies how much PYUSD to spend and receives tokens at the current price.
-    /// @param _tokenToBuy         YES or NO
     /// @param _payAmount  PYUSD to spend (6 decimals)
     function buyLiquidity(
-        address _tokenToBuy,
         uint256 _payAmount
     ) external nonReentrant {
         if (!_isLive()) revert NotLive();
         if (msg.sender == address(0)) revert ZeroAddress();
         if (_payAmount == 0) revert AmountZero();
-        if (_tokenToBuy != tokenYes &&  _tokenToBuy != tokenNo) revert InvalidToken();
+
+        if (block.timestamp >= endTime){
+            if (marketToken.totalSupply() >= minToOpen) {
+                _finalize();
+            }
+        } 
 
         uint256 actualPrice = priceNow();
         if (actualPrice == 0) revert PriceZero();
 
-        // tokens = pay / price
+        // tokens = payAmount / price per token
         uint256 tokensOut = (_payAmount * 1e18) / actualPrice;
-
-        MarketToken t = MarketToken(_tokenToBuy);
 
         // future permit implementation
         // pyUSD.permit(
@@ -129,21 +121,21 @@ contract DutchAuction is ReentrancyGuard {
         // );
 
         ITreasury(treasury).fundFromAuction(msg.sender, _payAmount);
-        t.mint(msg.sender, tokensOut);
+        marketToken.mint(msg.sender, tokensOut);
+        emit LiquidityAdded(msg.sender, address(marketToken), _payAmount, actualPrice, tokensOut);
 
-        // Metrics
-        if (_tokenToBuy == tokenYes) soldYes += tokensOut;
-        else soldNo  += tokensOut;
-
-        emit LiquidityAdded(msg.sender, _tokenToBuy, _payAmount, actualPrice, tokensOut);
+        if (marketToken.totalSupply() + tokensOut == marketToken.cap()) _finalize();
+        
     }
 
-    // ---------------- Finalization ----------------
 
-    /// @notice Close the auction. (You may restrict this to Proposal if desired)
-    function finalize() external {
+    function finalize() external onlyOwner {
+        if (marketToken.totalSupply() == marketToken.cap()) _finalize();
+    }
+
+    /// @notice Close the auction. 
+    function _finalize() private {
         if (finalized) revert AlreadyFinalized();
-        if (block.timestamp < tEnd) revert NotLive();
         finalized = true;
         emit Finalized();
     }

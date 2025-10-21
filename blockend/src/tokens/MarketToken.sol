@@ -45,16 +45,7 @@ contract MarketToken is ERC20Permit, ERC20Pausable, ERC20Capped, Ownable {
         minter = _minter;
     }
 
-    /// @dev 18 decimals recommended for outcome tokens.
     function decimals() public pure override returns (uint8) { return 18; }
-
-
-    /// @notice Rotate the authorized minter
-    function setMinter(address newMinter) external onlyOwner {
-        if (newMinter == address(0)) revert MinterZero();
-        emit MinterUpdated(minter, newMinter);
-        minter = newMinter;
-    }
 
     /// @notice Disable minting forever (sets minter to address(0)).
     function disableMinting() external onlyOwner {

@@ -9,8 +9,8 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 contract Treasury is Ownable {
     using SafeERC20 for IERC20;
     address public immutable pyUSD;
-    address public auctionYes;
-    address public auctionNo;
+    address public yesAuction;
+    address public noAuction;
 
     uint256 public potYes;
     uint256 public potNo;
@@ -26,13 +26,13 @@ contract Treasury is Ownable {
     }
 
     function setAuctions(address _yes, address _no) external onlyOwner {
-        auctionYes = _yes; 
-        auctionNo = _no;
+        yesAuction = _yes; 
+        noAuction = _no;
     }
 
     function fundFromAuction(address payer, uint256 amount) external {
-        if (msg.sender == auctionYes)      potYes += amount;
-        else if (msg.sender == auctionNo)  potNo  += amount;
+        if (msg.sender == yesAuction)      potYes += amount;
+        else if (msg.sender == noAuction)  potNo  += amount;
         else revert NotAuction();
 
         IERC20(pyUSD).safeTransferFrom(payer, address(this), amount);
