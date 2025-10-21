@@ -743,9 +743,7 @@ async function updateOrderBook(proposalId, side, io) {
   } catch (error) {
     console.error('Error updating order book:', error);
   }
-}
-
-async function executeOrder(order, io) {
+}async function executeOrder(order, io) {
   try {
     if (!order || !order.proposalId || !order.side) {
       console.error('Invalid order data for executeOrder');
@@ -755,118 +753,101 @@ async function executeOrder(order, io) {
     console.log(`Executing order: ${order._id}, side: ${order.side}, type: ${order.orderType}, execution: ${order.orderExecution}, price: ${order.price}, amount: ${order.amount}`);
 
     const oppositeOrderType = order.orderType === 'buy' ? 'sell' : 'buy';
-    
-    // Find matching orders based on order execution type
-    // Key fix: Match with orders on the SAME SIDE but OPPOSITE ORDER TYPE
-    // This is because both parties are trading the same token (approve/reject)
-    let matchingOrders;
-    
-    if (order.orderExecution === 'market') {
-      // Market orders: match with any price, best price first
-      matchingOrders = await Order.find({
-        proposalId: order.proposalId,
-        side: order.side, // Same side (same token)
-        orderType: oppositeOrderType, // Opposite order type (buy vs sell)
-        status: 'open'
-      }).sort({ 
-        price: order.orderType === 'buy' ? 1 : -1, // Best price first
-        createdAt: 1
-      });
-    } else {
-      // Limit orders: match with orders at same or better price
-      const priceFilter = order.orderType === 'buy' 
-        ? { $lte: parseFloat(order.price) } // Buy: match with sells at or below our price
-        : { $gte: parseFloat(order.price) }; // Sell: match with buys at or above our price
-      
-      console.log(`Searching for matching orders with filter:`, {
-        proposalId: order.proposalId,
-        side: order.side,
-        orderType: oppositeOrderType,
-        priceFilter,
-        orderPrice: order.price,
-        status: 'open'
-      });
-      
-      matchingOrders = await Order.find({
-        proposalId: order.proposalId,
-        side: order.side, // Same side (same token)
-        orderType: oppositeOrderType, // Opposite order type (buy vs sell)
-        price: priceFilter,
-        status: 'open'
-      }).sort({ 
-        price: order.orderType === 'buy' ? 1 : -1, // Best price first
-        createdAt: 1
-      });
+
+    // Build price filter for limit orders
+    let priceFilter = {};
+    if (order.orderExecution === 'limit') {
+      priceFilter = order.orderType === 'buy'
+        ? { $expr: { $lte: [{ $toDouble: '$price' }, parseFloat(order.price)] } }
+        : { $expr: { $gte: [{ $toDouble: '$price' }, parseFloat(order.price)] } };
     }
 
-    console.log(`Found ${matchingOrders.length} potential matching orders`);
-    if (matchingOrders.length > 0) {
-      console.log('Matching orders found:', matchingOrders.map(o => ({
-        id: o._id,
-        price: o.price,
-        amount: o.amount,
-        orderType: o.orderType,
-        side: o.side
-      })));
-    }
+    // Find matching orders
+    const matchingOrders = await Order.find({
+      proposalId: order.proposalId,
+      side: order.side,
+      orderType: oppositeOrderType,
+      status: { $in: ['open', 'partial'] },
+      ...(order.orderExecution === 'limit' ? { ...priceFilter } : {})
+    }).sort({
+      price: order.orderType === 'buy' ? 1 : -1, // Best price first
+      createdAt: 1
+    });
 
     let remainingAmount = parseFloat(order.amount);
     let totalExecuted = 0;
-    
+
+
+
     for (const matchingOrder of matchingOrders) {
-      if (remainingAmount <= 0) break;
+
       
+      if (remainingAmount <= 0) break;
+
+      if(matchingOrder.userAddress === order.userAddress) {
+        console.log(`Skipping matching order ${matchingOrder._id} as it belongs to the same user`);
+        continue;
+      }
+
       const availableAmount = parseFloat(matchingOrder.amount) - parseFloat(matchingOrder.filledAmount || '0');
       const tradeAmount = Math.min(remainingAmount, availableAmount);
-      
-      if (tradeAmount > 0) {
-        console.log(`Executing trade: ${tradeAmount} at price ${matchingOrder.price}`);
-        
-        // Update the matching order
-        const newFilledAmount = parseFloat(matchingOrder.filledAmount || '0') + tradeAmount;
-        matchingOrder.filledAmount = newFilledAmount.toString();
-        
-        if (newFilledAmount >= parseFloat(matchingOrder.amount)) {
-          matchingOrder.status = 'filled';
-        } else {
-          matchingOrder.status = 'partially_filled';
-        }
-        matchingOrder.updatedAt = new Date();
-        
-        await matchingOrder.save();
-        
-        // Update our order
-        remainingAmount -= tradeAmount;
-        totalExecuted += tradeAmount;
-        
-        // For market orders, use the matching order's price
-        if (order.orderExecution === 'market') {
-          order.price = matchingOrder.price;
-        }
-        
-        console.log(`Trade executed: ${tradeAmount}, remaining: ${remainingAmount}`);
+
+      if (tradeAmount <= 0) continue;
+
+      console.log(`Executing trade: ${tradeAmount} at price ${matchingOrder.price}`);
+
+      // Update matching order
+      const newFilledAmount = parseFloat(matchingOrder.filledAmount || '0') + tradeAmount;
+      matchingOrder.filledAmount = newFilledAmount.toString();
+      matchingOrder.status = newFilledAmount >= parseFloat(matchingOrder.amount) ? 'filled' : 'partial';
+      matchingOrder.updatedAt = new Date();
+
+      // Record fill for matching order
+      matchingOrder.fills.push({
+        price: matchingOrder.price,
+        amount: tradeAmount.toString(),
+        timestamp: new Date(),
+        matchedOrderId: order._id.toString()
+      });
+
+      await matchingOrder.save();
+
+      // Update our order
+      remainingAmount -= tradeAmount;
+      totalExecuted += tradeAmount;
+
+      if (order.orderExecution === 'market') {
+        order.price = matchingOrder.price; // Use matching order price for market
       }
+
+      // Record fill for original order
+      order.fills.push({
+        price: matchingOrder.price,
+        amount: tradeAmount.toString(),
+        timestamp: new Date(),
+        matchedOrderId: matchingOrder._id.toString()
+      });
+
+      console.log(`Trade executed: ${tradeAmount}, remaining: ${remainingAmount}`);
     }
-    
-    // Update the original order
+
+    // Finalize original order
     order.filledAmount = totalExecuted.toString();
-    
     if (totalExecuted >= parseFloat(order.amount)) {
       order.status = 'filled';
     } else if (totalExecuted > 0) {
-      order.status = 'partially_filled';
+      order.status = 'partial';
     }
-    
     order.updatedAt = new Date();
     await order.save();
-    
+
     console.log(`Order ${order._id} final status: ${order.status}, filled: ${order.filledAmount}/${order.amount}`);
 
-    // Notify clients
+    // Notify clients if any execution happened
     if (io && typeof notifyOrderMatched === 'function' && totalExecuted > 0) {
       notifyOrderMatched(io, order);
     }
-    
+
   } catch (error) {
     console.error('Error executing order:', error);
   }
