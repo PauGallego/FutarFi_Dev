@@ -9,7 +9,8 @@ const {
   notifyNewOrder, 
   notifyOrderStatusChange,
   notifyOrderMatched,
-  notifyMarketData
+  notifyMarketData,
+  notifyUserOrdersUpdate
 } = require('../middleware/websocket');
 
 /**
@@ -371,6 +372,9 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(500).json({ error: 'Failed to create order' });
     }
 
+    // NEW: notify this user that their orders changed
+    try { if (io) notifyUserOrdersUpdate(io, userAddress, { reason: 'order-created', changedOrderId: order._id.toString() }); } catch (e) {}
+
     // Update order book (with error handling)
     try {
       await updateOrderBook(proposalId, side, io);
@@ -519,6 +523,9 @@ router.delete('/orders/:orderId', verifyWalletSignature, async (req, res) => {
     if (!order) {
       return res.status(500).json({ error: 'Failed to update order status' });
     }
+
+    // NEW: notify this user that their orders changed
+    try { if (io) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-cancelled', changedOrderId: order._id.toString() }); } catch (e) {}
 
     // Update order book (with error handling)
     try {
@@ -738,12 +745,15 @@ async function updateOrderBook(proposalId, side, io) {
     await orderBook.save();
 
     if (io && typeof notifyOrderBookUpdate === 'function') {
-      notifyOrderBookUpdate(io, orderBook);
+      // FIX: pass correct args
+      notifyOrderBookUpdate(io, proposalId, side, orderBook);
     }
   } catch (error) {
     console.error('Error updating order book:', error);
   }
-}async function executeOrder(order, io) {
+}
+
+async function executeOrder(order, io) {
   try {
     if (!order || !order.proposalId || !order.side) {
       console.error('Invalid order data for executeOrder');
@@ -777,11 +787,7 @@ async function updateOrderBook(proposalId, side, io) {
     let remainingAmount = parseFloat(order.amount);
     let totalExecuted = 0;
 
-
-
     for (const matchingOrder of matchingOrders) {
-
-      
       if (remainingAmount <= 0) break;
 
       if(matchingOrder.userAddress === order.userAddress) {
@@ -811,6 +817,9 @@ async function updateOrderBook(proposalId, side, io) {
       });
 
       await matchingOrder.save();
+
+      // NEW: notify counterparty user about their order update
+      try { if (io) notifyUserOrdersUpdate(io, matchingOrder.userAddress, { reason: 'order-updated', changedOrderId: matchingOrder._id.toString() }); } catch (e) {}
 
       // Update our order
       remainingAmount -= tradeAmount;
@@ -843,9 +852,13 @@ async function updateOrderBook(proposalId, side, io) {
 
     console.log(`Order ${order._id} final status: ${order.status}, filled: ${order.filledAmount}/${order.amount}`);
 
+    // NEW: notify original user if anything executed or changed
+    try { if (io && totalExecuted > 0) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-updated', changedOrderId: order._id.toString() }); } catch (e) {}
+
     // Notify clients if any execution happened
     if (io && typeof notifyOrderMatched === 'function' && totalExecuted > 0) {
-      notifyOrderMatched(io, order);
+      // keep existing behavior (signature mismatch tolerated elsewhere)
+      try { notifyOrderMatched(io, order); } catch (e) {}
     }
 
   } catch (error) {

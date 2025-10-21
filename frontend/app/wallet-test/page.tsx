@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAccount, useSignMessage } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import { io, Socket } from 'socket.io-client'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
@@ -51,6 +52,159 @@ export default function WalletTestPage() {
   })
   const [testProposalId, setTestProposalId] = useState('test-proposal-1')
   const [orderIdToCancel, setOrderIdToCancel] = useState('')
+
+  const socketRef = useRef<Socket | null>(null)
+
+  // helper to fetch my orders
+  const fetchMyOrders = async () => {
+    if (!authData?.signature || !address) return
+    try {
+      const response = await fetch(`${API_BASE}/orderbooks/my-orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address,
+          signature: authData.signature,
+          message: authData.message,
+          timestamp: authData.timestamp
+        })
+      })
+      const data = await response.json()
+      setTestResults(prev => [{
+        test: 'Get My Orders (Auto)',
+        status: response.ok ? 'SUCCESS' : 'FAILED',
+        data,
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+    } catch (e) {
+      setTestResults(prev => [{
+        test: 'Get My Orders (Auto)',
+        status: 'ERROR',
+        data: { error: e instanceof Error ? e.message : 'Unknown error' },
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+    }
+  }
+
+  // establish socket and authenticate when we have authData
+  useEffect(() => {
+    if (!isConnected || !address || !authData?.signature) return
+
+    // lazy init socket
+    if (!socketRef.current) {
+      const base = (process.env.NEXT_PUBLIC_WS_URL || (process.env.NEXT_PUBLIC_API_URL ? process.env.NEXT_PUBLIC_API_URL.replace(/\/api$/, '') : 'http://localhost:3001'))
+      socketRef.current = io(base, { transports: ['websocket'] })
+      // log WS init to help debug
+      setTestResults(prev => [{
+        test: 'WS Init',
+        status: 'SUCCESS',
+        data: { wsBase: base, apiBase: API_BASE },
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+    }
+
+    const socket = socketRef.current
+    const handleAuthSuccess = (payload?: any) => {
+      setTestResults(prev => [{
+        test: 'WS Auth Success',
+        status: 'SUCCESS',
+        data: payload || {},
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+      socket.emit('subscribe-my-orders')
+      // immediate fetch after subscribe
+      fetchMyOrders()
+    }
+    const handleAuthError = (payload: any) => {
+      setTestResults(prev => [{
+        test: 'WS Auth Error',
+        status: 'FAILED',
+        data: payload,
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+    }
+    const handleSubscribed = (payload: any) => {
+      setTestResults(prev => [{
+        test: 'WS Subscribed My Orders',
+        status: 'SUCCESS',
+        data: payload,
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+      fetchMyOrders()
+    }
+    const handleOrdersUpdated = (payload?: any) => {
+      setTestResults(prev => [{
+        test: 'my-orders-updated (WS Event)',
+        status: 'SUCCESS',
+        data: payload || {},
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+      fetchMyOrders()
+    }
+    const handleConnect = () => {
+      setTestResults(prev => [{
+        test: 'WS Connected',
+        status: 'SUCCESS',
+        data: { id: socket.id },
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+      // authenticate via signed message
+      socket.emit('auth-wallet', {
+        address,
+        signature: authData.signature,
+        message: authData.message,
+        timestamp: authData.timestamp
+      })
+    }
+    const handleDisconnect = (reason: any) => {
+      setTestResults(prev => [{
+        test: 'WS Disconnected',
+        status: 'PARTIAL',
+        data: { reason },
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+    }
+    const handleConnectError = (err: any) => {
+      setTestResults(prev => [{
+        test: 'WS Connect Error',
+        status: 'ERROR',
+        data: { message: err?.message || String(err) },
+        timestamp: new Date().toLocaleTimeString()
+      }, ...prev])
+    }
+
+    socket.on('connect', handleConnect)
+    socket.on('disconnect', handleDisconnect)
+    socket.on('connect_error', handleConnectError)
+
+    socket.on('auth-success', handleAuthSuccess)
+    socket.on('auth-error', handleAuthError)
+
+    socket.on('subscribed-my-orders', handleSubscribed)
+    socket.on('my-orders-updated', handleOrdersUpdated)
+
+    return () => {
+      socket.off('connect', handleConnect)
+      socket.off('disconnect', handleDisconnect)
+      socket.off('connect_error', handleConnectError)
+
+      socket.off('auth-success', handleAuthSuccess)
+      socket.off('auth-error', handleAuthError)
+
+      socket.off('subscribed-my-orders', handleSubscribed)
+      socket.off('my-orders-updated', handleOrdersUpdated)
+    }
+  }, [isConnected, address, authData?.signature, authData?.message, authData?.timestamp])
+
+  // optional: disconnect socket when leaving page
+  useEffect(() => {
+    return () => {
+      if (socketRef.current) {
+        try { socketRef.current.disconnect() } catch {}
+        socketRef.current = null
+      }
+    }
+  }, [])
 
   // Test 1: Generate auth message
   const testGenerateMessage = async () => {

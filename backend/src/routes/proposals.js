@@ -6,6 +6,8 @@ const { verifyWalletSignature } = require('../middleware/walletAuth');
 const { notifyProposalUpdate } = require('../middleware/websocket');
 const { validateProposal } = require('../middleware/validation');
 
+// Proposals routes must NOT return raw order books
+
 /**
  * @swagger
  * tags:
@@ -129,59 +131,30 @@ router.get('/:id', async (req, res) => {
 router.post('/', verifyWalletSignature, validateProposal, async (req, res) => {
   try {
     const io = req.app.get('io');
-    
-    // Calculate startTime and endTime if not provided
     const now = Math.floor(Date.now() / 1000);
     const proposalData = {
       ...req.body,
-      creator: req.userAddress, // Use authenticated wallet address
+      creator: req.userAddress,
       startTime: req.body.startTime || now,
       endTime: req.body.endTime || (now + (req.body.duration || 86400))
     };
-    
-    // Ensure duration is present
     if (!proposalData.duration) {
       proposalData.duration = proposalData.endTime - proposalData.startTime;
     }
-    
     const proposal = new Proposal(proposalData);
     await proposal.save();
 
-    // Create order books for both sides
-    const approveOrderBook = new OrderBook({
-      proposalId: proposal.id,
-      side: 'approve',
-      bids: [],
-      asks: []
-    });
+    // Precreate empty order books but DO NOT return them publicly
+    const approveOrderBook = new OrderBook({ proposalId: proposal.id, side: 'approve', bids: [], asks: [] });
+    const rejectOrderBook = new OrderBook({ proposalId: proposal.id, side: 'reject', bids: [], asks: [] });
+    await Promise.all([approveOrderBook.save(), rejectOrderBook.save()]);
 
-    const rejectOrderBook = new OrderBook({
-      proposalId: proposal.id,
-      side: 'reject',
-      bids: [],
-      asks: []
-    });
-
-    await Promise.all([
-      approveOrderBook.save(),
-      rejectOrderBook.save()
-    ]);
-
-    // Notify clients about new proposal
     if (io) {
-      io.emit('new-proposal', {
-        proposal,
-        timestamp: new Date().toISOString()
-      });
+      io.emit('new-proposal', { proposal, timestamp: new Date().toISOString() });
     }
 
-    res.status(201).json({
-      proposal,
-      orderBooks: {
-        approve: approveOrderBook,
-        reject: rejectOrderBook
-      }
-    });
+    // Return only the proposal object (no orderBooks)
+    res.status(201).json(proposal);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -269,27 +242,21 @@ router.get('/:id/stats', async (req, res) => {
       return res.status(404).json({ error: 'Proposal not found' });
     }
 
-    // Get order books
     const orderBooks = await OrderBook.find({ proposalId: req.params.id });
     const approveBook = orderBooks.find(ob => ob.side === 'approve');
     const rejectBook = orderBooks.find(ob => ob.side === 'reject');
 
-    // Calculate total volumes
     const approveTotalBids = approveBook ? approveBook.bids.reduce((total, bid) => total + BigInt(bid.amount), BigInt(0)) : BigInt(0);
     const approveTotalAsks = approveBook ? approveBook.asks.reduce((total, ask) => total + BigInt(ask.amount), BigInt(0)) : BigInt(0);
     const rejectTotalBids = rejectBook ? rejectBook.bids.reduce((total, bid) => total + BigInt(bid.amount), BigInt(0)) : BigInt(0);
     const rejectTotalAsks = rejectBook ? rejectBook.asks.reduce((total, ask) => total + BigInt(ask.amount), BigInt(0)) : BigInt(0);
 
-    // Get 24h volumes
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const approveVolume24h = await get24hVolume(req.params.id, 'approve');
     const rejectVolume24h = await get24hVolume(req.params.id, 'reject');
 
-    // Get price changes
     const approvePriceChange24h = await get24hPriceChange(req.params.id, 'approve');
     const rejectPriceChange24h = await get24hPriceChange(req.params.id, 'reject');
 
-    // Get last prices
     const approveLastPrice = await getLastTradePrice(req.params.id, 'approve');
     const rejectLastPrice = await getLastTradePrice(req.params.id, 'reject');
 
@@ -326,7 +293,6 @@ router.get('/:id/stats', async (req, res) => {
 router.get('/with-market-data', async (req, res) => {
   try {
     const { limit = 20, offset = 0, sortBy = 'createdAt', order = 'desc' } = req.query;
-    
     const proposals = await Proposal.find()
       .sort({ [sortBy]: order === 'desc' ? -1 : 1 })
       .skip(parseInt(offset))

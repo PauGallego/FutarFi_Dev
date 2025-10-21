@@ -14,6 +14,7 @@ const orderbooksRouter = require('./routes/orderbooks');
 const authRouter = require('./routes/auth');
 const realtimeRouter = require('./routes/realtime');
 const rateLimit = require('./middleware/rateLimit');
+const { ethers } = require('ethers');
 
 const app = express();
 const server = http.createServer(app);
@@ -23,6 +24,9 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// Make io accessible to routes via req.app.get('io') as used in code
+app.set('io', io);
 
 const PORT = process.env.PORT || 3001;
 
@@ -36,6 +40,34 @@ app.use((req, res, next) => {
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+
+  // Client must authenticate once per connection with signed message
+  socket.on('auth-wallet', ({ address, signature, message, timestamp }) => {
+    try {
+      if (!address || !signature || !message || !timestamp) {
+        socket.emit('auth-error', { error: 'Missing auth fields' });
+        return;
+      }
+      const expectedMessage = `FutarFi Authentication\nAddress: ${address}\nTimestamp: ${timestamp}`;
+      const now = Date.now();
+      const fiveMinutes = 5 * 60 * 1000;
+      if (message !== expectedMessage || now - parseInt(timestamp) > fiveMinutes) {
+        socket.emit('auth-error', { error: 'Invalid message or expired timestamp' });
+        return;
+      }
+      const recovered = ethers.verifyMessage(message, signature);
+      if (recovered.toLowerCase() !== address.toLowerCase()) {
+        socket.emit('auth-error', { error: 'Invalid signature' });
+        return;
+      }
+      socket.data.address = address.toLowerCase();
+      socket.join(`user-${socket.data.address}`);
+      socket.emit('auth-success', { address: socket.data.address });
+      console.log(`Socket ${socket.id} authenticated as ${socket.data.address}`);
+    } catch (e) {
+      socket.emit('auth-error', { error: 'Auth verification failed' });
+    }
+  });
 
   socket.on('join-proposal', (proposalId) => {
     socket.join(`proposal-${proposalId}`);
@@ -55,6 +87,22 @@ io.on('connection', (socket) => {
   socket.on('leave-orderbook', (proposalId, side) => {
     socket.leave(`orderbook-${proposalId}-${side}`);
     console.log(`Socket ${socket.id} left orderbook room: ${proposalId}-${side}`);
+  });
+
+  // Allow client to explicitly subscribe to their orders room after auth
+  socket.on('subscribe-my-orders', () => {
+    if (!socket.data.address) {
+      socket.emit('auth-error', { error: 'Authenticate first with auth-wallet' });
+      return;
+    }
+    socket.join(`user-${socket.data.address}`);
+    socket.emit('subscribed-my-orders', { address: socket.data.address });
+  });
+
+  socket.on('unsubscribe-my-orders', () => {
+    if (!socket.data.address) return;
+    socket.leave(`user-${socket.data.address}`);
+    socket.emit('unsubscribed-my-orders', { address: socket.data.address });
   });
 
   socket.on('disconnect', () => {
