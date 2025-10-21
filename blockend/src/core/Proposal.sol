@@ -4,139 +4,136 @@ pragma solidity ^0.8.30;
 import {IProposal} from "../interfaces/IProposal.sol";
 import {IDutchAuction} from "../interfaces/IDutchAuction.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import {MarketToken} from "../tokens/MarketToken.sol";
+import {Treasury} from "./Treasury.sol";
+import {DutchAuction} from "./DutchAuction.sol";
 
 contract Proposal is Ownable {
 
-    uint256 public override auctionStart;
-    uint256 public override auctionEnd;
-    uint256 public override liveStart;
-    uint256 public override liveEnd;
-    uint256 public override liveDuration;
+    enum State { Auction, Live, Resolved, Cancelled }
+    State public state;
 
-    State private _state;
 
     // core identifiers / metadata
-    uint256 public override id;
-    address public override admin;
-    string private _title;
-    string private _description;
-
-    // supply / payment / infra
-    address public override subjectToken;
-    uint256 public override minSupplySold;
-    uint256 public override maxSupply;
+    uint256 public id;
+    address public admin;
+    string private title;
+    string private description;
+    uint256 public auctionStartTime;
+    uint256 public auctionEndTime;
+    uint256 public liveStart;
+    uint256 public liveEnd;
+    address public subjectToken;
+    uint256 public minToOpen;
+    uint256 public maxCap;
 
     // auctions / tokens / implementations
-    address public override approveAuction;
-    address public override rejectAuction;
-    address public override tokenApprove;
-    address public override tokenReject;
+    address public pyUSD;
+    DutchAuction public yesAuction;
+    DutchAuction public noAuction;
+    MarketToken public yesToken;
+    MarketToken public noToken;
 
-    address public override escrow;
-    address public override twap;
-    address public override settlement;
-    address public override oracleAdapter;
-    address public override optionsAdapter;
-    address public override attestor;
+    address public immutable treasury;
+    address public immutable escrow;
+    address public attestor;
+
+    event ProposalActivated(uint256 indexed id, uint256 liveStart, uint256 liveEnd);
+    event ProposalResolved(uint256 indexed id, uint256 when);
 
     constructor() Ownable(msg.sender) {}
-
-    // ---- Initialize ----
+    
     function initialize(
         uint256 _id,
         address _admin,
         string calldata _title,
         string calldata _description,
         uint256 _auctionDuration,
-        // payment token and limits
+        uint256 _liveDuration,
         address _subjectToken,
-        uint256 _minSold,
-        uint256 _maxSupply,
-        // infrastructure (oracle, options, implementations, auctions, tokens, attestor)
-        address _oracleAdapter,
-        address _optionsAdapter,
+        address _pyUSD,
+        uint256 _minToOpen,
+        uint256 _maxCap,
         address _escrowImpl,
-        address _twapImpl,
-        address _settlementImpl,
-        address _approveAuction,
-        address _rejectAuction,
-        address _tokenApprove,
-        address _tokenReject,
-        address _attestor,
-        // new: Live phase duration
-        uint256 _liveDuration
-
+        address _attestor
     ) external override {
-        // ... (pre-checks)
-        require(_auctionEnd > _auctionStart, "Proposal: bad auction window");
-        require(_liveDuration > 0, "Proposal: liveDuration=0");
-
-        // assign basic metadata
         id = _id;
         admin = _admin;
-        _title = _title;
-        _description = _description;
+        title = _title;
+        description = _description;
+        auctionStartTime  = block.timestamp;
+        auctionEndTime    = block.timestamp + _auctionDuration;
 
-        // timings
-        auctionStart  = _auctionStart;
-        auctionEnd    = _auctionEnd;
-        liveDuration  = _liveDuration;
-
-        // payment / supply
         subjectToken = _subjectToken;
-        minSupplySold = _minSold;
-        maxSupply = _maxSupply;
+        pyUSD = _pyUSD;
+        minToOpen = _minToOpen;
+        maxCap = _maxCap;
 
-        // infrastructure
-        oracleAdapter = _oracleAdapter;
-        optionsAdapter = _optionsAdapter;
+        treasury= new Treasury(pyUSD);
         escrow = _escrowImpl;
-        twap = _twapImpl;
-        settlement = _settlementImpl;
 
-        approveAuction = _approveAuction;
-        rejectAuction = _rejectAuction;
-        tokenApprove = _tokenApprove;
-        tokenReject = _tokenReject;
-        attestor = _attestor;
+        yesToken = new MarketToken(
+            string.concat("FutarFi tYES #", string(id)),
+            string.concat("tYES-", string(id)),
+            address(this),
+            _maxCap
+        );
+        noToken = new MarketToken(
+            string.concat("FutarFi tNO #", string(id)),
+            string.concat("tNO-", string(id)),
+            address(this),
+            _maxCap
+        );
 
-        // remaining assignments...
-        _state = State.Auction;
+        yesAuction = new DutchAuction(
+            pyUSD,
+            address(yesToken),
+            treasury,
+            auctionStartTime,
+            auctionEndTime,
+            1_000_000,   // pyth
+            minToOpen
+        );
+
+        noAuction = new DutchAuction(
+            pyUSD,
+            address(noToken),
+            treasury,
+            auctionStartTime,
+            auctionEndTime,
+            1_000_000,   // pyth
+            minToOpen
+        );
+
+        Treasury(treasury).setAuctions(address(yesAuction), address(noAuction));
+        state = State.Auction;
     }
 
 
-    function inAuctionWindow() public view override returns (bool) {
-        if (_state != State.Auction) return false;
-        uint256 t = block.timestamp;
-        return (t >= auctionStart && t <= auctionEnd);
+    function finalizeAuction(bool auctionType) external override {
+        require(state == State.Auction, "Proposal: not Auction");
+
+        if (auctionType)yesAuction.finalize();
+        else noAuction.finalize();
+
+        activateIfReady();
     }
 
-    function inLiveWindow() public view override returns (bool) {
-        if (_state != State.Live) return false;
-        uint256 t = block.timestamp;
-        return (t >= liveStart && t <= liveEnd);
+    function activateIfReady() internal override {
+        require(state == State.Auction, "Proposal: not Auction");
+
+        if (yesAuction.finalized() && noAuction.finalized()) {
+            activateProposal();
+            state = State.Live;
+            return;
+        }
+    
     }
 
-    function isActive() external view override returns (bool) {
-        return inAuctionWindow() || inLiveWindow();
-    }
-
-    function activateIfReady() external override {
-        require(_state == State.Auction, "Proposal: not Auction");
-
-        IDutchAuction A = IDutchAuction(approveAuction);
-        IDutchAuction R = IDutchAuction(rejectAuction);
-
-        bool timeOver   = (block.timestamp >= auctionEnd);
-        bool minReached = (A.sold() >= minSupplySold && R.sold() >= minSupplySold);
-        bool maxHit     = (A.sold() >= maxSupply && R.sold() >= maxSupply);
-
-        require((timeOver && minReached) || maxHit, "Proposal: not ready");
-
+    function activateProposal() internal {
         liveStart = block.timestamp;
-        liveEnd   = liveStart + liveDuration;
-
-        _state = State.Live;
+        liveEnd = liveStart + ; // maintain live duration
         emit ProposalActivated(id, liveStart, liveEnd);
     }
 
@@ -152,6 +149,5 @@ contract Proposal is Ownable {
     }
 
 
-    event ProposalActivated(uint256 indexed id, uint256 liveStart, uint256 liveEnd);
-    event ProposalResolved(uint256 indexed id, uint256 when);
+ 
 }
