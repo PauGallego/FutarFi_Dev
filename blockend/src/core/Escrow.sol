@@ -5,11 +5,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title Escrow
 /// @notice Applies off-chain orderbook matches on-chain by moving real ERC20 balances.
-/// @dev Requires users to grant allowance (or use permit) for both PayUSD and outcome tokens.
+/// @dev Requires users to grant allowance (or use permit) for both PyUSD and outcome tokens.
 contract Escrow {
 
     // tokens
-    IERC20 public immutable payUSD; 
+    IERC20 public immutable pyUSD; 
     address public attestor;            
     address public tokenYes;           
     address public tokenNo; 
@@ -31,11 +31,11 @@ contract Escrow {
 
     constructor() {}
 
-    function initialize(address _payUSD, address _tokenYes, address _tokenNo, address _attestor) external onlyAttestor {
+    function initialize(address _pyUSD, address _tokenYes, address _tokenNo, address _attestor) external onlyAttestor {
         require(!initialized, "Verifier:already initialized");
-        require(_payUSD != address(0) && _tokenYes != address(0) && _tokenNo != address(0), "Verifier:zero");
+        require(_pyUSD != address(0) && _tokenYes != address(0) && _tokenNo != address(0), "Verifier:zero");
         require(_attestor != address(0), "Verifier:attestor=0");
-        payUSD   = IERC20(_payUSD);
+        pyUSD   = IERC20(_pyUSD);
         tokenYes = _tokenYes;
         tokenNo  = _tokenNo;
         attestor = _attestor;
@@ -48,13 +48,13 @@ contract Escrow {
         attestor = _attestor;
     }
 
-    /// @dev One trade = buyer pays PayUSD to seller; seller delivers YES/NO to buyer.
+    /// @dev One trade = buyer pays PyUSD to seller; seller delivers YES/NO to buyer.
     struct Trade {
         address seller;         // seller of outcome token
         address buyer;          // buyer of outcome token
         address outcomeToken;   // token being traded (YES/NO)
         uint256 amount;         // outcome amount (18 decimals)
-        uint256 price;          // total cost in PayUSD for the amount of outcome tokens 
+        uint256 price;          // total cost in PyUSD for the amount of outcome tokens 
     }
 
     /// @notice Apply a batch of trades. Requires allowances set by both sides.
@@ -62,14 +62,12 @@ contract Escrow {
         for (uint256 i = 0; i < ops.length; ++i) {
             Trade calldata t = ops[i];
             require(t.seller != address(0) && t.buyer != address(0), "Verifier:zero addr");
-            require(t.outcome == tokenYes || t.outcome == tokenNo, "Verifier:bad outcome");
+            require(t.outcomeToken == tokenYes || t.outcomeToken == tokenNo, "Verifier:bad outcome");
             require(t.amount > 0, "Verifier:bad amounts");
 
-            if(payUSD.balanceOf(t.buyer) < t.price) revert InsufficientPayUSDBalance();
-            if(IERC20(t.outcomeToken).balanceOf(t.seller) < t.amount) revert InsufficientOutcomeBalance();
 
-            // Transfer PayUSD from buyer to seller
-            require(payUSD.transferFrom(t.buyer, t.seller, t.price), "Verifier:payUSD xferFrom");
+            // Transfer PyUSD from buyer to seller
+            require(pyUSD.transferFrom(t.buyer, t.seller, t.price), "Verifier:pyUSD xferFrom");
 
             // Transfer outcome token from seller to buyer (must have allowance on outcome token)
             require(IERC20(t.outcomeToken).transferFrom(t.seller, t.buyer, t.amount), "Verifier:outcome xferFrom");

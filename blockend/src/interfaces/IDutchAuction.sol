@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 interface IDutchAuction {
     function initialize(
-        address payUSD,
+        address pyUSD,
         address tokenToMint,
         uint256 tStart,
         uint256 tEnd,

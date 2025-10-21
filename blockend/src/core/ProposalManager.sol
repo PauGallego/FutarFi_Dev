@@ -77,7 +77,7 @@ contract ProposalManager is Ownable {
         address attestor;
     ) external returns (uint256 id) {
         require(proposalImpl != address(0) && dutchAuctionImpl != address(0) && marketTokenImpl != address(0), "PM: impl unset");
-        require(p.payUSD != address(0), "PM: payUSD=0");
+        require(p.pyUSD != address(0), "PM: pyUSD=0");
         require(p.auctionEnd > p.auctionStart, "PM: bad window");
         require(p.liveDuration > 0, "PM: live=0");
 
@@ -91,7 +91,7 @@ contract ProposalManager is Ownable {
         address auctionNo  = Clones.clone(dutchAuctionImpl);
 
         IDutchAuction(auctionYes).initialize(
-            p.payUSD, 
+            p.pyUSD, 
             tokenYes,
             p.auctionStart, 
             p.auctionEnd,
@@ -101,7 +101,7 @@ contract ProposalManager is Ownable {
             proposalAddr
         );
         IDutchAuction(auctionNo).initialize(
-            p.payUSD, 
+            p.pyUSD, 
             tokenNo,
             p.auctionStart, 
             p.auctionEnd,
@@ -125,7 +125,7 @@ contract ProposalManager is Ownable {
             p.description,
             p.auctionStart,
             p.auctionEnd,
-            p.payUSD,
+            p.pyUSD,
             p.minSupplySold,
             p.maxSupply,
             oracleAdapter,

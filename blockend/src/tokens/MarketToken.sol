@@ -11,7 +11,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 /// @title MarketToken (YES/NO) 
 /// @notice Outcome token per proposal. Supports Permit, Capped (supply guard), and Pausable (freeze loser).
 /// @dev Owner = Proposal. A single `minter` (DutchAuction) can mint until disabled.
-contract MarketToken is ERC20, ERC20Permit, ERC20Pausable, ERC20Capped, Ownable {
+contract MarketToken is ERC20Permit, ERC20Pausable, ERC20Capped, Ownable {
     address public minter;
     address public redeemer;      // Address allowed to receive transfers while paused
 
@@ -58,8 +58,8 @@ contract MarketToken is ERC20, ERC20Permit, ERC20Pausable, ERC20Capped, Ownable 
 
     /// @notice Disable minting forever (sets minter to address(0)).
     function disableMinting() external onlyOwner {
-        emit MinterUpdated(minter, address(0));
         minter = address(0);
+        emit MinterUpdated(minter, address(0));
     }
 
     /// @notice Mark this token as the losing leg and set the Redeemer allowed to receive transfers.

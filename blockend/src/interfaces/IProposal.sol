@@ -16,7 +16,7 @@ interface IProposal {
         uint256 _tStart,
         uint256 _tEnd,
         // payment + supply limits
-        address _payUSD,
+        address _pyUSD,
         uint256 _minSold,
         uint256 _maxSupply,
         // external impls/infra
@@ -53,7 +53,7 @@ interface IProposal {
     function startTime() external view returns (uint256);
     function endTime() external view returns (uint256);
 
-    function payUSD() external view returns (address);
+    function pyUSD() external view returns (address);
     function minSupplySold() external view returns (uint256);
     function maxSupply() external view returns (uint256);
 
