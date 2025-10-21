@@ -2,8 +2,9 @@ const express = require('express');
 const router = express.Router();
 const Proposal = require('../models/Proposal');
 const OrderBook = require('../models/OrderBook');
+const Auction = require('../models/Auction');
 const { verifyWalletSignature } = require('../middleware/walletAuth');
-const { notifyProposalUpdate } = require('../middleware/websocket');
+const { notifyProposalUpdate, notifyAuctionUpdate } = require('../middleware/websocket');
 const { validateProposal } = require('../middleware/validation');
 
 // Proposals routes must NOT return raw order books
@@ -144,7 +145,6 @@ router.post('/', verifyWalletSignature, validateProposal, async (req, res) => {
     const proposal = new Proposal(proposalData);
     await proposal.save();
 
-    // Precreate empty order books but DO NOT return them publicly
     const approveOrderBook = new OrderBook({ proposalId: proposal.id, side: 'approve', bids: [], asks: [] });
     const rejectOrderBook = new OrderBook({ proposalId: proposal.id, side: 'reject', bids: [], asks: [] });
     await Promise.all([approveOrderBook.save(), rejectOrderBook.save()]);
@@ -153,7 +153,6 @@ router.post('/', verifyWalletSignature, validateProposal, async (req, res) => {
       io.emit('new-proposal', { proposal, timestamp: new Date().toISOString() });
     }
 
-    // Return only the proposal object (no orderBooks)
     res.status(201).json(proposal);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -471,6 +470,121 @@ router.delete('/:id', verifyWalletSignature, async (req, res) => {
     notifyProposalUpdate(io, { id: req.params.id, deleted: true });
     
     res.json({ message: 'Proposal deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/proposals/:id/webhook/auctions
+ * Public webhook. Updates YES and NO auction snapshots for a proposal.
+ * Body: { yes?: AuctionSnapshot|null, no?: AuctionSnapshot|null }
+ */
+router.post('/:id/webhook/auctions', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const proposal = await Proposal.findOne({ id });
+    if (!proposal) return res.status(404).json({ error: 'Proposal not found' });
+
+    const allowed = [
+      'auctionAddress','marketToken','pyusd','treasury','admin',
+      'startTime','endTime','priceStart','minToOpen','cap',
+      'currentPrice','tokensSold','maxTokenCap','minTokenCap',
+      'finalized','isValid','isCanceled'
+    ];
+
+    const sanitize = (obj) => {
+      if (obj === null) return null; // allow clearing
+      if (typeof obj !== 'object') return undefined;
+      const out = {};
+      for (const k of allowed) if (obj[k] !== undefined) out[k] = obj[k];
+      return out;
+    };
+
+    const updates = {};
+    if ('yes' in req.body) updates['auctions.yes'] = sanitize(req.body.yes);
+    if ('no' in req.body) updates['auctions.no'] = sanitize(req.body.no);
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+
+    // Update Proposal snapshot
+    const updatedProposal = await Proposal.findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { new: true }
+    );
+
+    // Also persist to Auction model per side and broadcast real-time updates
+    const io = req.app.get('io');
+
+    const upsertAuction = async (side, data) => {
+      if (data === undefined) return;
+      if (data === null) {
+        // no-op for Auction documents (do not delete), just skip
+        return;
+      }
+      const payload = {
+        proposalId: String(id),
+        side,
+        auctionAddress: data.auctionAddress ?? undefined,
+        marketToken: data.marketToken ?? undefined,
+        pyusd: data.pyusd ?? undefined,
+        treasury: data.treasury ?? undefined,
+        admin: data.admin ?? undefined,
+        startTime: data.startTime ?? undefined,
+        endTime: data.endTime ?? undefined,
+        priceStart: data.priceStart ?? undefined,
+        minToOpen: data.minToOpen ?? undefined,
+        cap: data.cap ?? undefined,
+        currentPrice: data.currentPrice ?? undefined,
+        tokensSold: data.tokensSold ?? undefined,
+        maxTokenCap: data.maxTokenCap ?? undefined,
+        minTokenCap: data.minTokenCap ?? undefined,
+        finalized: typeof data.finalized === 'boolean' ? data.finalized : undefined,
+        isValid: typeof data.isValid === 'boolean' ? data.isValid : undefined,
+        isCanceled: typeof data.isCanceled === 'boolean' ? data.isCanceled : undefined
+      };
+
+      // Remove undefined keys to avoid overwriting with undefined
+      Object.keys(payload).forEach(k => (payload[k] === undefined) && delete payload[k]);
+
+      const auctionDoc = await Auction.findOneAndUpdate(
+        { proposalId: String(id), side },
+        { $set: payload, $setOnInsert: { proposalId: String(id), side } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      // Broadcast auction update per side
+      if (io) {
+        notifyAuctionUpdate(io, {
+          proposalId: String(id),
+          side,
+          metrics: {
+            currentPrice: auctionDoc.currentPrice ?? auctionDoc.priceNow(),
+            tokensSold: auctionDoc.tokensSold,
+            maxTokenCap: auctionDoc.maxTokenCap ?? auctionDoc.cap,
+            minTokenCap: auctionDoc.minTokenCap ?? auctionDoc.minToOpen
+          },
+          status: {
+            finalized: auctionDoc.finalized,
+            isValid: auctionDoc.isValid,
+            isCanceled: auctionDoc.isCanceled
+          }
+        });
+      }
+    };
+
+    await Promise.all([
+      upsertAuction('yes', updates['auctions.yes']),
+      upsertAuction('no', updates['auctions.no'])
+    ]);
+
+    // Broadcast proposal update
+    if (io) notifyProposalUpdate(io, updatedProposal);
+
+    res.json({ id: updatedProposal.id, auctions: updatedProposal.auctions, timestamp: new Date().toISOString() });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

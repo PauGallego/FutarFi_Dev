@@ -28,6 +28,15 @@ const notifyProposalUpdate = (io, proposal) => {
   });
 };
 
+const notifyAuctionUpdate = (io, payload) => {
+  if (!io || !payload || !payload.proposalId) return;
+  const { proposalId } = payload;
+  io.to(`proposal-${proposalId}`).emit('auction-update', {
+    ...payload,
+    timestamp: new Date().toISOString()
+  });
+};
+
 const notifyMarketData = (io, proposalId, side, marketData) => {
   // Public market data broadcasts disabled intentionally
   return;
@@ -50,6 +59,7 @@ module.exports = {
   notifyOrderStatusChange,
   notifyOrderMatched,
   notifyProposalUpdate,
+  notifyAuctionUpdate,
   notifyMarketData,
   notifyUserOrdersUpdate
 };

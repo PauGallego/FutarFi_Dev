@@ -42,7 +42,6 @@ export default function WalletTestPage() {
     amount: '10'
   })
   const [proposalData, setProposalData] = useState({
-    id: Math.floor(Date.now() / 1000), // Unix timestamp as unique ID
     title: 'Test Proposal',
     description: 'This is a test proposal for wallet authentication',
     admin: '',
@@ -50,7 +49,7 @@ export default function WalletTestPage() {
     maxSupply: '1000000',
     target: '500000'
   })
-  const [testProposalId, setTestProposalId] = useState('test-proposal-1')
+  const [testProposalId, setTestProposalId] = useState('')
   const [orderIdToCancel, setOrderIdToCancel] = useState('')
 
   const socketRef = useRef<Socket | null>(null)
@@ -593,6 +592,10 @@ export default function WalletTestPage() {
         data,
         timestamp: new Date().toLocaleTimeString()
       }, ...prev])
+      if (response.ok && data?.id) {
+        setTestProposalId(String(data.id))
+        setOrderData(prev => ({ ...prev, proposalId: String(data.id) }))
+      }
     } catch (error) {
       setTestResults(prev => [{
         test: 'Create Proposal (Protected)',
@@ -962,12 +965,12 @@ export default function WalletTestPage() {
                 Get My Orders
               </Button>
               <Button 
-                onClick={() => setOrderData(prev => ({ ...prev, proposalId: proposalData.id.toString() }))}
-                disabled={!proposalData.id}
+                onClick={() => setOrderData(prev => ({ ...prev, proposalId: testProposalId }))}
+                disabled={!testProposalId}
                 variant="secondary"
                 size="sm"
               >
-                Use Proposal ID
+                Use Last Proposal ID
               </Button>
             </div>
             
@@ -1099,12 +1102,7 @@ export default function WalletTestPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input 
-                placeholder="Proposal ID"
-                type="number"
-                value={proposalData.id}
-                onChange={(e) => setProposalData(prev => ({ ...prev, id: parseInt(e.target.value) || 0 }))}
-              />
+              {/* Removed editable Proposal ID, backend generates it */}
               <Input 
                 placeholder="Proposal Title"
                 value={proposalData.title}
@@ -1140,21 +1138,7 @@ export default function WalletTestPage() {
               >
                 Create Proposal
               </Button>
-              <Button 
-                onClick={() => {
-                  const newId = Math.floor(Date.now() / 1000)
-                  setProposalData(prev => ({ 
-                    ...prev, 
-                    id: newId,
-                    title: `Test Proposal ${newId}`,
-                    description: `Automated test proposal created at ${new Date().toLocaleString()}`
-                  }))
-                }}
-                variant="secondary"
-                size="sm"
-              >
-                Generate New ID
-              </Button>
+              {/* Removed Generate New ID button */}
             </div>
           </CardContent>
         </Card>

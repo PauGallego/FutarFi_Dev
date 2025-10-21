@@ -8,7 +8,6 @@ const validateProposal = (req, res, next) => {
     message: Joi.string().optional(),
     timestamp: Joi.number().optional(),
     // Proposal fields
-    id: Joi.number().required(),
     admin: Joi.string().required(),
     title: Joi.string().required(),
     description: Joi.string().required(),

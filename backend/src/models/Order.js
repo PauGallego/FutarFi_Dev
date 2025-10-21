@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const orderSchema = new mongoose.Schema({
   proposalId: {
     type: String,
-    required: true,
-    ref: 'Proposal'
+    required: true
   },
   side: {
     type: String,

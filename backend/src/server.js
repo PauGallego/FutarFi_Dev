@@ -120,6 +120,7 @@ app.use('/api/proposals', proposalsRouter);
 app.use('/api/orderbooks', orderbooksRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/realtime', realtimeRouter);
+app.use('/api/auctions', require('./routes/auctions'));
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
   explorer: true,
