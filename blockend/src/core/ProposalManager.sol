@@ -8,9 +8,8 @@ import {Proposal} from "./Proposal.sol";
 
 /// @title ProposalManager
 /// @notice Deploys Proposal contracts and indexes them for discovery by ID and admin.
-/// @dev Keeps a simple registry; each Proposal is a standalone contract that internally deploys its auctions/tokens.
+
 contract ProposalManager is Ownable {
-    // --- Immutable/Config ---
     address public immutable PYUSD;       // Collateral/stable used by auctions/treasury
 
     // --- Indexing ---
@@ -21,43 +20,41 @@ contract ProposalManager is Ownable {
     // --- Events ---
     event ProposalCreated(uint256 indexed id, address indexed admin, address proposal, string title);
 
-    constructor(address _pyusd, address _escrowImpl) Ownable(msg.sender) {
+    constructor(address _pyusd) Ownable(msg.sender) {
         require(_pyusd != address(0), "PM:PYUSD=0");
-        require(_escrowImpl != address(0), "PM:ESCROW=0");
         PYUSD = _pyusd;
     }
 
     /// @param _title Proposal title
     /// @param _description Text description
-    /// @param _duration Auction duration in seconds (also used as Live duration for now)
+    /// @param _auctionDuration Auction duration in seconds (also used as Live duration for now)
+    /// @param _liveDuration Live duration in seconds
     /// @param _subjectToken Subject token under evaluation (treated as subjectToken)
-    /// @param _maxSupply Max cap for each market token (18 decimals)
+    /// @param _maxCap Max cap for each market token (18 decimals)
     /// @param _target Unused placeholder (kept for ABI compatibility)
     /// @param _data Unused placeholder (kept for ABI compatibility)
     /// @param _pythAddr Unused placeholder (kept for ABI compatibility)
     /// @param _pythId Unused placeholder (kept for ABI compatibility)
-    /// @return id Newly assigned proposal ID
     function createProposal(
         string memory _title,
         string memory _description,
-        uint256 _duration,
+        uint256 _auctionDuration,
+        uint256 _liveDuration,
         address _subjectToken,
-        uint256 _maxSupply,
+        uint256 _minToOpen,
+        uint256 _maxCap,
         address _target,
         bytes memory _data,
         address _pythAddr,
         bytes32 _pythId
     ) external returns (uint256 id) {
-        // Silence unused variables for now; kept for forward-compatibility with the frontend flow.
-        (_target, _data, _pythAddr, _pythId);
 
         require(_subjectToken != address(0), "PM:subject=0");
-        require(_duration > 0, "PM:duration=0");
-        require(_maxSupply > 0, "PM:max=0");
+        require(_auctionDuration > 0, "PM:duration=0");
+        require(_liveDuration > 0, "PM:duration=0");
+        require(_maxCap > 0, "PM:max=0");
 
         id = ++nextId;
-
-   
 
         // deploy a new Proposal 
         Proposal proposal = new Proposal(
@@ -65,21 +62,22 @@ contract ProposalManager is Ownable {
             msg.sender,
             _title,
             _description,
-            _duration,     // auction duration
-            _duration,     // live duration (mirrors auction duration for now)
+            _auctionDuration,     // auction duration
+            _liveDuration,        // live duration 
             _subjectToken,
-            minToOpen,
             PYUSD,
-            minToOpen,
-            _maxSupply
+            _minToOpen,
+            _maxCap,
+            _target,
+            _data,
+            _pythAddr,
+            _pythId
         );
 
         // Indexing
         address proposalAddr = address(proposal);
         proposals[id] = proposalAddr;
         allProposals.push(proposalAddr);
-        proposalsByAdmin[msg.sender].push(proposalAddr);
-
         emit ProposalCreated(id, msg.sender, proposalAddr, _title);
     }
 
@@ -101,6 +99,16 @@ contract ProposalManager is Ownable {
     }
 
     function getProposalsByAdmin(address _admin) external view returns (address[] memory) {
-        return proposalsByAdmin[_admin];
+        uint256 count = 0;
+        for (uint256 i = 0; i < allProposals.length; i++) {
+            if (IProposal(allProposals[i]).admin() == _admin) count++;
+        }
+        address[] memory result = new address[](count);
+        uint256 j = 0;
+        for (uint256 i = 0; i < allProposals.length; i++) {
+            address p = allProposals[i];
+            if (IProposal(p).admin() == _admin) result[j++] = p;
+        }
+        return result;
     }
 }

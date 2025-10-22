@@ -11,7 +11,6 @@ interface IProposal {
 
 
     function settleAuctions() external;
-    function finalizeAuction(bool auctionType) external;
     function resolve() external;
 
     // -------- Views --------
@@ -32,6 +31,4 @@ interface IProposal {
     function yesToken() external view returns (MarketToken);
     function noToken() external view returns (MarketToken);
     function treasury() external view returns (Treasury);
-    function escrowImpl() external view returns (address);
-    function escrow() external view returns (address);
 }

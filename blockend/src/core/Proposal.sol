@@ -35,10 +35,16 @@ contract Proposal is Ownable, IProposal {
     MarketToken public yesToken;
     MarketToken public noToken;
 
+    address public target;
+    bytes public data;
+
     Treasury public treasury;
     address public escrowImpl;
     address public escrow;
 
+    // Pyth Oracle
+    address public pythAddr;
+    bytes32 public pythId;
 
     event ProposalActivated(uint256 indexed id, uint256 liveStart, uint256 liveEnd);
     event ProposalResolved(uint256 indexed id, uint256 when);
@@ -48,7 +54,7 @@ contract Proposal is Ownable, IProposal {
     
     constructor(
         uint256 _id,
-        address _admin,
+        address _admin, // creator of the proposal
         string memory _title,
         string memory _description,
         uint256 _auctionDuration,
@@ -57,7 +63,10 @@ contract Proposal is Ownable, IProposal {
         address _pyUSD,
         uint256 _minToOpen,
         uint256 _maxCap,
-        address _escrowImpl
+        address _target,
+        bytes memory _data,
+        address _pythAddr,
+        bytes32 _pythId
     ) Ownable(msg.sender) {
         // Initialize proposal metadata and auction parameters
         id = _id;
@@ -72,9 +81,12 @@ contract Proposal is Ownable, IProposal {
         liveDuration = _liveDuration;
         minToOpen = _minToOpen;
         maxCap = _maxCap;
+        target = _target;
+        data = _data;
+        pythAddr = _pythAddr;
+        pythId = _pythId;
 
         treasury= new Treasury(pyUSD);
-        escrowImpl = _escrowImpl;
 
         // Deploy market tokens for YES and NO (temporary minter = this Proposal, updated after auctions are deployed)
         yesToken = new MarketToken(
@@ -150,41 +162,10 @@ contract Proposal is Ownable, IProposal {
             auctionEndTime = block.timestamp;
             liveStart = block.timestamp;
             liveEnd = liveStart + liveDuration;
-
-            state = State.Live;
-            emit ProposalLive(liveEnd);
         }
 
     }
 
-    // Finalizes the specified auction and activates proposal if both are finalized
-    function finalizeAuction(bool auctionType) external override {
-        require(state == State.Auction, "Proposal: not Auction");
-
-        if (auctionType)yesAuction.finalize();
-        else noAuction.finalize();
-
-        _activateIfReady();
-    }
-
-    function _activateIfReady() internal {
-        require(state == State.Auction, "Proposal: not Auction");
-
-        if (yesAuction.finalized() && noAuction.finalized()) {
-            activateProposal();
-            return;
-        }
-    
-    }
-
-    // Internal: sets live period and emits activation event
-    function activateProposal() internal {
-        state = State.Live;
-
-        liveStart = block.timestamp;
-        liveEnd = liveStart + liveDuration;
-        emit ProposalActivated(id, liveStart, liveEnd);
-    }
 
     // ---- Resolve only after Live ends ----
     function resolve() external override {
