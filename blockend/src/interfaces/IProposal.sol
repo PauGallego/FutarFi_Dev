@@ -16,6 +16,8 @@ interface IProposal {
     // -------- Views --------
     function state() external view returns (State);
     function id() external view returns (uint256);
+    function title() external view returns (string memory);
+    function description() external view returns (string memory);
     function admin() external view returns (address);
     function auctionStartTime() external view returns (uint256);
     function auctionEndTime() external view returns (uint256);

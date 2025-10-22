@@ -18,8 +18,8 @@ contract Proposal is Ownable, IProposal {
     // core identifiers / metadata
     uint256 public id;
     address public admin;
-    string private title;
-    string private description;
+    string  public title;
+    string  public description;
     uint256 public auctionStartTime;
     uint256 public auctionEndTime;
     uint256 public liveStart;

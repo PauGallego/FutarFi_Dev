@@ -1,171 +1,72 @@
 export const proposal_abi = [
     {
         "type": "function",
-        "name": "state",
-        "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "uint8",
-                "internalType": "enum IProposal.State"
-            }
-        ],
-        "stateMutability": "view"
-    },
-    {
-        "type": "function",
-        "name": "id",
-        "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
-        ],
-        "stateMutability": "view"
-    },
-    {
-        "type": "function",
         "name": "admin",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "address",
-                "internalType": "address"
-            }
-        ],
-        "stateMutability": "view"
-    },
-    {
-        "type": "function",
-        "name": "auctionStartTime",
-        "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
         "name": "auctionEndTime",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
-        "name": "liveStart",
+        "name": "auctionStartTime",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
-        "name": "liveEnd",
+        "name": "description",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "string", "internalType": "string" }],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "id",
+        "inputs": [],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
         "name": "liveDuration",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
-        "name": "subjectToken",
+        "name": "liveEnd",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "address",
-                "internalType": "address"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
-        "name": "pyUSD",
+        "name": "liveStart",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "address",
-                "internalType": "address"
-            }
-        ],
-        "stateMutability": "view"
-    },
-    {
-        "type": "function",
-        "name": "minToOpen",
-        "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
         "name": "maxCap",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "uint256",
-                "internalType": "uint256"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
         "type": "function",
-        "name": "yesAuction",
+        "name": "minToOpen",
         "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "address",
-                "internalType": "contract DutchAuction"
-            }
-        ],
+        "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
         "stateMutability": "view"
     },
     {
@@ -177,19 +78,6 @@ export const proposal_abi = [
                 "name": "",
                 "type": "address",
                 "internalType": "contract DutchAuction"
-            }
-        ],
-        "stateMutability": "view"
-    },
-    {
-        "type": "function",
-        "name": "yesToken",
-        "inputs": [],
-        "outputs": [
-            {
-                "name": "",
-                "type": "address",
-                "internalType": "contract MarketToken"
             }
         ],
         "stateMutability": "view"
@@ -209,13 +97,79 @@ export const proposal_abi = [
     },
     {
         "type": "function",
+        "name": "pyUSD",
+        "inputs": [],
+        "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "resolve",
+        "inputs": [],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "settleAuctions",
+        "inputs": [],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "state",
+        "inputs": [],
+        "outputs": [
+            { "name": "", "type": "uint8", "internalType": "enum IProposal.State" }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "subjectToken",
+        "inputs": [],
+        "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "title",
+        "inputs": [],
+        "outputs": [{ "name": "", "type": "string", "internalType": "string" }],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
         "name": "treasury",
+        "inputs": [],
+        "outputs": [
+            { "name": "", "type": "address", "internalType": "contract Treasury" }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "yesAuction",
         "inputs": [],
         "outputs": [
             {
                 "name": "",
                 "type": "address",
-                "internalType": "contract Treasury"
+                "internalType": "contract DutchAuction"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "yesToken",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "contract MarketToken"
             }
         ],
         "stateMutability": "view"

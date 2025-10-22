@@ -5,11 +5,12 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IProposal} from "../interfaces/IProposal.sol";
 import {Proposal} from "./Proposal.sol";
+import {IProposalManager} from "../interfaces/IProposalManager.sol";
 
 /// @title ProposalManager
 /// @notice Deploys Proposal contracts and indexes them for discovery by ID and admin.
 
-contract ProposalManager is Ownable {
+contract ProposalManager is Ownable, IProposalManager {
     address public immutable PYUSD;       // Collateral/stable used by auctions/treasury
 
     // --- Indexing ---
