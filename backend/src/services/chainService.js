@@ -295,6 +295,7 @@ async function readProposalSnapshot(proposalAddr) {
   no.maxTokenCap = toStr(noCap);
   no.minTokenCap = toStr(no.minToOpen);
 
+
   return {
     // Proposal DB core
     // Internal id is assigned by DB; not taken from chain here
@@ -387,6 +388,9 @@ async function upsertProposalAndAuctions(snapshot) {
   const fallbackTitle = snapshot.title ?? `Proposal #${snapshot.id}`;
   const fallbackDesc = snapshot.description ?? 'Synced from chain';
 
+  // Build auctions snapshot now
+  const auctionsSnapshot = { yes: snapshot.auctions?.yes || null, no: snapshot.auctions?.no || null };
+
   // Find by contract address or on-chain id
   const query = snapshot.proposalAddress
     ? { proposalAddress: snapshot.proposalAddress }
@@ -407,7 +411,8 @@ async function upsertProposalAndAuctions(snapshot) {
     maxSupply: snapshot.maxSupply,
     target: snapshot.target ?? '0x0000000000000000000000000000000000000000',
     data: snapshot.data ?? '0x',
-    marketAddress: snapshot.marketAddress
+    marketAddress: snapshot.marketAddress,
+    auctions: auctionsSnapshot
   };
 
   if (!doc) {
@@ -422,17 +427,20 @@ async function upsertProposalAndAuctions(snapshot) {
       const oldVal = doc[k];
       const newVal = baseFields[k];
       const isAddr = ['proposalAddress','admin','collateralToken','target','marketAddress'].includes(k);
-      const eq = isAddr ? (String(oldVal || '').toLowerCase() === String(newVal || '').toLowerCase()) : (String(oldVal ?? '') === String(newVal ?? ''));
+      const isObj = k === 'auctions';
+      const eq = isObj
+        ? JSON.stringify(oldVal || null) === JSON.stringify(newVal || null)
+        : (isAddr ? (String(oldVal || '').toLowerCase() === String(newVal || '').toLowerCase()) : (String(oldVal ?? '') === String(newVal ?? '')));
       if (!eq) toSet[k] = newVal;
     }
     if (Object.keys(toSet).length) {
-      doc = await Proposal.findByIdAndUpdate(doc._id, { $set: toSet }, { new: true });
+      doc = await Proposal.findByIdAndUpdate(doc._id, { $set: toSet }, { new: true, runValidators: true });
     }
   }
 
   const proposalIdStr = String(doc.id);
 
-  // Upsert Auction docs and update Proposal.auctions snapshot
+  // Upsert Auction docs
   const upsertAuction = async (side, a) => {
     if (!a || !a.auctionAddress) return;
     const payload = {
@@ -468,10 +476,6 @@ async function upsertProposalAndAuctions(snapshot) {
     upsertAuction('yes', snapshot.auctions?.yes),
     upsertAuction('no', snapshot.auctions?.no)
   ]);
-
-  // Persist snapshot inside Proposal document
-  const auctionsSnapshot = { yes: snapshot.auctions?.yes || null, no: snapshot.auctions?.no || null };
-  await Proposal.findByIdAndUpdate(doc._id, { $set: { auctions: auctionsSnapshot } });
 
   return doc;
 }
@@ -557,6 +561,9 @@ async function startProposalManagerWatcher({ manager, fromBlock }) {
 // --------------------
 // ProposalCreated watcher (backfill + live)
 // --------------------
+// Ensure single live subscription flag
+let liveSubActive = false;
+
 async function getCursor(key) {
   try {
     const Counter = require('../models/Counter');
