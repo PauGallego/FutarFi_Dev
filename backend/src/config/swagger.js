@@ -32,6 +32,14 @@ const options = {
               type: 'integer',
               description: 'Unique proposal identifier'
             },
+            proposalAddress: {
+              type: 'string',
+              description: 'Proposal contract address'
+            },
+            proposalContractId: {
+              type: 'string',
+              description: 'On-chain proposal id (uint256) as string'
+            },
             admin: {
               type: 'string',
               description: 'Address of the proposal administrator'

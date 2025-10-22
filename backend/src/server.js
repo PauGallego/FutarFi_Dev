@@ -235,7 +235,7 @@ server.listen(PORT, () => {
         for (const r of results) {
           const addr = (r && r.address) ? String(r.address).toLowerCase() : null;
           let doc = null;
-          if (addr) doc = await Proposal.findOne({ proposalContractId: addr });
+          if (addr) doc = await Proposal.findOne({ proposalAddress: addr });
           if (!doc && r.id) doc = await Proposal.findOne({ id: r.id });
           if (!doc) continue;
 
@@ -281,19 +281,11 @@ server.listen(PORT, () => {
               }
             });
           }
-
-          // Rebuild order books for this proposal from DB Orders
-          try {
-            const { rebuildOrderBookForProposal } = require('./services/orderbookService');
-            await rebuildOrderBookForProposal(pid);
-          } catch (e) {
-            console.error('OrderBook rebuild error:', e.message);
-          }
         }
-      } catch (e) {
-        console.error('sync-proposals-manager error:', e.message);
+      } catch (err) {
+        console.error('sync-proposals-manager error:', err.message);
       }
-    }, Number(process.env.PROPOSALS_SYNC_MS || 30000));
+    }, Number(process.env.PROPOSALS_POLL_MS || 15000));
   }
 });
 

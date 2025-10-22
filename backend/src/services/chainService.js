@@ -188,7 +188,10 @@ async function syncProposalFromChain({ address, abi }) {
   const asBool = (v) => Boolean(v);
 
   const onchain = {
-    proposalContractId: address.toLowerCase(),
+    // Store contract address
+    proposalAddress: address.toLowerCase(),
+    // Store on-chain proposal id as string
+    proposalContractId: raw.id !== undefined ? asStr(raw.id) : undefined,
     admin: asAddr(raw.admin),
     title: raw.title !== undefined ? asStr(raw.title) : undefined,
     description: raw.description !== undefined ? asStr(raw.description) : undefined,
@@ -204,36 +207,35 @@ async function syncProposalFromChain({ address, abi }) {
     proposalEnded: raw.proposalEnded !== undefined ? asBool(raw.proposalEnded) : undefined
   };
 
-  const idNum = asNum(raw.id);
-  if (idNum !== undefined) onchain.id = idNum;
   if (!onchain.duration && onchain.startTime !== undefined && onchain.endTime !== undefined) {
     onchain.duration = onchain.endTime - onchain.startTime;
   }
 
-  // Validate required fields for creation
-  const required = ['admin', 'title', 'description', 'startTime', 'endTime', 'duration', 'collateralToken', 'maxSupply', 'target'];
-  const missingForCreate = required.filter(k => onchain[k] === undefined);
-
-  // Find existing by id (if provided) or by proposalContractId
-  const query = idNum !== undefined ? { id: idNum } : { proposalContractId: onchain.proposalContractId };
-  let existing = await Proposal.findOne(query);
+  // Find existing by address, or by on-chain id, else by internal id (not provided here)
+  let existing = await Proposal.findOne({ $or: [
+    { proposalAddress: onchain.proposalAddress },
+    onchain.proposalContractId ? { proposalContractId: onchain.proposalContractId } : null
+  ].filter(Boolean) });
 
   if (!existing) {
-    if (missingForCreate.length) {
-      return { action: 'skipped', reason: `missing fields: ${missingForCreate.join(', ')}` };
+    // Require minimum fields to create
+    const required = ['admin', 'startTime', 'endTime', 'duration', 'collateralToken', 'maxSupply', 'target'];
+    const missing = required.filter(k => onchain[k] === undefined);
+    if (missing.length) {
+      return { action: 'skipped', reason: `missing fields: ${missing.join(', ')}` };
     }
     const created = new Proposal(onchain);
-    await created.save();
+    await created.save(); // pre-save sets internal id
     return { action: 'created', proposal: created };
   }
 
-  // Compute changed fields (only compare provided keys)
-  const updatableKeys = Object.keys(onchain).filter(k => k !== 'id' && onchain[k] !== undefined);
+  // Update changed fields
+  const updatableKeys = Object.keys(onchain).filter(k => onchain[k] !== undefined);
   const toSet = {};
   for (const k of updatableKeys) {
     const newVal = onchain[k];
     const oldVal = existing[k];
-    const isAddrField = ['admin','collateralToken','target','marketAddress','proposalContractId'].includes(k);
+    const isAddrField = ['admin','collateralToken','target','marketAddress','proposalAddress'].includes(k);
     const eq = isAddrField ? (String(oldVal || '').toLowerCase() === String(newVal || '').toLowerCase()) : (String(oldVal ?? '') === String(newVal ?? ''));
     if (!eq) toSet[k] = newVal;
   }
@@ -247,46 +249,11 @@ async function syncProposalFromChain({ address, abi }) {
 }
 
 // ===== Minimal ABIs for manager/proposal/auction/token =====
-const ABI_MANAGER = [
-  { "type": "function", "name": "getAllProposals", "stateMutability": "view", "inputs": [], "outputs": [{"type":"address[]"}] }
-];
-const ABI_PROPOSAL = [
-  {"type":"function","name":"id","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"admin","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"state","stateMutability":"view","inputs":[],"outputs":[{"type":"uint8"}]},
-  {"type":"function","name":"auctionStartTime","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"auctionEndTime","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"liveStart","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"liveEnd","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"liveDuration","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"subjectToken","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"pyUSD","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"minToOpen","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"maxCap","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"yesAuction","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"noAuction","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"yesToken","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"noToken","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"treasury","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]}
-];
-const ABI_AUCTION = [
-  {"type":"function","name":"PRICE_START","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"START_TIME","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"END_TIME","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"MIN_TO_OPEN","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"ADMIN","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"TREASURY","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"PYUSD","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"MARKET_TOKEN","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
-  {"type":"function","name":"priceNow","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"finalized","stateMutability":"view","inputs":[],"outputs":[{"type":"bool"}]},
-  {"type":"function","name":"isValid","stateMutability":"view","inputs":[],"outputs":[{"type":"bool"}]},
-  {"type":"function","name":"isCanceled","stateMutability":"view","inputs":[],"outputs":[{"type":"bool"}]}
-];
-const ABI_TOKEN_MIN = [
-  {"type":"function","name":"totalSupply","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
-  {"type":"function","name":"cap","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]}
-];
+// Load directly from JSON files instead of hardcoding here
+const ABI_MANAGER = PM_ABI;
+const ABI_PROPOSAL = PROPOSAL_ABI;
+const ABI_AUCTION = AUCTION_ABI;
+const ABI_TOKEN_MIN = TOKEN_MIN_ABI;
 
 const toStr = (v) => (typeof v === 'bigint' ? v.toString() : String(v));
 const toNum = (v) => (typeof v === 'bigint' ? Number(v) : Number(v));
@@ -330,8 +297,9 @@ async function readProposalSnapshot(proposalAddr) {
 
   return {
     // Proposal DB core
-    id: toNum(id),
-    proposalContractId: toAddr(proposalAddr),
+    // Internal id is assigned by DB; not taken from chain here
+    proposalAddress: toAddr(proposalAddr),
+    proposalContractId: toStr(id),
     admin: toAddr(admin),
     state: stateEnum,
     // Use on-chain metadata when available
@@ -419,11 +387,14 @@ async function upsertProposalAndAuctions(snapshot) {
   const fallbackTitle = snapshot.title ?? `Proposal #${snapshot.id}`;
   const fallbackDesc = snapshot.description ?? 'Synced from chain';
 
-  // Find existing by id or by proposalContractId
-  const query = snapshot.id ? { id: snapshot.id } : { proposalContractId: snapshot.proposalContractId };
-  let doc = await Proposal.findOne(query);
+  // Find by contract address or on-chain id
+  const query = snapshot.proposalAddress
+    ? { proposalAddress: snapshot.proposalAddress }
+    : (snapshot.proposalContractId ? { proposalContractId: snapshot.proposalContractId } : null);
+  let doc = query ? await Proposal.findOne(query) : null;
 
   const baseFields = {
+    proposalAddress: snapshot.proposalAddress,
     proposalContractId: snapshot.proposalContractId,
     admin: snapshot.admin,
     state: snapshot.state,
@@ -441,7 +412,7 @@ async function upsertProposalAndAuctions(snapshot) {
 
   if (!doc) {
     const toCreate = { ...baseFields };
-    if (snapshot.id !== undefined) toCreate.id = snapshot.id;
+    // Internal id is set in pre-save
     doc = new Proposal(toCreate);
     await doc.save();
   } else {
@@ -450,7 +421,7 @@ async function upsertProposalAndAuctions(snapshot) {
     for (const k of Object.keys(baseFields)) {
       const oldVal = doc[k];
       const newVal = baseFields[k];
-      const isAddr = ['proposalContractId','admin','collateralToken','target','marketAddress'].includes(k);
+      const isAddr = ['proposalAddress','admin','collateralToken','target','marketAddress'].includes(k);
       const eq = isAddr ? (String(oldVal || '').toLowerCase() === String(newVal || '').toLowerCase()) : (String(oldVal ?? '') === String(newVal ?? ''));
       if (!eq) toSet[k] = newVal;
     }
@@ -538,6 +509,9 @@ async function startProposalManagerWatcher({ manager, fromBlock }) {
   const handleEvent = async (id, admin, proposal, title, log) => {
     try {
       const snap = await readProposalSnapshot(proposal);
+      // Set address and on-chain id explicitly
+      snap.proposalAddress = toAddr(proposal);
+      snap.proposalContractId = String(id);
       // Fill title/description from event when available
       if (!snap.title) snap.title = title || `Proposal #${snap.id}`;
       if (!snap.description) snap.description = 'Synced from event';
@@ -614,19 +588,17 @@ async function handleProposalCreatedLog(io, log) {
     const proposalAddr = toLower(parsed.args.proposal);
     const title = String(parsed.args.title);
 
-    // Sync from chain (reads full snapshot and upserts auctions too)
-    const { syncProposalByAddress } = module.exports; // self-reference
+    const { syncProposalByAddress } = module.exports;
     const { notifyProposalUpdate } = require('../middleware/websocket');
 
     await syncProposalByAddress(proposalAddr);
 
-    // Fetch updated doc for broadcast
     const Proposal = require('../models/Proposal');
-    const doc = await Proposal.findOne({ $or: [ { id }, { proposalContractId: proposalAddr } ] });
+    // Find by address or on-chain id
+    const doc = await Proposal.findOne({ $or: [ { proposalAddress: proposalAddr }, { proposalContractId: String(id) } ] });
     if (doc && io) notifyProposalUpdate(io, doc);
   } catch (e) {
     console.error('handleProposalCreatedLog error:', e.message);
-    // Fallback: minimally upsert the proposal so API is populated; poll will enrich later
     try {
       const parsed = PM_EVENT_IFACE.parseLog(log);
       const id = Number(parsed.args.id);
@@ -635,12 +607,12 @@ async function handleProposalCreatedLog(io, log) {
       const title = String(parsed.args.title || `Proposal #${id}`);
       const Proposal = require('../models/Proposal');
 
-      const existing = await Proposal.findOne({ $or: [ { id }, { proposalContractId: proposalAddr } ] });
+      const existing = await Proposal.findOne({ $or: [ { proposalAddress: proposalAddr }, { proposalContractId: String(id) } ] });
       if (!existing) {
         const now = Math.floor(Date.now() / 1000);
         await Proposal.create({
-          id,
-          proposalContractId: proposalAddr,
+          proposalAddress: proposalAddr,
+          proposalContractId: String(id),
           admin,
           title,
           description: 'Pending sync',
@@ -687,7 +659,6 @@ async function backfillProposalCreated({ manager, fromBlock, toBlock, io }) {
   }
 }
 
-let liveSubActive = false;
 function startProposalCreatedWatcher({ manager, confirmations = 0, fromBlock } = {}) {
   if (!manager) throw new Error('manager address required');
   const provider = getProvider();
@@ -714,7 +685,6 @@ function startProposalCreatedWatcher({ manager, confirmations = 0, fromBlock } =
       const filter = { address: addr, topics: [PM_EVENT_TOPIC] };
       provider.on(filter, async (log) => {
         try {
-          // Optional confirmations: ignore if not enough confirmations yet
           if (confirmations && confirmations > 0) {
             const block = await provider.getBlockNumber();
             if (block - Number(log.blockNumber) < confirmations) return;

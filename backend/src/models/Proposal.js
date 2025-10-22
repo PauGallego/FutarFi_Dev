@@ -3,7 +3,10 @@ const Counter = require('./Counter');
 
 const proposalSchema = new mongoose.Schema({
   id: { type: Number, unique: true },
+  // On-chain proposal id (uint256) as string
   proposalContractId: { type: String, required: false, index: true },
+  // Proposal contract address
+  proposalAddress: { type: String, required: false, index: true },
   admin: { type: String, required: true },
   title: { type: String, required: true },
   description: { type: String, required: true },
@@ -17,7 +20,7 @@ const proposalSchema = new mongoose.Schema({
   marketAddress: { type: String, required: false },
   proposalExecuted: { type: Boolean, default: false },
   proposalEnded: { type: Boolean, default: false },
-  // New: on-chain state mirror
+  // On-chain state mirror
   state: {
     type: String,
     enum: ['auction', 'live', 'resolved', 'cancelled'],
@@ -99,7 +102,7 @@ proposalSchema.methods.checkIsActive = function() {
   return now >= this.startTime && now <= this.endTime && !this.proposalEnded;
 };
 
-// Update isActive before saving
+// Update isActive before saving and auto-increment internal id
 proposalSchema.pre('save', async function(next) {
   this.isActive = this.checkIsActive();
   if (this.isNew && (this.id === undefined || this.id === null)) {
