@@ -127,7 +127,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         MARKET_TOKEN.mint(msg.sender, tokensOut);
         emit LiquidityAdded(msg.sender, address(MARKET_TOKEN), _payAmount, actualPrice, tokensOut);
 
-        if (MARKET_TOKEN.totalSupply() + tokensOut == MARKET_TOKEN.cap()) _finalize();
+        if (MARKET_TOKEN.totalSupply() == MARKET_TOKEN.cap()) _finalize();
         
     }
 

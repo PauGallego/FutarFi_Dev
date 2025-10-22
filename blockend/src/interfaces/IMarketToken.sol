@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 interface IMarketToken {
     // --- Minting and control ---
     function mint(address to, uint256 amount) external;
+    function setMinter(address newMinter) external;
     function disableMinting() external;
     function finalizeAsLoser(address redeemer_) external;
     function redeemerBurn(uint256 amount) external;

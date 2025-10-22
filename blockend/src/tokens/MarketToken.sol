@@ -48,6 +48,14 @@ contract MarketToken is ERC20Permit, ERC20Pausable, ERC20Capped, Ownable, IMarke
 
     function decimals() public pure override(ERC20, IMarketToken) returns (uint8) { return 18; }
 
+    /// @notice Set the address allowed to mint. Only owner (Proposal) can update.
+    function setMinter(address newMinter) external onlyOwner {
+        if (newMinter == address(0)) revert MinterZero();
+        address old = minter;
+        minter = newMinter;
+        emit MinterUpdated(old, newMinter);
+    }
+
     /// @notice Disable minting forever (sets minter to address(0)).
     function disableMinting() external onlyOwner {
         minter = address(0);

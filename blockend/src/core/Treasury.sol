@@ -68,7 +68,6 @@ contract Treasury is Ownable , ITreasury {
         IERC20(pyUSD).safeTransfer(_user, balances[_user]);
         emit RefundPaid(msg.sender, _user, _amount);
 
-
     }
 
 }

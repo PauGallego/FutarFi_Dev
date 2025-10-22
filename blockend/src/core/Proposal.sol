@@ -4,7 +4,6 @@ pragma solidity ^0.8.30;
 import {IProposal} from "../interfaces/IProposal.sol";
 import {IDutchAuction} from "../interfaces/IDutchAuction.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {MarketToken} from "../tokens/MarketToken.sol";
 import {Treasury} from "./Treasury.sol";
 import {DutchAuction} from "./DutchAuction.sol";
@@ -46,13 +45,12 @@ contract Proposal is Ownable, IProposal {
     event ProposalCancelled(uint256 when);
     event ProposalLive(uint256 liveEnd);
 
-    constructor() Ownable(msg.sender) {}
     
-    function initialize(
+    constructor(
         uint256 _id,
         address _admin,
-        string calldata _title,
-        string calldata _description,
+        string memory _title,
+        string memory _description,
         uint256 _auctionDuration,
         uint256 _liveDuration,
         address _subjectToken,
@@ -60,7 +58,7 @@ contract Proposal is Ownable, IProposal {
         uint256 _minToOpen,
         uint256 _maxCap,
         address _escrowImpl
-    ) external override {
+    ) Ownable(msg.sender) {
         // Initialize proposal metadata and auction parameters
         id = _id;
         admin = _admin;
@@ -78,23 +76,23 @@ contract Proposal is Ownable, IProposal {
         treasury= new Treasury(pyUSD);
         escrowImpl = _escrowImpl;
 
-        // Deploy market tokens for YES and NO
+        // Deploy market tokens for YES and NO (temporary minter = this Proposal, updated after auctions are deployed)
         yesToken = new MarketToken(
             string.concat("FutarFi tYES #", Strings.toString(id)),
             string.concat("tYES-", Strings.toString(id)),
             address(this),
-            address(yesAuction),
+            address(this),
             _maxCap
         );
         noToken = new MarketToken(
             string.concat("FutarFi tNO #", Strings.toString(id)),
             string.concat("tNO-", Strings.toString(id)),
             address(this),
-            address(noAuction),
+            address(this),
             _maxCap
         );
 
-        // Deploy Dutch auctions for YES and NO
+        // Deploy Dutch auctions for YES and NO (require token addresses in constructor)
         yesAuction = new DutchAuction(
             pyUSD,
             address(yesToken),
@@ -114,6 +112,10 @@ contract Proposal is Ownable, IProposal {
             minToOpen,
             admin
         );
+
+        // Update minters on tokens to point at the newly created auctions
+        yesToken.setMinter(address(yesAuction));
+        noToken.setMinter(address(noAuction));
 
         // Set auction addresses in Treasury
         Treasury(treasury).setAuctions(address(yesAuction), address(noAuction));
@@ -141,9 +143,9 @@ contract Proposal is Ownable, IProposal {
             return;
         }
 
-        bool yesAuctionReady = yesAuction.isValid();
-        bool noAuctionReady  = noAuction.isValid();
-        if (yesAuctionReady && noAuctionReady) {
+        bool yesAuctionValid = yesAuction.isValid();
+        bool noAuctionValid  = noAuction.isValid();
+        if (yesAuctionValid && noAuctionValid) {
             // If both auctions are ready, activate proposal
             auctionEndTime = block.timestamp;
             liveStart = block.timestamp;
@@ -162,10 +164,10 @@ contract Proposal is Ownable, IProposal {
         if (auctionType)yesAuction.finalize();
         else noAuction.finalize();
 
-        activateIfReady();
+        _activateIfReady();
     }
 
-    function activateIfReady() internal {
+    function _activateIfReady() internal {
         require(state == State.Auction, "Proposal: not Auction");
 
         if (yesAuction.finalized() && noAuction.finalized()) {
