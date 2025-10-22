@@ -336,6 +336,59 @@ router.get('/with-market-data', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/proposals/state/{state}:
+ *   get:
+ *     summary: Get proposals filtered by state
+ *     tags: [Proposals]
+ *     parameters:
+ *       - in: path
+ *         name: state
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [auction, live, resolved, cancelled]
+ *     responses:
+ *       200:
+ *         description: List of proposals in given state
+ */
+router.get('/state/:state', async (req, res) => {
+  try {
+    const { state } = req.params;
+    if (!['auction','live','resolved','cancelled'].includes(state)) {
+      return res.status(400).json({ error: 'Invalid state' });
+    }
+    const proposals = await Proposal.find({ state }).sort({ createdAt: -1 });
+    res.json(proposals);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/proposals/states/counts:
+ *   get:
+ *     summary: Get counts of proposals per state
+ *     tags: [Proposals]
+ *     responses:
+ *       200:
+ *         description: Counts per state
+ */
+router.get('/states/counts', async (_req, res) => {
+  try {
+    const states = ['auction','live','resolved','cancelled'];
+    const out = {};
+    await Promise.all(states.map(async s => {
+      out[s] = await Proposal.countDocuments({ state: s });
+    }));
+    res.json(out);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Helper functions (if not already imported)
 async function getLastTradePrice(proposalId, side) {
   const Order = require('../models/Order');

@@ -1,67 +1,35 @@
-// // SPDX-License-Identifier: MIT
-// pragma solidity ^0.8.30;
+//SPDX-License-Identifier: MIT
+ pragma solidity ^0.8.30;
 
-// import "forge-std/Script.sol";
-// import "forge-std/console.sol";
-// import {ProposalManager} from "../src/ProposalManager.sol";
-// import {Proposal} from "../src/Proposal.sol";
-// import {Market} from "../src/Market.sol";
-// import {MarketToken} from "../src/MarketToken.sol";
+ import "forge-std/Script.sol";
+ import "forge-std/console.sol";
+ import {ProposalManager} from "../src/core/ProposalManager.sol";
+ import {PyUSD} from "../src/tokens/PyUSD.sol";
 
-// contract DeployScript is Script {
-    
-//     // Deployed contract addresses will be stored here
-//     ProposalManager public proposalManager;
-//     Proposal public proposalImpl;
-//     Market public marketImpl;
-//     MarketToken public marketTokenImpl;
+ contract DeployScript is Script {
+    ProposalManager public proposalManager;
+    PyUSD public pyusd;
 
-//     function run() external {
-//         vm.startBroadcast();
+    function run() external {
+        vm.startBroadcast();
 
-//         proposalImpl = new Proposal();
+        // Deploy PYUSD (6 decimals). Mint initial supply to deployer for testing
+        uint256 initialSupply = 1_000_000 * 10 ** 6; // 1,000,000 PYUSD
+        pyusd = new PyUSD(msg.sender, initialSupply);
 
-//         marketImpl = new Market();
+        // Deploy ProposalManager with PYUSD address
+        proposalManager = new ProposalManager(address(pyusd));
 
-//         marketTokenImpl = new MarketToken();
+        // Basic checks
+        require(proposalManager.PYUSD() == address(pyusd), "PM: wrong PYUSD");
+        require(proposalManager.owner() == msg.sender, "PM: wrong owner");
 
-//         proposalManager = new ProposalManager(
-//             address(proposalImpl),
-//             address(marketImpl), 
-//             address(marketTokenImpl)
-//         );
+        console.log("\n=== Deployment Summary ===");
+        console.log("PYUSD:", address(pyusd));
+        console.log("ProposalManager:", address(proposalManager));
+        console.log("Owner:", proposalManager.owner());
+        console.log("nextId:", proposalManager.nextId());
 
-//         console.log("Verifying deployment");
-//         require(proposalManager.proposalImpl() == address(proposalImpl), "Proposal impl not set correctly");
-//         require(proposalManager.marketImpl() == address(marketImpl), "Market impl not set correctly");
-//         require(proposalManager.marketTokenImpl() == address(marketTokenImpl), "MarketToken impl not set correctly");
-//         require(proposalManager.owner() == msg.sender, "Owner not set correctly");
-        
-//         console.log("All implementations verified successfully");
-
-//         console.log("\n=== Deployment Summary ===");
-//         console.log("ProposalManager:", address(proposalManager));
-//         console.log("Proposal Implementation:", address(proposalImpl));
-//         console.log("Market Implementation:", address(marketImpl));
-//         console.log("MarketToken Implementation:", address(marketTokenImpl));
-//         console.log("Owner:", proposalManager.owner());
-//         console.log("Proposal Count:", proposalManager.proposalCount());
-
-//         vm.stopBroadcast();
-//     }
-
-//     // Helper function to get deployment addresses
-//     function getDeployedAddresses() external view returns (
-//         address _proposalManager,
-//         address _proposalImpl,
-//         address _marketImpl,
-//         address _marketTokenImpl
-//     ) {
-//         return (
-//             address(proposalManager),
-//             address(proposalImpl),
-//             address(marketImpl),
-//             address(marketTokenImpl)
-//         );
-//     }
-// }
+        vm.stopBroadcast();
+    }
+}

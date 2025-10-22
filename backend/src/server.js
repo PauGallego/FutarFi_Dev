@@ -16,6 +16,9 @@ const realtimeRouter = require('./routes/realtime');
 const rateLimit = require('./middleware/rateLimit');
 const { ethers } = require('ethers');
 
+// New: chain routes
+const chainRouter = require('./routes/chain');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -121,6 +124,7 @@ app.use('/api/orderbooks', orderbooksRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/realtime', realtimeRouter);
 app.use('/api/auctions', require('./routes/auctions'));
+app.use('/api/chain', chainRouter); // read-only info (address, chainId)
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
   explorer: true,
@@ -166,6 +170,117 @@ app.use('*', (req, res) => {
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket server ready`);
+
+  // Lightweight internal pollers
+  const { startPoll, monitorFilledOrders } = require('./services/chainService');
+  const Proposal = require('./models/Proposal');
+  const io = app.get('io');
+
+  // Poll proposals to keep isActive flag fresh
+  startPoll('proposals-active', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const changed = await Proposal.updateMany({}, [{
+      $set: {
+        isActive: {
+          $and: [
+            { $lte: ['$startTime', now] },
+            { $gte: ['$endTime', now] },
+            { $eq: ['$proposalEnded', false] }
+          ]
+        }
+      }
+    }]);
+    if (changed?.modifiedCount > 0) {
+      const updated = await Proposal.find({});
+      updated.forEach(p => {
+        const { notifyProposalUpdate } = require('./middleware/websocket');
+        notifyProposalUpdate(io, p);
+      });
+    }
+  }, Number(process.env.PROPOSALS_POLL_MS || 15000));
+
+  // Example: internal monitor of filled orders (no HTTP POST). Provide a mapper from Order -> call
+  startPoll('filled-orders-monitor', async () => {
+    const { monitorFilledOrders } = require('./services/chainService');
+    await monitorFilledOrders((order) => {
+      // Map DB order -> contract call description
+      return null; // implement later as needed
+    });
+  }, Number(process.env.FILLED_MONITOR_MS || 20000));
+
+  // Auto-sync proposals and auctions from ProposalManager if configured
+  if (process.env.PROPOSAL_MANAGER_ADDRESS) {
+    const { syncProposalsFromManager } = require('./services/chainService');
+    const { notifyProposalUpdate, notifyAuctionUpdate } = require('./middleware/websocket');
+    const Auction = require('./models/Auction');
+
+    startPoll('sync-proposals-manager', async () => {
+      try {
+        const results = await syncProposalsFromManager({ manager: process.env.PROPOSAL_MANAGER_ADDRESS });
+        // Broadcast updates for each synced proposal
+        for (const r of results) {
+          const addr = (r && r.address) ? String(r.address).toLowerCase() : null;
+          let doc = null;
+          if (addr) doc = await Proposal.findOne({ proposalContractId: addr });
+          if (!doc && r.id) doc = await Proposal.findOne({ id: r.id });
+          if (!doc) continue;
+
+          // Proposal update
+          notifyProposalUpdate(io, doc);
+
+          const pid = String(doc.id);
+          // YES auction
+          const yes = await Auction.findOne({ proposalId: pid, side: 'yes' });
+          if (yes) {
+            notifyAuctionUpdate(io, {
+              proposalId: pid,
+              side: 'yes',
+              metrics: {
+                currentPrice: yes.currentPrice ?? yes.priceNow(),
+                tokensSold: yes.tokensSold,
+                maxTokenCap: yes.maxTokenCap ?? yes.cap,
+                minTokenCap: yes.minTokenCap ?? yes.minToOpen
+              },
+              status: {
+                finalized: yes.finalized,
+                isValid: yes.isValid,
+                isCanceled: yes.isCanceled
+              }
+            });
+          }
+          // NO auction
+          const no = await Auction.findOne({ proposalId: pid, side: 'no' });
+          if (no) {
+            notifyAuctionUpdate(io, {
+              proposalId: pid,
+              side: 'no',
+              metrics: {
+                currentPrice: no.currentPrice ?? no.priceNow(),
+                tokensSold: no.tokensSold,
+                maxTokenCap: no.maxTokenCap ?? no.cap,
+                minTokenCap: no.minTokenCap ?? no.minToOpen
+              },
+              status: {
+                finalized: no.finalized,
+                isValid: no.isValid,
+                isCanceled: no.isCanceled
+              }
+            });
+          }
+
+          // Rebuild order books for this proposal from DB Orders
+          try {
+            const { rebuildOrderBookForProposal } = require('./services/orderbookService');
+            await rebuildOrderBookForProposal(pid);
+          } catch (e) {
+            console.error('OrderBook rebuild error:', e.message);
+          }
+        }
+      } catch (e) {
+        console.error('sync-proposals-manager error:', e.message);
+      }
+    }, Number(process.env.PROPOSALS_SYNC_MS || 30000));
+  }
 });
 
 module.exports = { app, io };

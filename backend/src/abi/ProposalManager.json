@@ -1,0 +1,5 @@
+{
+  "abi": [
+    { "type": "function", "name": "getAllProposals", "stateMutability": "view", "inputs": [], "outputs": [{"type":"address[]"}] }
+  ]
+}

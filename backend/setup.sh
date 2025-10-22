@@ -2,12 +2,6 @@
 
 echo "Setting up FutarFi API with Docker..."
 
-# Create .env file for Docker
-cat > .env << EOF
-NODE_ENV=development
-PORT=3001
-MONGODB_URI=mongodb://admin:password123@mongodb:27017/futarfi?authSource=admin
-EOF
 
 # Install dependencies
 pnpm install
