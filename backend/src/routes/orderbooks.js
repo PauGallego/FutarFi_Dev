@@ -243,6 +243,518 @@ router.get('/:proposalId/:side/candles', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/orders:
+ *   post:
+ *     summary: Create order (requires wallet signature)
+ *     description: Creates a new order. User must provide wallet signature for authentication.
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp, orderType, price, amount]
+ *             properties:
+ *               address:
+ *                 type: string
+ *                 description: Wallet address
+ *               signature:
+ *                 type: string
+ *                 description: Wallet signature
+ *               message:
+ *                 type: string
+ *                 description: Signed message
+ *               timestamp:
+ *                 type: number
+ *                 description: Message timestamp
+ *               orderType:
+ *                 type: string
+ *                 enum: [buy, sell]
+ *               price:
+ *                 type: number
+ *               amount:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Order created successfully
+ *       401:
+ *         description: Invalid wallet signature
+ */
+router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res) => {
+  try {
+    const { proposalId, side } = req.params;
+    const { orderType, orderExecution = 'limit', price, amount } = req.body;
+    const userAddress = req.userAddress; // From wallet authentication
+    const io = req.app.get('io');
+
+    // Validate inputs
+    if (!proposalId) {
+      return res.status(400).json({ error: 'Proposal ID is required' });
+    }
+
+    if (!userAddress) {
+      return res.status(401).json({ error: 'User address not found in authentication' });
+    }
+
+    if (!['approve', 'reject'].includes(side)) {
+      return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
+    }
+
+    if (!['buy', 'sell'].includes(orderType)) {
+      return res.status(400).json({ error: 'Invalid orderType. Must be buy or sell' });
+    }
+
+    if (!['limit', 'market'].includes(orderExecution)) {
+      return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
+    }
+
+    // Verify that the proposal exists
+    const proposal = await Proposal.findOne({ id: proposalId });
+    if (!proposal) {
+      return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
+    }
+
+    // Check if proposal has required fields
+    if (!proposal.id || !proposal.admin) {
+      return res.status(400).json({ error: 'Proposal data is incomplete' });
+    }
+
+    // Check if proposal is active
+    if (!proposal.isActive) {
+      return res.status(400).json({ error: 'Proposal is not active for trading' });
+    }
+
+    // For market orders, price is not required but we'll calculate it
+    if (orderExecution === 'limit' && (!price || parseFloat(price) <= 0)) {
+      return res.status(400).json({ error: 'Price required for limit orders and must be greater than 0' });
+    }
+
+    if (!amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Amount is required and must be greater than 0' });
+    }
+
+    const order = new Order({
+      proposalId,
+      side,
+      orderType,
+      orderExecution,
+      price: price?.toString() || '0',
+      amount: amount.toString(),
+      userAddress,
+      filledAmount: '0',
+      status: 'open',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    await order.save();
+
+    if (!order || !order._id) {
+      return res.status(500).json({ error: 'Failed to create order' });
+    }
+
+    // NEW: notify this user that their orders changed
+    try { if (io) notifyUserOrdersUpdate(io, userAddress, { reason: 'order-created', changedOrderId: order._id.toString() }); } catch (e) {}
+
+    // Update order book (with error handling)
+    try {
+      await updateOrderBook(proposalId, side, io);
+    } catch (updateError) {
+      console.error('Error updating order book after creation:', updateError);
+      // Don't fail the whole operation if order book update fails
+    }
+
+    // Execute order if it's a market order or if there are matching orders (with error handling)
+    try {
+      await executeOrder(order, io);
+      
+      // Also try to execute existing orders that might now have a match
+      const existingOrders = await Order.find({
+        proposalId: order.proposalId,
+        side: order.side,
+        orderType: order.orderType === 'buy' ? 'sell' : 'buy', // Opposite type
+        status: 'open',
+        _id: { $ne: order._id } // Exclude the order we just created
+      }).sort({ createdAt: 1 }); // Oldest first
+      
+      console.log(`Found ${existingOrders.length} existing orders to re-check for matching`);
+      
+      for (const existingOrder of existingOrders) {
+        try {
+          await executeOrder(existingOrder, io);
+        } catch (existingExecuteError) {
+          console.error('Error executing existing order:', existingExecuteError);
+        }
+      }
+    } catch (executeError) {
+      console.error('Error executing order:', executeError);
+      // Don't fail the whole operation if order execution fails
+    }
+
+    // Notify clients (with error handling)
+    try {
+      if (io && typeof notifyNewOrder === 'function') {
+        notifyNewOrder(io, order);
+      }
+    } catch (notifyError) {
+      console.error('Error notifying new order:', notifyError);
+      // Don't fail the whole operation if notification fails
+    }
+
+    res.status(201).json(order);
+  } catch (error) {
+    console.error('Error creating order:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/orders/{orderId}:
+ *   delete:
+ *     summary: Cancel order (requires wallet signature)
+ *     description: Cancels an order. Only the order creator can cancel it.
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Order cancelled successfully
+ *       401:
+ *         description: Invalid wallet signature
+ *       403:
+ *         description: Not authorized to cancel this order
+ *       404:
+ *         description: Order not found
+ */
+router.delete('/orders/:orderId', verifyWalletSignature, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userAddress = req.userAddress; // From wallet authentication
+    const io = req.app.get('io');
+
+    // Validate inputs
+    if (!orderId) {
+      return res.status(400).json({ error: 'Order ID is required' });
+    }
+
+    if (!userAddress) {
+      return res.status(401).json({ error: 'User address not found in authentication' });
+    }
+    
+    // First check if order exists and belongs to authenticated user
+    const existingOrder = await Order.findById(orderId);
+    if (!existingOrder) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Check if order has required fields
+    if (!existingOrder.userAddress) {
+      return res.status(400).json({ error: 'Order userAddress is missing' });
+    }
+
+    if (!existingOrder.proposalId || !existingOrder.side) {
+      return res.status(400).json({ error: 'Order data is incomplete' });
+    }
+    
+    if (existingOrder.userAddress.toLowerCase() !== userAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Not authorized to cancel this order' });
+    }
+
+    // Check if order can be cancelled
+    if (existingOrder.status === 'cancelled') {
+      return res.status(400).json({ error: 'Order is already cancelled' });
+    }
+
+    if (existingOrder.status === 'filled') {
+      return res.status(400).json({ error: 'Cannot cancel a filled order' });
+    }
+    
+    const order = await Order.findByIdAndUpdate(
+      orderId,
+      { 
+        status: 'cancelled',
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
+
+    if (!order) {
+      return res.status(500).json({ error: 'Failed to update order status' });
+    }
+
+    // NEW: notify this user that their orders changed
+    try { if (io) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-cancelled', changedOrderId: order._id.toString() }); } catch (e) {}
+
+    // Update order book (with error handling)
+    try {
+      await updateOrderBook(order.proposalId, order.side, io);
+    } catch (updateError) {
+      console.error('Error updating order book after cancellation:', updateError);
+      // Don't fail the whole operation if order book update fails
+    }
+
+    // Notify clients (with error handling)
+    try {
+      if (io && typeof notifyOrderStatusChange === 'function') {
+        notifyOrderStatusChange(io, order, 'cancelled');
+      }
+    } catch (notifyError) {
+      console.error('Error notifying order status change:', notifyError);
+      // Don't fail the whole operation if notification fails
+    }
+
+    res.json(order);
+  } catch (error) {
+    console.error('Error cancelling order:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/my-orders:
+ *   post:
+ *     summary: Get my orders (requires wallet signature)
+ *     description: Get all orders for the authenticated user
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *               status:
+ *                 type: string
+ *                 enum: [open, filled, cancelled, partial]
+ *               proposalId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User orders
+ *       401:
+ *         description: Authentication required
+ */
+router.post('/my-orders', verifyWalletSignature, async (req, res) => {
+  try {
+    const { status, proposalId } = req.body;
+    const filter = { userAddress: req.userAddress };
+    
+    if (status) filter.status = status;
+    if (proposalId) filter.proposalId = proposalId;
+    
+    const orders = await Order.find(filter).sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/my-orders/{proposalId}:
+ *   post:
+ *     summary: Get my orders for specific proposal (requires wallet signature)
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: User orders for proposal
+ */
+router.post('/my-orders/:proposalId', verifyWalletSignature, async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    const orders = await Order.find({ 
+      userAddress: req.userAddress,
+      proposalId 
+    }).sort({ createdAt: -1 });
+    
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/my-trades:
+ *   post:
+ *     summary: Get my trading history (requires wallet signature)
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: User trading history
+ */
+router.post('/my-trades', verifyWalletSignature, async (req, res) => {
+  try {
+    const trades = await Order.find({ 
+      userAddress: req.userAddress,
+      status: { $in: ['filled', 'partial'] }
+    }).sort({ updatedAt: -1 });
+    
+    res.json(trades);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/orders:
+ *   get:
+ *     summary: Get public list of open/partial orders (addresses redacted)
+ *     description: Returns orders with status open or partial for the given proposal and side. User addresses are not included.
+ *     tags: [Orderbooks]
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject, yes, no]
+ *     responses:
+ *       200:
+ *         description: List of orders
+ */
+router.get('/:proposalId/:side/orders', async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    let { side } = req.params;
+
+    // Normalize yes/no to approve/reject
+    if (side === 'yes') side = 'approve';
+    if (side === 'no') side = 'reject';
+
+    if (!['approve', 'reject'].includes(side)) {
+      return res.status(400).json({ error: 'Invalid side. Must be approve/reject (or yes/no alias)' });
+    }
+
+    // Verify proposal exists (by numeric id stored as string in related models)
+    const proposal = await Proposal.findOne({ id: proposalId });
+    if (!proposal) {
+      return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
+    }
+
+    const raw = await Order.find({
+      proposalId,
+      side,
+      status: { $in: ['open', 'partial'] }
+    })
+      .sort({ createdAt: -1 })
+      .select('-userAddress -txHash -__v -_id -fills.matchedOrderId')
+      .lean();
+
+    // Sanitize nested fills and remove any subdocument _id
+    const orders = raw.map(o => ({
+      ...o,
+      fills: Array.isArray(o.fills)
+        ? o.fills.map(f => ({ price: f.price, amount: f.amount, timestamp: f.timestamp }))
+        : []
+    }));
+
+    res.json({ proposalId, side, count: orders.length, orders });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== PROTECTED ENDPOINTS (REQUIRE WALLET SIGNATURE) =====
 
 /**
@@ -692,178 +1204,583 @@ router.post('/my-trades', verifyWalletSignature, async (req, res) => {
   }
 });
 
-// ===== HELPER FUNCTIONS =====
-
-async function updateOrderBook(proposalId, side, io) {
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/orders:
+ *   get:
+ *     summary: Get public list of open/partial orders (addresses redacted)
+ *     description: Returns orders with status open or partial for the given proposal and side. User addresses are not included.
+ *     tags: [Orderbooks]
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject, yes, no]
+ *     responses:
+ *       200:
+ *         description: List of orders
+ */
+router.get('/:proposalId/:side/orders', async (req, res) => {
   try {
-    if (!proposalId || !side) {
-      console.error('Invalid proposalId or side for updateOrderBook');
-      return;
+    const { proposalId } = req.params;
+    let { side } = req.params;
+
+    // Normalize yes/no to approve/reject
+    if (side === 'yes') side = 'approve';
+    if (side === 'no') side = 'reject';
+
+    if (!['approve', 'reject'].includes(side)) {
+      return res.status(400).json({ error: 'Invalid side. Must be approve/reject (or yes/no alias)' });
     }
 
-    let orderBook = await OrderBook.findOne({ proposalId, side });
-    if (!orderBook) {
-      // Create new order book if it doesn't exist
-      orderBook = new OrderBook({
-        proposalId,
-        side,
-        bids: [],
-        asks: [],
-        lastPrice: '0',
-        volume24h: '0',
-        priceChange24h: '0'
-      });
-      await orderBook.save();
+    // Verify proposal exists (by numeric id stored as string in related models)
+    const proposal = await Proposal.findOne({ id: proposalId });
+    if (!proposal) {
+      return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
 
-    // Recalculate order book from current orders
-    const orders = await Order.find({ 
-      proposalId, 
-      side, 
-      status: 'open' 
-    }).sort({ price: side === 'approve' ? -1 : 1 });
+    const raw = await Order.find({
+      proposalId,
+      side,
+      status: { $in: ['open', 'partial'] }
+    })
+      .sort({ createdAt: -1 })
+      .select('-userAddress -txHash -__v -_id -fills.matchedOrderId')
+      .lean();
 
-    const bids = [];
-    const asks = [];
+    // Sanitize nested fills and remove any subdocument _id
+    const orders = raw.map(o => ({
+      ...o,
+      fills: Array.isArray(o.fills)
+        ? o.fills.map(f => ({ price: f.price, amount: f.amount, timestamp: f.timestamp }))
+        : []
+    }));
 
-    for (const order of orders) {
-      const orderData = {
-        price: order.price,
-        amount: order.amount,
-        filledAmount: order.filledAmount || '0'
-      };
-      
-      if (order.orderType === 'buy') {
-        bids.push(orderData);
-      } else {
-        asks.push(orderData);
-      }
-    }
-
-    orderBook.bids = bids;
-    orderBook.asks = asks;
-    await orderBook.save();
-
-    if (io && typeof notifyOrderBookUpdate === 'function') {
-      // FIX: pass correct args
-      notifyOrderBookUpdate(io, proposalId, side, orderBook);
-    }
+    res.json({ proposalId, side, count: orders.length, orders });
   } catch (error) {
-    console.error('Error updating order book:', error);
+    res.status(500).json({ error: error.message });
   }
-}
+});
 
-async function executeOrder(order, io) {
+// ===== PROTECTED ENDPOINTS (REQUIRE WALLET SIGNATURE) =====
+
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/orders:
+ *   post:
+ *     summary: Create order (requires wallet signature)
+ *     description: Creates a new order. User must provide wallet signature for authentication.
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp, orderType, price, amount]
+ *             properties:
+ *               address:
+ *                 type: string
+ *                 description: Wallet address
+ *               signature:
+ *                 type: string
+ *                 description: Wallet signature
+ *               message:
+ *                 type: string
+ *                 description: Signed message
+ *               timestamp:
+ *                 type: number
+ *                 description: Message timestamp
+ *               orderType:
+ *                 type: string
+ *                 enum: [buy, sell]
+ *               price:
+ *                 type: number
+ *               amount:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Order created successfully
+ *       401:
+ *         description: Invalid wallet signature
+ */
+router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res) => {
   try {
-    if (!order || !order.proposalId || !order.side) {
-      console.error('Invalid order data for executeOrder');
-      return;
+    const { proposalId, side } = req.params;
+    const { orderType, orderExecution = 'limit', price, amount } = req.body;
+    const userAddress = req.userAddress; // From wallet authentication
+    const io = req.app.get('io');
+
+    // Validate inputs
+    if (!proposalId) {
+      return res.status(400).json({ error: 'Proposal ID is required' });
     }
 
-    console.log(`Executing order: ${order._id}, side: ${order.side}, type: ${order.orderType}, execution: ${order.orderExecution}, price: ${order.price}, amount: ${order.amount}`);
-
-    const oppositeOrderType = order.orderType === 'buy' ? 'sell' : 'buy';
-
-    // Build price filter for limit orders
-    let priceFilter = {};
-    if (order.orderExecution === 'limit') {
-      priceFilter = order.orderType === 'buy'
-        ? { $expr: { $lte: [{ $toDouble: '$price' }, parseFloat(order.price)] } }
-        : { $expr: { $gte: [{ $toDouble: '$price' }, parseFloat(order.price)] } };
+    if (!userAddress) {
+      return res.status(401).json({ error: 'User address not found in authentication' });
     }
 
-    // Find matching orders
-    const matchingOrders = await Order.find({
-      proposalId: order.proposalId,
-      side: order.side,
-      orderType: oppositeOrderType,
-      status: { $in: ['open', 'partial'] },
-      ...(order.orderExecution === 'limit' ? { ...priceFilter } : {})
-    }).sort({
-      price: order.orderType === 'buy' ? 1 : -1, // Best price first
-      createdAt: 1
+    if (!['approve', 'reject'].includes(side)) {
+      return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
+    }
+
+    if (!['buy', 'sell'].includes(orderType)) {
+      return res.status(400).json({ error: 'Invalid orderType. Must be buy or sell' });
+    }
+
+    if (!['limit', 'market'].includes(orderExecution)) {
+      return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
+    }
+
+    // Verify that the proposal exists
+    const proposal = await Proposal.findOne({ id: proposalId });
+    if (!proposal) {
+      return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
+    }
+
+    // Check if proposal has required fields
+    if (!proposal.id || !proposal.admin) {
+      return res.status(400).json({ error: 'Proposal data is incomplete' });
+    }
+
+    // Check if proposal is active
+    if (!proposal.isActive) {
+      return res.status(400).json({ error: 'Proposal is not active for trading' });
+    }
+
+    // For market orders, price is not required but we'll calculate it
+    if (orderExecution === 'limit' && (!price || parseFloat(price) <= 0)) {
+      return res.status(400).json({ error: 'Price required for limit orders and must be greater than 0' });
+    }
+
+    if (!amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Amount is required and must be greater than 0' });
+    }
+
+    const order = new Order({
+      proposalId,
+      side,
+      orderType,
+      orderExecution,
+      price: price?.toString() || '0',
+      amount: amount.toString(),
+      userAddress,
+      filledAmount: '0',
+      status: 'open',
+      createdAt: new Date(),
+      updatedAt: new Date()
     });
 
-    let remainingAmount = parseFloat(order.amount);
-    let totalExecuted = 0;
-
-    for (const matchingOrder of matchingOrders) {
-      if (remainingAmount <= 0) break;
-
-      if(matchingOrder.userAddress === order.userAddress) {
-        console.log(`Skipping matching order ${matchingOrder._id} as it belongs to the same user`);
-        continue;
-      }
-
-      const availableAmount = parseFloat(matchingOrder.amount) - parseFloat(matchingOrder.filledAmount || '0');
-      const tradeAmount = Math.min(remainingAmount, availableAmount);
-
-      if (tradeAmount <= 0) continue;
-
-      console.log(`Executing trade: ${tradeAmount} at price ${matchingOrder.price}`);
-
-      // Update matching order
-      const newFilledAmount = parseFloat(matchingOrder.filledAmount || '0') + tradeAmount;
-      matchingOrder.filledAmount = newFilledAmount.toString();
-      matchingOrder.status = newFilledAmount >= parseFloat(matchingOrder.amount) ? 'filled' : 'partial';
-      matchingOrder.updatedAt = new Date();
-
-      // Record fill for matching order
-      matchingOrder.fills.push({
-        price: matchingOrder.price,
-        amount: tradeAmount.toString(),
-        timestamp: new Date(),
-        matchedOrderId: order._id.toString()
-      });
-
-      await matchingOrder.save();
-
-      // NEW: notify counterparty user about their order update
-      try { if (io) notifyUserOrdersUpdate(io, matchingOrder.userAddress, { reason: 'order-updated', changedOrderId: matchingOrder._id.toString() }); } catch (e) {}
-
-      // Update our order
-      remainingAmount -= tradeAmount;
-      totalExecuted += tradeAmount;
-
-      if (order.orderExecution === 'market') {
-        order.price = matchingOrder.price; // Use matching order price for market
-      }
-
-      // Record fill for original order
-      order.fills.push({
-        price: matchingOrder.price,
-        amount: tradeAmount.toString(),
-        timestamp: new Date(),
-        matchedOrderId: matchingOrder._id.toString()
-      });
-
-      console.log(`Trade executed: ${tradeAmount}, remaining: ${remainingAmount}`);
-    }
-
-    // Finalize original order
-    order.filledAmount = totalExecuted.toString();
-    if (totalExecuted >= parseFloat(order.amount)) {
-      order.status = 'filled';
-    } else if (totalExecuted > 0) {
-      order.status = 'partial';
-    }
-    order.updatedAt = new Date();
     await order.save();
 
-    console.log(`Order ${order._id} final status: ${order.status}, filled: ${order.filledAmount}/${order.amount}`);
-
-    // NEW: notify original user if anything executed or changed
-    try { if (io && totalExecuted > 0) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-updated', changedOrderId: order._id.toString() }); } catch (e) {}
-
-    // Notify clients if any execution happened
-    if (io && typeof notifyOrderMatched === 'function' && totalExecuted > 0) {
-      // keep existing behavior (signature mismatch tolerated elsewhere)
-      try { notifyOrderMatched(io, order); } catch (e) {}
+    if (!order || !order._id) {
+      return res.status(500).json({ error: 'Failed to create order' });
     }
 
+    // NEW: notify this user that their orders changed
+    try { if (io) notifyUserOrdersUpdate(io, userAddress, { reason: 'order-created', changedOrderId: order._id.toString() }); } catch (e) {}
+
+    // Update order book (with error handling)
+    try {
+      await updateOrderBook(proposalId, side, io);
+    } catch (updateError) {
+      console.error('Error updating order book after creation:', updateError);
+      // Don't fail the whole operation if order book update fails
+    }
+
+    // Execute order if it's a market order or if there are matching orders (with error handling)
+    try {
+      await executeOrder(order, io);
+      
+      // Also try to execute existing orders that might now have a match
+      const existingOrders = await Order.find({
+        proposalId: order.proposalId,
+        side: order.side,
+        orderType: order.orderType === 'buy' ? 'sell' : 'buy', // Opposite type
+        status: 'open',
+        _id: { $ne: order._id } // Exclude the order we just created
+      }).sort({ createdAt: 1 }); // Oldest first
+      
+      console.log(`Found ${existingOrders.length} existing orders to re-check for matching`);
+      
+      for (const existingOrder of existingOrders) {
+        try {
+          await executeOrder(existingOrder, io);
+        } catch (existingExecuteError) {
+          console.error('Error executing existing order:', existingExecuteError);
+        }
+      }
+    } catch (executeError) {
+      console.error('Error executing order:', executeError);
+      // Don't fail the whole operation if order execution fails
+    }
+
+    // Notify clients (with error handling)
+    try {
+      if (io && typeof notifyNewOrder === 'function') {
+        notifyNewOrder(io, order);
+      }
+    } catch (notifyError) {
+      console.error('Error notifying new order:', notifyError);
+      // Don't fail the whole operation if notification fails
+    }
+
+    res.status(201).json(order);
   } catch (error) {
-    console.error('Error executing order:', error);
+    console.error('Error creating order:', error);
+    res.status(400).json({ error: error.message });
   }
-}
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/orders/{orderId}:
+ *   delete:
+ *     summary: Cancel order (requires wallet signature)
+ *     description: Cancels an order. Only the order creator can cancel it.
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Order cancelled successfully
+ *       401:
+ *         description: Invalid wallet signature
+ *       403:
+ *         description: Not authorized to cancel this order
+ *       404:
+ *         description: Order not found
+ */
+router.delete('/orders/:orderId', verifyWalletSignature, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userAddress = req.userAddress; // From wallet authentication
+    const io = req.app.get('io');
+
+    // Validate inputs
+    if (!orderId) {
+      return res.status(400).json({ error: 'Order ID is required' });
+    }
+
+    if (!userAddress) {
+      return res.status(401).json({ error: 'User address not found in authentication' });
+    }
+    
+    // First check if order exists and belongs to authenticated user
+    const existingOrder = await Order.findById(orderId);
+    if (!existingOrder) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Check if order has required fields
+    if (!existingOrder.userAddress) {
+      return res.status(400).json({ error: 'Order userAddress is missing' });
+    }
+
+    if (!existingOrder.proposalId || !existingOrder.side) {
+      return res.status(400).json({ error: 'Order data is incomplete' });
+    }
+    
+    if (existingOrder.userAddress.toLowerCase() !== userAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Not authorized to cancel this order' });
+    }
+
+    // Check if order can be cancelled
+    if (existingOrder.status === 'cancelled') {
+      return res.status(400).json({ error: 'Order is already cancelled' });
+    }
+
+    if (existingOrder.status === 'filled') {
+      return res.status(400).json({ error: 'Cannot cancel a filled order' });
+    }
+    
+    const order = await Order.findByIdAndUpdate(
+      orderId,
+      { 
+        status: 'cancelled',
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
+
+    if (!order) {
+      return res.status(500).json({ error: 'Failed to update order status' });
+    }
+
+    // NEW: notify this user that their orders changed
+    try { if (io) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-cancelled', changedOrderId: order._id.toString() }); } catch (e) {}
+
+    // Update order book (with error handling)
+    try {
+      await updateOrderBook(order.proposalId, order.side, io);
+    } catch (updateError) {
+      console.error('Error updating order book after cancellation:', updateError);
+      // Don't fail the whole operation if order book update fails
+    }
+
+    // Notify clients (with error handling)
+    try {
+      if (io && typeof notifyOrderStatusChange === 'function') {
+        notifyOrderStatusChange(io, order, 'cancelled');
+      }
+    } catch (notifyError) {
+      console.error('Error notifying order status change:', notifyError);
+      // Don't fail the whole operation if notification fails
+    }
+
+    res.json(order);
+  } catch (error) {
+    console.error('Error cancelling order:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/my-orders:
+ *   post:
+ *     summary: Get my orders (requires wallet signature)
+ *     description: Get all orders for the authenticated user
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *               status:
+ *                 type: string
+ *                 enum: [open, filled, cancelled, partial]
+ *               proposalId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User orders
+ *       401:
+ *         description: Authentication required
+ */
+router.post('/my-orders', verifyWalletSignature, async (req, res) => {
+  try {
+    const { status, proposalId } = req.body;
+    const filter = { userAddress: req.userAddress };
+    
+    if (status) filter.status = status;
+    if (proposalId) filter.proposalId = proposalId;
+    
+    const orders = await Order.find(filter).sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/my-orders/{proposalId}:
+ *   post:
+ *     summary: Get my orders for specific proposal (requires wallet signature)
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: User orders for proposal
+ */
+router.post('/my-orders/:proposalId', verifyWalletSignature, async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    const orders = await Order.find({ 
+      userAddress: req.userAddress,
+      proposalId 
+    }).sort({ createdAt: -1 });
+    
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/my-trades:
+ *   post:
+ *     summary: Get my trading history (requires wallet signature)
+ *     tags: [Orderbooks]
+ *     security:
+ *       - WalletSignature: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [address, signature, message, timestamp]
+ *             properties:
+ *               address:
+ *                 type: string
+ *               signature:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *               timestamp:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: User trading history
+ */
+router.post('/my-trades', verifyWalletSignature, async (req, res) => {
+  try {
+    const trades = await Order.find({ 
+      userAddress: req.userAddress,
+      status: { $in: ['filled', 'partial'] }
+    }).sort({ updatedAt: -1 });
+    
+    res.json(trades);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/orders:
+ *   get:
+ *     summary: Get public list of open/partial orders (addresses redacted)
+ *     description: Returns orders with status open or partial for the given proposal and side. User addresses are not included.
+ *     tags: [Orderbooks]
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject, yes, no]
+ *     responses:
+ *       200:
+ *         description: List of orders
+ */
+router.get('/:proposalId/:side/orders', async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    let { side } = req.params;
+
+    // Normalize yes/no to approve/reject
+    if (side === 'yes') side = 'approve';
+    if (side === 'no') side = 'reject';
+
+    if (!['approve', 'reject'].includes(side)) {
+      return res.status(400).json({ error: 'Invalid side. Must be approve/reject (or yes/no alias)' });
+    }
+
+    // Verify proposal exists (by numeric id stored as string in related models)
+    const proposal = await Proposal.findOne({ id: proposalId });
+    if (!proposal) {
+      return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
+    }
+
+    const raw = await Order.find({
+      proposalId,
+      side,
+      status: { $in: ['open', 'partial'] }
+    })
+      .sort({ createdAt: -1 })
+      .select('-userAddress -txHash -__v -_id -fills.matchedOrderId')
+      .lean();
+
+    // Sanitize nested fills and remove any subdocument _id
+    const orders = raw.map(o => ({
+      ...o,
+      fills: Array.isArray(o.fills)
+        ? o.fills.map(f => ({ price: f.price, amount: f.amount, timestamp: f.timestamp }))
+        : []
+    }));
+
+    res.json({ proposalId, side, count: orders.length, orders });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;
