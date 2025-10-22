@@ -1,0 +1,21 @@
+{
+  "abi": [
+    {"type":"function","name":"id","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"admin","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
+    {"type":"function","name":"state","stateMutability":"view","inputs":[],"outputs":[{"type":"uint8"}]},
+    {"type":"function","name":"auctionStartTime","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"auctionEndTime","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"liveStart","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"liveEnd","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"liveDuration","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"subjectToken","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
+    {"type":"function","name":"pyUSD","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
+    {"type":"function","name":"minToOpen","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"maxCap","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"yesAuction","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
+    {"type":"function","name":"noAuction","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
+    {"type":"function","name":"yesToken","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
+    {"type":"function","name":"noToken","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
+    {"type":"function","name":"treasury","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]}
+  ]
+}

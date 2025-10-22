@@ -17,6 +17,13 @@ const proposalSchema = new mongoose.Schema({
   marketAddress: { type: String, required: false },
   proposalExecuted: { type: Boolean, default: false },
   proposalEnded: { type: Boolean, default: false },
+  // New: on-chain state mirror
+  state: {
+    type: String,
+    enum: ['auction', 'live', 'resolved', 'cancelled'],
+    default: 'auction',
+    index: true
+  },
   isActive: {
     type: Boolean,
     default: function() {
