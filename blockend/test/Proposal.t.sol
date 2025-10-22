@@ -77,4 +77,79 @@ contract ProposalBasicTest is Test {
         vm.expectRevert(bytes("Proposal: bad state"));
         proposal.resolve();
     }
+
+
+    // test the refund token when auction is canceled
+    function test_Refund_afterAuctionCancelled() public {
+        address buyer = makeAddr("buyer");
+
+        proposal = new Proposal(
+            2,
+            admin,
+            "Refund Proposal",
+            "Description",
+            10,             // auctionDuration
+            100,            // liveDuration
+            address(1),     // subjectToken
+            address(pyusd),
+            500e18,           // minToOpen 
+            1000e18,        // maxCap
+            address(0),     // target
+            "",            // data
+            address(0),     // pythAddr
+            bytes32(0)      // pythId
+        );
+
+        DutchAuction yes = proposal.yesAuction();
+        MarketToken yesToken = proposal.yesToken();
+        Treasury treasury = proposal.treasury();
+
+        // Give buyer some pyUSD and approve treasury to pull pyUSD when buying
+        pyusd.transfer(buyer, 1_000e18);
+        vm.prank(buyer);
+        pyusd.approve(address(treasury), type(uint256).max);
+
+        // Buyer buys a small amount (half a token) so it does NOT meet minToOpen
+        uint256 payAmount = 500_000; // yields 0.5e18 tokens at price 1_000_000
+        vm.prank(buyer);
+        yes.buyLiquidity(payAmount);
+
+        uint256 userTokens = yesToken.balanceOf(buyer);
+        assertTrue(userTokens > 0 && userTokens < 1e18, "buyer has amount of tokens");
+
+        // Warp to after auction end and finalize as admin -> this will mark the auction canceled
+        uint256 end = yes.END_TIME();
+        vm.warp(end + 1);
+        vm.prank(admin);
+        yes.finalize();
+
+        // Now tell the Proposal to settle auctions (should detect canceled auction and enable refunds)
+        proposal.settleAuctions();
+
+        // Proposal should be Cancelled
+        assertEq(uint8(proposal.state()), uint8(IProposal.State.Cancelled));
+
+        // Tokens should be finalized as loser (paused)
+        assertTrue(yesToken.paused(), "yes token paused");
+        assertTrue(treasury.refundsEnabled(), "refunds enabled in treasury");
+
+        // Buyer approves Treasury to pull their outcome tokens for refund
+        vm.prank(buyer);
+        yesToken.approve(address(treasury), userTokens);
+
+        uint256 beforePy = pyusd.balanceOf(buyer);
+        uint256 beforeYesTokens = yesToken.balanceOf(address(treasury));
+        uint256 beforePyTokens = pyusd.balanceOf(address(treasury));
+
+        // Buyer calls auction.refundTokens() which will cause Treasury to refund PYUSD
+        vm.prank(buyer);
+        yes.refundTokens();
+
+        // After refund, buyer should have no outcome tokens and should have received pyUSD refund
+        assertEq(yesToken.balanceOf(buyer), 0, "buyer has zero yes tokens after refund");
+        assertTrue(pyusd.balanceOf(buyer) > beforePy, "buyer received pyUSD refund");
+        assertEq(yesToken.balanceOf(address(treasury)), beforeYesTokens + userTokens, "treasury received yes tokens");
+        assertLt(pyusd.balanceOf(address(treasury)), beforePyTokens, "treasury pyusd balance increased");
+    }
+
 }

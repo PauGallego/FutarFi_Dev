@@ -9,6 +9,7 @@ import {Treasury} from "./Treasury.sol";
 import {DutchAuction} from "./DutchAuction.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Treasury} from "./Treasury.sol";
+import {console} from "forge-std/console.sol";
 
 contract Proposal is Ownable, IProposal {
 
@@ -94,14 +95,14 @@ contract Proposal is Ownable, IProposal {
             string.concat("tYES-", Strings.toString(id)),
             address(this),
             address(this),
-            _maxCap
+            maxCap
         );
         noToken = new MarketToken(
             string.concat("FutarFi tNO #", Strings.toString(id)),
             string.concat("tNO-", Strings.toString(id)),
             address(this),
             address(this),
-            _maxCap
+            maxCap
         );
 
         // Deploy Dutch auctions for YES and NO (require token addresses in constructor)

@@ -18,7 +18,7 @@ interface IDutchAuction {
     function START_TIME() external view returns (uint256);
     function END_TIME() external view returns (uint256);
     function PRICE_START() external view returns (uint256);
-    function finalized() external view returns (bool);
+    function isFinalized() external view returns (bool);
     function isValid() external view returns (bool);
     function isCanceled() external view returns (bool);
     function MIN_TO_OPEN() external view returns (uint256);

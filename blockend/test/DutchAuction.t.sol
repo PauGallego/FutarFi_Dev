@@ -6,6 +6,7 @@ import "../src/core/DutchAuction.sol";
 import "../src/core/Treasury.sol";
 import "../src/tokens/MarketToken.sol";
 import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
+import {Proposal} from "../src/core/Proposal.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("MockUSD", "MUSD") {
@@ -14,6 +15,7 @@ contract MockERC20 is ERC20 {
 }
 
 contract DutchAuctionTest is Test {
+    Proposal proposal;
     MockERC20 pyusd;
     Treasury treasury;
     MarketToken yesToken;
@@ -34,9 +36,28 @@ contract DutchAuctionTest is Test {
         yesToken = new MarketToken("YES", "YES", address(this), address(1), CAP);
         noToken = new MarketToken("NO", "NO", address(this), address(1), CAP);
 
-        // Create auctions: duration 100s, priceStart = 1_000_000 (6 decimals), minToOpen = 0, admin = admin
-        yesAuction = new DutchAuction(address(pyusd), address(yesToken), address(treasury), 100, 1_000_000, 0, admin);
-        noAuction  = new DutchAuction(address(pyusd), address(noToken),  address(treasury), 100, 1_000_000, 0, admin);
+        proposal = new Proposal(
+            1,
+            admin,
+            "Test Proposal",
+            "Description",
+            100,            // auctionDuration
+            200,            // liveDuration
+            address(1),     // subjectToken
+            address(pyusd),
+            500_000e18,     // minToOpen
+            CAP,            // maxCap
+            address(0),     // target
+            "",             // data
+            address(0),     // pythAddr
+            bytes32(0)     // pythId
+        );
+
+        vm.startPrank(address(proposal));
+        // Create auctions: duration 100s, priceStart = 1_000_000 (6 decimals), minToOpen = 500_000e18, admin = admin
+        yesAuction = new DutchAuction(address(pyusd), address(yesToken), address(treasury), 100, 1_000_000, 500_000e18, admin);
+        noAuction  = new DutchAuction(address(pyusd), address(noToken),  address(treasury), 100, 1_000_000, 500_000e18, admin);
+        vm.stopPrank();
 
         // Set minters to the auction addresses
         yesToken.setMinter(address(yesAuction));
@@ -58,9 +79,11 @@ contract DutchAuctionTest is Test {
 
         uint256 payAmount = 1_000_000; // 1_000_000 units (6 decimals) -> should give 1e18 tokens
 
+        console.log("yes token totalSupply before: ", yesToken.totalSupply());
         // buyer buys
         vm.prank(buyer);
         yesAuction.buyLiquidity(payAmount);
+        console.log("yes token totalSupply after: ", yesToken.totalSupply());
 
         // tokens minted to buyer: tokensOut = (payAmount * 1e18) / price
         uint256 expectedTokens = (payAmount * 1e18) / price;
@@ -83,4 +106,27 @@ contract DutchAuctionTest is Test {
         uint256 endPrice = yesAuction.priceNow();
         assertEq(endPrice, 0);
     }
+
+
+    // test buying all tokens up to cap and verify that auction finalizes
+    function test_BuyLiquidity_upToCapAndFinalize() public {
+        uint256 price = yesAuction.priceNow();
+        uint256 tokensToBuy = CAP - yesToken.totalSupply(); // buy up to cap
+        uint256 payAmount = (tokensToBuy * price) / 1e18;
+
+        console.log("Buying tokens: ", tokensToBuy);
+        console.log("Pay amount: ", payAmount);
+
+        // buyer buys
+        vm.prank(buyer);
+        yesAuction.buyLiquidity(payAmount);
+        // auction should be finalized
+        assertEq(yesToken.totalSupply(), CAP);
+        assertTrue(yesAuction.isFinalized(), "Auction should be finalized");
+        // buyer should have all tokens
+        assertEq(yesToken.balanceOf(buyer), tokensToBuy);
+    }
+
+
+  
 }

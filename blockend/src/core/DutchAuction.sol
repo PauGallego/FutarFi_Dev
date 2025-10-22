@@ -9,6 +9,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IDutchAuction} from "../interfaces/IDutchAuction.sol";
 import {ITreasury} from "../interfaces/ITreasury.sol";
 import {IProposal} from "../interfaces/IProposal.sol";
+import {console} from "forge-std/console.sol";
 
 /// @notice Buyer supplies PYUSD and receives YES/NO tokens at the linear price at that moment.
 /// @dev Collects PYUSD into Treasury and mints tokens to the buyer (mint-on-buy).
@@ -27,7 +28,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
     uint256 public constant PRICE_END = 0;
     uint256 public immutable MIN_TO_OPEN;        // marketToken sold threshold to open market    
 
-    bool public finalized;
+    bool public isFinalized;
     bool public isValid;
     bool public isCanceled;
 
@@ -49,7 +50,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         uint256 unitPrice,
         uint256 tokensOut
     );
-    event Finalized();
+    event AuctionisFinalized();
     event AuctionisCanceled();
 
     constructor(
@@ -80,7 +81,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
     // ---------------- Helpers ----------------
 
     function _isLive() internal view returns (bool) {
-        return block.timestamp >= START_TIME && block.timestamp <= END_TIME && !finalized;
+        return block.timestamp >= START_TIME && block.timestamp <= END_TIME && !isFinalized;
     }
 
 
@@ -133,12 +134,14 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
 
 
     function finalize() external onlyAdmin {
-        if (finalized) revert AlreadyFinalized();
+        if (isFinalized) revert AlreadyFinalized();
+        console.log("wtf");
         if (block.timestamp >= END_TIME) {
             if (MARKET_TOKEN.totalSupply() >= MIN_TO_OPEN) _finalize();
             else {
+            console.log("fsdfasfds");
                 isCanceled = true;
-                finalized = true;
+                isFinalized = true;
                 emit AuctionisCanceled();
             }
         }else{
@@ -156,8 +159,8 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
     /// @notice Close the auction. 
     function _finalize() private {
         isValid = true;
-        finalized = true;
+        isFinalized = true;
         IProposal(owner()).settleAuctions();
-        emit Finalized();
+        emit AuctionisFinalized();
     }
 }
