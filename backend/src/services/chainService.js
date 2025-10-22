@@ -298,6 +298,12 @@ async function readProposalSnapshot(proposalAddr) {
     c.id(), c.admin(), c.state(), c.auctionStartTime(), c.auctionEndTime(), c.liveStart(), c.liveEnd(), c.liveDuration(), c.subjectToken(), c.pyUSD(), c.minToOpen(), c.maxCap(), c.yesAuction(), c.noAuction(), c.yesToken(), c.noToken(), c.treasury()
   ]);
 
+  // Optional metadata (older deployments may not have these; ignore errors)
+  let metaTitle;
+  let metaDescription;
+  try { metaTitle = await c.title(); } catch (_) { metaTitle = undefined; }
+  try { metaDescription = await c.description(); } catch (_) { metaDescription = undefined; }
+
   const startTime = toNum(aStart);
   const endTime = toNum(lEnd) > 0 ? toNum(lEnd) : (toNum(aEnd) + toNum(lDur));
   const duration = endTime && startTime ? (endTime - startTime) : toNum(lDur);
@@ -328,9 +334,9 @@ async function readProposalSnapshot(proposalAddr) {
     proposalContractId: toAddr(proposalAddr),
     admin: toAddr(admin),
     state: stateEnum,
-    // title/description are not on-chain; keep existing or set defaults during upsert
-    title: undefined,
-    description: undefined,
+    // Use on-chain metadata when available
+    title: metaTitle ? String(metaTitle) : undefined,
+    description: metaDescription ? String(metaDescription) : undefined,
     startTime,
     endTime,
     duration,
@@ -385,8 +391,8 @@ async function readProposalSnapshot(proposalAddr) {
 
 async function readAuctionSnapshot(auctionAddr) {
   const a = getContract(auctionAddr, AUCTION_ABI, false);
-  const [priceStart, start, end, minToOpen, admin, treasury, pyusd, marketToken, priceNow, finalized, isValid, isCanceled] = await Promise.all([
-    a.PRICE_START(), a.START_TIME(), a.END_TIME(), a.MIN_TO_OPEN(), a.ADMIN(), a.TREASURY(), a.PYUSD(), a.MARKET_TOKEN(), a.priceNow(), a.finalized(), a.isValid(), a.isCanceled()
+  const [priceStart, start, end, minToOpen, admin, treasury, pyusd, marketToken, priceNow, isFinalized, isValid, isCanceled] = await Promise.all([
+    a.PRICE_START(), a.START_TIME(), a.END_TIME(), a.MIN_TO_OPEN(), a.ADMIN(), a.TREASURY(), a.PYUSD(), a.MARKET_TOKEN(), a.priceNow(), a.isFinalized(), a.isValid(), a.isCanceled()
   ]);
   return {
     auctionAddress: toAddr(auctionAddr),
@@ -399,7 +405,7 @@ async function readAuctionSnapshot(auctionAddr) {
     priceStart: toStr(priceStart),
     minToOpen: toStr(minToOpen),
     currentPrice: toStr(priceNow),
-    finalized: !!finalized,
+    finalized: !!isFinalized,
     isValid: !!isValid,
     isCanceled: !!isCanceled
   };
@@ -620,6 +626,38 @@ async function handleProposalCreatedLog(io, log) {
     if (doc && io) notifyProposalUpdate(io, doc);
   } catch (e) {
     console.error('handleProposalCreatedLog error:', e.message);
+    // Fallback: minimally upsert the proposal so API is populated; poll will enrich later
+    try {
+      const parsed = PM_EVENT_IFACE.parseLog(log);
+      const id = Number(parsed.args.id);
+      const admin = toLower(parsed.args.admin);
+      const proposalAddr = toLower(parsed.args.proposal);
+      const title = String(parsed.args.title || `Proposal #${id}`);
+      const Proposal = require('../models/Proposal');
+
+      const existing = await Proposal.findOne({ $or: [ { id }, { proposalContractId: proposalAddr } ] });
+      if (!existing) {
+        const now = Math.floor(Date.now() / 1000);
+        await Proposal.create({
+          id,
+          proposalContractId: proposalAddr,
+          admin,
+          title,
+          description: 'Pending sync',
+          startTime: now,
+          endTime: now + 86400,
+          duration: 86400,
+          collateralToken: '0x0000000000000000000000000000000000000000',
+          maxSupply: '0',
+          target: '0x0000000000000000000000000000000000000000',
+          data: '0x',
+          state: 'auction',
+          auctions: null
+        });
+      }
+    } catch (e2) {
+      console.error('fallback minimal upsert failed:', e2.message);
+    }
   }
 }
 
