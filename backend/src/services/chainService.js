@@ -20,6 +20,23 @@ function getContract(address, abi, withSigner = false) {
   return new ethers.Contract(address, abi, runner);
 }
 
+// Minimal iface for ProposalCreated event
+const PM_EVENT_ABI = [
+  {
+    type: 'event',
+    name: 'ProposalCreated',
+    inputs: [
+      { indexed: true, name: 'id', type: 'uint256' },
+      { indexed: true, name: 'admin', type: 'address' },
+      { indexed: false, name: 'proposal', type: 'address' },
+      { indexed: false, name: 'title', type: 'string' }
+    ]
+  }
+];
+const PM_EVENT_IFACE = new ethers.Interface(PM_EVENT_ABI);
+const PM_EVENT_SIGNATURE = 'ProposalCreated(uint256,address,address,string)';
+const PM_EVENT_TOPIC = ethers.id(PM_EVENT_SIGNATURE);
+
 async function callView({ address, abi, method, args = [] }) {
   if (!address || !abi || !method) throw new Error('Missing contract call params');
   const contract = getContract(address, abi, false);
@@ -319,8 +336,8 @@ async function readProposalSnapshot(proposalAddr) {
     duration,
     collateralToken: toAddr(subjectToken),
     maxSupply: toStr(maxCap),
-    target: toAddr('0x0'), // not exposed in interface currently; keep as undefined later
-    data: undefined,
+    target: toAddr('0x0000000000000000000000000000000000000000'), // not exposed in interface currently
+    data: '0x',
     marketAddress: undefined,
     // Auctions inline snapshot (strings as in schema)
     auctions: {
@@ -411,8 +428,8 @@ async function upsertProposalAndAuctions(snapshot) {
     duration: snapshot.duration,
     collateralToken: snapshot.collateralToken,
     maxSupply: snapshot.maxSupply,
-    target: snapshot.target,
-    data: snapshot.data,
+    target: snapshot.target ?? '0x0000000000000000000000000000000000000000',
+    data: snapshot.data ?? '0x',
     marketAddress: snapshot.marketAddress
   };
 
@@ -505,6 +522,179 @@ async function syncProposalsFromManager({ manager }) {
   return results;
 }
 
+// Subscribe to ProposalManager ProposalCreated and backfill
+async function startProposalManagerWatcher({ manager, fromBlock }) {
+  const provider = getProvider();
+  const abi = require('../abi/ProposalManager.json').abi;
+  const pm = new ethers.Contract(manager, abi, provider);
+
+  // Helper: process one event
+  const handleEvent = async (id, admin, proposal, title, log) => {
+    try {
+      const snap = await readProposalSnapshot(proposal);
+      // Fill title/description from event when available
+      if (!snap.title) snap.title = title || `Proposal #${snap.id}`;
+      if (!snap.description) snap.description = 'Synced from event';
+      await upsertProposalAndAuctions(snap);
+      return true;
+    } catch (e) {
+      console.error('handleEvent error:', e.message);
+      return false;
+    }
+  };
+
+  // Historical backfill using queryFilter
+  try {
+    const eventFrag = pm.interface.getEvent('ProposalCreated');
+    const topic = pm.interface.getEventTopic(eventFrag);
+    const filter = { address: manager, topics: [topic] };
+    const latest = await provider.getBlockNumber();
+
+    let start = Number(fromBlock || process.env.PM_FROM_BLOCK || 0);
+    const step = 2_000; // paginate to avoid RPC limits
+    while (start <= latest) {
+      const end = Math.min(start + step, latest);
+      const logs = await provider.getLogs({ ...filter, fromBlock: start, toBlock: end });
+      for (const log of logs) {
+        const parsed = pm.interface.parseLog(log);
+        const [id, admin, proposal, title] = parsed.args;
+        await handleEvent(Number(id), String(admin), String(proposal), String(title), log);
+      }
+      start = end + 1;
+    }
+  } catch (e) {
+    console.warn('PM backfill skipped:', e.message);
+  }
+
+  // Live subscription
+  pm.on('ProposalCreated', async (id, admin, proposal, title, ev) => {
+    await handleEvent(Number(id), String(admin), String(proposal), String(title), ev?.log ?? ev);
+  });
+
+  return true;
+}
+
+// --------------------
+// ProposalCreated watcher (backfill + live)
+// --------------------
+async function getCursor(key) {
+  try {
+    const Counter = require('../models/Counter');
+    const c = await Counter.findById(key);
+    return c?.seq || 0;
+  } catch (_) { return 0; }
+}
+
+async function setCursor(key, value) {
+  try {
+    const Counter = require('../models/Counter');
+    await Counter.findByIdAndUpdate(
+      key,
+      { $set: { seq: Number(value) } },
+      { upsert: true, new: true }
+    );
+  } catch (e) {
+    console.error('setCursor error:', e.message);
+  }
+}
+
+function toLower(a) { return a ? String(a).toLowerCase() : a; }
+
+async function handleProposalCreatedLog(io, log) {
+  try {
+    const parsed = PM_EVENT_IFACE.parseLog(log);
+    const id = Number(parsed.args.id);
+    const admin = toLower(parsed.args.admin);
+    const proposalAddr = toLower(parsed.args.proposal);
+    const title = String(parsed.args.title);
+
+    // Sync from chain (reads full snapshot and upserts auctions too)
+    const { syncProposalByAddress } = module.exports; // self-reference
+    const { notifyProposalUpdate } = require('../middleware/websocket');
+
+    await syncProposalByAddress(proposalAddr);
+
+    // Fetch updated doc for broadcast
+    const Proposal = require('../models/Proposal');
+    const doc = await Proposal.findOne({ $or: [ { id }, { proposalContractId: proposalAddr } ] });
+    if (doc && io) notifyProposalUpdate(io, doc);
+  } catch (e) {
+    console.error('handleProposalCreatedLog error:', e.message);
+  }
+}
+
+async function backfillProposalCreated({ manager, fromBlock, toBlock, io }) {
+  const provider = getProvider();
+  const latest = toBlock ?? (await provider.getBlockNumber());
+  const start = Math.max(0, Number(fromBlock ?? (latest - 5000)));
+  const step = 3000; // chunk size to avoid RPC limits
+
+  for (let from = start; from <= latest; from += step + 1) {
+    const to = Math.min(latest, from + step);
+    const filter = {
+      address: manager,
+      fromBlock: from,
+      toBlock: to,
+      topics: [PM_EVENT_TOPIC]
+    };
+    try {
+      const logs = await provider.getLogs(filter);
+      for (const log of logs) {
+        await handleProposalCreatedLog(io, log);
+        await setCursor(`cursor:pm:${toLower(manager)}`, Number(log.blockNumber));
+      }
+    } catch (e) {
+      console.error(`backfill logs ${from}-${to} error:`, e.message);
+    }
+  }
+}
+
+let liveSubActive = false;
+function startProposalCreatedWatcher({ manager, confirmations = 0, fromBlock } = {}) {
+  if (!manager) throw new Error('manager address required');
+  const provider = getProvider();
+  const addr = toLower(manager);
+  const key = `cursor:pm:${addr}`;
+
+  // Ensure single subscription
+  if (liveSubActive) return;
+  liveSubActive = true;
+
+  (async () => {
+    try {
+      // Determine backfill start
+      const latest = await provider.getBlockNumber();
+      let startBlock = Number(fromBlock || (await getCursor(key)));
+      if (!startBlock || startBlock <= 0) {
+        const envStart = Number(process.env.PM_START_BLOCK || process.env.PROPOSAL_MANAGER_START_BLOCK || 0);
+        startBlock = envStart > 0 ? envStart : Math.max(0, latest - 5000);
+      }
+      const io = require('../server').io;
+      await backfillProposalCreated({ manager: addr, fromBlock: startBlock, toBlock: latest, io });
+
+      // Live subscription
+      const filter = { address: addr, topics: [PM_EVENT_TOPIC] };
+      provider.on(filter, async (log) => {
+        try {
+          // Optional confirmations: ignore if not enough confirmations yet
+          if (confirmations && confirmations > 0) {
+            const block = await provider.getBlockNumber();
+            if (block - Number(log.blockNumber) < confirmations) return;
+          }
+          const ioInst = require('../server').io;
+          await handleProposalCreatedLog(ioInst, log);
+          await setCursor(key, Number(log.blockNumber));
+        } catch (e) {
+          console.error('live ProposalCreated handler error:', e.message);
+        }
+      });
+      console.log(`Subscribed to ProposalCreated on ${addr}`);
+    } catch (e) {
+      console.error('startProposalCreatedWatcher error:', e.message);
+    }
+  })();
+}
+
 module.exports = {
   getContract,
   callView,
@@ -517,5 +707,6 @@ module.exports = {
   syncProposalFromChain,
   // new exports
   syncProposalsFromManager,
-  syncProposalByAddress
+  syncProposalByAddress,
+  startProposalCreatedWatcher
 };

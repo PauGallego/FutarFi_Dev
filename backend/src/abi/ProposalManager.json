@@ -1,5 +1,57 @@
 {
   "abi": [
-    { "type": "function", "name": "getAllProposals", "stateMutability": "view", "inputs": [], "outputs": [{"type":"address[]"}] }
+    {
+      "type": "function",
+      "name": "getAllProposals",
+      "stateMutability": "view",
+      "inputs": [],
+      "outputs": [
+        {
+          "type": "address[]"
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "getProposalById",
+      "stateMutability": "view",
+      "inputs": [
+        {
+          "name": "_proposalId",
+          "type": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "address"
+        }
+      ]
+    },
+    {
+      "type": "event",
+      "name": "ProposalCreated",
+      "inputs": [
+        {
+          "indexed": true,
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "name": "proposal",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "name": "title",
+          "type": "string"
+        }
+      ]
+    }
   ]
 }

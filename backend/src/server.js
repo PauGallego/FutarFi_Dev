@@ -1,4 +1,4 @@
-require('dotenv').config();
+try { require('dotenv').config(); } catch (_) { /* dotenv optional in Docker/local */ }
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -175,6 +175,20 @@ server.listen(PORT, () => {
   const { startPoll, monitorFilledOrders } = require('./services/chainService');
   const Proposal = require('./models/Proposal');
   const io = app.get('io');
+
+  // Start live ProposalCreated watcher if configured
+  if (process.env.PROPOSAL_MANAGER_ADDRESS) {
+    const { startProposalCreatedWatcher } = require('./services/chainService');
+    try {
+      startProposalCreatedWatcher({
+        manager: process.env.PROPOSAL_MANAGER_ADDRESS,
+        confirmations: Number(process.env.PM_CONFIRMATIONS || 0),
+        fromBlock: process.env.PM_START_BLOCK
+      });
+    } catch (e) {
+      console.error('Failed to start ProposalCreated watcher:', e.message);
+    }
+  }
 
   // Poll proposals to keep isActive flag fresh
   startPoll('proposals-active', async () => {

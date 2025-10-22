@@ -41,6 +41,8 @@ services:
       - CHAIN_ID=${CHAIN_ID}
       - CHAIN_WRITE_TOKEN=${CHAIN_WRITE_TOKEN}
       - PRIVATE_KEY=${PRIVATE_KEY}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       mongodb:
         condition: service_healthy
