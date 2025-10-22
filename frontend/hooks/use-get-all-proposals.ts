@@ -9,7 +9,6 @@ export interface Proposal {
   admin: string;
   title: string;
   description: string;
-  // State from Solidity: enum State { Auction, Live, Resolved, Cancelled }
   state: 'Auction' | 'Live' | 'Resolved' | 'Cancelled';
 
   // Auction / live times (timestamps in seconds)
@@ -93,6 +92,8 @@ export function useGetAllProposals() {
             const [
               id,
               admin,
+              title,
+              description,
               stateVal,
               auctionStartTime,
               auctionEndTime,
@@ -111,6 +112,8 @@ export function useGetAllProposals() {
             ] = await Promise.all([
               publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'id' }),
               publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'admin' }),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'title' }),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'description' }),
               publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'state' }),
               publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'auctionStartTime' }).catch(() => 0),
               publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'auctionEndTime' }).catch(() => 0),
@@ -140,8 +143,8 @@ export function useGetAllProposals() {
             return {
               id: (id as bigint)?.toString() || '0',
               admin: (admin as string) || '',
-              title: 'Untitled Proposal',
-              description: 'No description available',
+              title: (title as string) || 'Untitled Proposal',
+              description: (description as string) || 'No description available',
               state: stateStr,
               auctionStartTime: auctionStartTimeMs,
               auctionEndTime: auctionEndTimeMs,
