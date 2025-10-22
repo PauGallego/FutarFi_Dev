@@ -40,8 +40,6 @@ contract Proposal is Ownable, IProposal {
     bytes public data;
 
     Treasury public treasury;
-    address public escrowImpl;
-    address public escrow;
 
     // Pyth Oracle
     address public pythAddr;

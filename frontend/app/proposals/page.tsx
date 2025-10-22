@@ -9,14 +9,21 @@ import { Plus, Clock, User, Loader2, AlertCircle } from "lucide-react"
 import { useGetAllProposals } from "@/hooks/use-get-all-proposals"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
-const statusColors = {
-  active: "bg-green-500/10 text-green-500 border-green-500/20",
-  pending: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-  executed: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+const statusStyles = {
+  Auction: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+  Live: "bg-green-500/10 text-green-500 border-green-500/20",
+  Resolved: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  Cancelled: "bg-red-500/10 text-red-500 border-red-500/20",
+}
+
+const statusLabels = {
+  Auction: 'Auction',
+  Live: 'Market Live',
+  Resolved: 'Resolved',
+  Cancelled: 'Cancelled',
 }
 
 export default function ProposalsPage() {
-  // const { proposals, isLoading, error } = useProposalsByAdmin()
   const { proposals, isLoading, error, refetch } = useGetAllProposals()
 
   // Helper function to format address
@@ -56,9 +63,7 @@ export default function ProposalsPage() {
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             <div className="space-y-2">
               <h3 className="text-xl font-semibold">Loading Proposals</h3>
-              <p className="text-muted-foreground">
-                Fetching your proposals from the blockchain...
-              </p>
+              <p className="text-muted-foreground">Please wait while we fetch the latest proposals.</p>
             </div>
           </div>
         </Card>
@@ -90,8 +95,8 @@ export default function ProposalsPage() {
                     <div className="space-y-2 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <CardTitle className="text-2xl">{proposal.title}</CardTitle>
-                        <Badge variant="outline" className={statusColors[proposal.status]}>
-                          {proposal.status}
+                        <Badge variant="outline" className={statusStyles[proposal.state]}>
+                          {statusLabels[proposal.state]}
                         </Badge>
                       </div>
                       <CardDescription className="text-base leading-relaxed">{proposal.description}</CardDescription>
@@ -102,11 +107,11 @@ export default function ProposalsPage() {
                   <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                     <div className="flex items-center gap-2">
                       <User className="h-4 w-4" />
-                      <span>Created by {formatAddress(proposal.createdBy)}</span>
+                      <span>Created by {formatAddress(proposal.admin)}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4" />
-                      <span>{new Date(proposal.createdAt).toLocaleDateString()}</span>
+                      <span>{new Date(proposal.auctionStartTime).toLocaleDateString()}</span>
                     </div>
                   </div>
                 </CardContent>

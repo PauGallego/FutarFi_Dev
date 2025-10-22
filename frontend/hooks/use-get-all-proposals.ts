@@ -5,15 +5,36 @@ import { getContractAddress } from '@/contracts/constants'
 import { useEffect, useState } from 'react'
 
 export interface Proposal {
-  id: string
-  title: string
-  description: string
-  status: 'active' | 'pending' | 'executed'
-  createdBy: string
-  createdAt: string
-  address: string
-  endTime: number
-  startTime: number
+  id: string;
+  admin: string;
+  title: string;
+  description: string;
+  state: 'Auction' | 'Live' | 'Resolved' | 'Cancelled';
+
+  // Auction / live times (timestamps in seconds)
+  auctionStartTime: number;
+  auctionEndTime: number;
+  liveStart: number;
+  liveEnd: number;
+  liveDuration: number;
+
+  // Token / treasury / auctions
+  subjectToken: `0x${string}`;
+  pyUSD: `0x${string}`;
+  minToOpen: string; // uint256 kept as string to avoid precision loss in JS
+  maxCap: string;    // uint256 kept as string
+  yesAuction: `0x${string}`;
+  noAuction: `0x${string}`;
+  yesToken: `0x${string}`;
+  noToken: `0x${string}`;
+  treasury: `0x${string}`;
+
+  // Execution target and calldata
+  target: `0x${string}`;
+  data: string; // raw bytes (hex string)
+
+  // Contract address (proposal instance)
+  address: `0x${string}`;
 }
 
 export function useGetAllProposals() {
@@ -67,85 +88,62 @@ export function useGetAllProposals() {
         // Use Promise.allSettled to handle individual proposal failures gracefully
         const proposalPromises = (proposalAddresses as string[]).map(async (proposalAddress) => {
           try {
-            // Read all required data for this proposal in parallel
+            // Read only functions present in proposal_abi to avoid TS ABI mismatches
             const [
               id,
               admin,
               title,
               description,
+              stateVal,
               startTime,
               endTime,
+              isActive,
               proposalExecuted,
-              proposalEnded,
-              isActive
+              proposalEnded
             ] = await Promise.all([
-              publicClient.readContract({
-                address: proposalAddress as `0x${string}`,
-                abi: proposal_abi,
-                functionName: 'id',
-              }),
-              publicClient.readContract({
-                address: proposalAddress as `0x${string}`,
-                abi: proposal_abi,
-                functionName: 'admin',
-              }),
-              publicClient.readContract({
-                address: proposalAddress as `0x${string}`,
-                abi: proposal_abi,
-                functionName: 'title',
-              }),
-              publicClient.readContract({
-                address: proposalAddress as `0x${string}`,
-                abi: proposal_abi,
-                functionName: 'description',
-              }),
-              publicClient.readContract({
-                address: proposalAddress as `0x${string}`,
-                abi: proposal_abi,
-                functionName: 'startTime',
-              }),
-              publicClient.readContract({
-                address: proposalAddress as `0x${string}`,
-                abi: proposal_abi,
-                functionName: 'endTime',
-              }),
-              publicClient.readContract({
-                address: proposalAddress as `0x${string}`,
-                abi: proposal_abi,
-                functionName: 'proposalExecuted',
-              }),
-              publicClient.readContract({
-                address: proposalAddress as `0x${string}`,
-                abi: proposal_abi,
-                functionName: 'proposalEnded',
-              }),
-              publicClient.readContract({
-                address: proposalAddress as `0x${string}`,
-                abi: proposal_abi,
-                functionName: 'isActive',
-              }),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'id' }),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'admin' }),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'title' }),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'description' }),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'state' }),
+              // startTime/endTime exist in the frontend ABI; use them as auction/live fallbacks
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'startTime' }).catch(() => null),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'endTime' }).catch(() => null),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'isActive' }).catch(() => null),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'proposalExecuted' }).catch(() => null),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'proposalEnded' }).catch(() => null),
             ])
 
-            // Determine status based on contract state
-            let status: 'active' | 'pending' | 'executed'
-            if (proposalExecuted || proposalEnded) {
-              status = 'executed'
-            } else if (isActive) {
-              status = 'active'
-            } else {
-              status = 'pending'
-            }
+            const stateMap = ['Auction', 'Live', 'Resolved', 'Cancelled'] as const;
+            const stateStr = stateMap[Number(stateVal ?? 0)];
+
+            // Fallbacks: use startTime/endTime for auctionStartTime/auctionEndTime, live fields default to 0
+            const auctionStartTimeVal = Number((startTime as bigint) || 0)
+            const auctionEndTimeVal = Number((endTime as bigint) || 0)
 
             return {
               id: (id as bigint)?.toString() || '0',
+              admin: (admin as string) || '',
               title: (title as string) || 'Untitled Proposal',
               description: (description as string) || 'No description available',
-              status,
-              createdBy: (admin as string) || '',
-              createdAt: startTime ? new Date(Number(startTime as bigint) * 1000).toISOString() : new Date().toISOString(),
-              address: proposalAddress,
-              endTime: Number((endTime as bigint) || 0),
-              startTime: Number((startTime as bigint) || 0),
+              state: stateStr,
+              auctionStartTime: auctionStartTimeVal,
+              auctionEndTime: auctionEndTimeVal,
+              liveStart: 0,
+              liveEnd: 0,
+              liveDuration: 0,
+              subjectToken: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+              pyUSD: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+              minToOpen: '0',
+              maxCap: '0',
+              yesAuction: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+              noAuction: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+              yesToken: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+              noToken: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+              treasury: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+              target: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+              data: '0x',
+              address: proposalAddress as `0x${string}`,
             }
           } catch (proposalError) {
             console.error(`Error fetching data for proposal ${proposalAddress}:`, proposalError)
