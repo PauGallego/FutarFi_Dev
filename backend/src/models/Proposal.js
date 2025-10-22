@@ -3,6 +3,7 @@ const Counter = require('./Counter');
 
 const proposalSchema = new mongoose.Schema({
   id: { type: Number, unique: true },
+  proposalContractId: { type: String, required: false, index: true },
   admin: { type: String, required: true },
   title: { type: String, required: true },
   description: { type: String, required: true },
