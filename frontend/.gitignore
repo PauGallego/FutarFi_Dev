@@ -27,4 +27,4 @@ yarn-error.log*
 next-env.d.ts
 
 # deployed addresses json
-./contracts/deployedAddresses.json
+./contracts/deployed-addresses.json
