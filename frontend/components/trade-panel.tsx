@@ -18,9 +18,6 @@ import {
 import { parseUnits, formatUnits, type Address } from "viem"
 import { toast } from "sonner"
 import { getContracts } from "@/lib/contracts"
-import { marketToken_abi } from "@/contracts/marketToken-abi"
-import { market_abi } from "@/contracts/market-abi"
-import { getContractAddress } from "@/contracts/constants"
 import type { MarketOption, TradeAction } from "@/lib/types"
 
 

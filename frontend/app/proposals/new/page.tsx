@@ -121,14 +121,7 @@ export default function NewProposalPage() {
       ? (formData.pythId as `0x${string}`)
       : "0x0000000000000000000000000000000000000000000000000000000000000000"
 
-    // Fetch pending nonce to avoid "nonce too low" during simulation on Anvil
-    let pendingNonce: bigint | undefined = undefined
-    try {
-      if (publicClient && accountAddress) {
-        const n = await publicClient.getTransactionCount({ address: accountAddress as `0x${string}`, blockTag: 'pending' })
-        pendingNonce = BigInt(n)
-      }
-    } catch (_) {}
+    // Let wallet/provider handle nonce to avoid races
 
     writeContract({
       address: contractAddress as `0x${string}`,
@@ -147,8 +140,6 @@ export default function NewProposalPage() {
         pythAddrArg,
         pythIdArg,
       ],
-      // Pass pending nonce if available
-      nonce: pendingNonce,
     })
   }
 
