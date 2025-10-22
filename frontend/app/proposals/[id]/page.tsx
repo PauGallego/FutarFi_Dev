@@ -1,57 +1,75 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useChainId } from "wagmi"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { ProposalHeader } from "@/components/proposal-header"
-import { PriceChart } from "@/components/price-chart"
-import { TradePanel } from "@/components/trade-panel"
-import type { Proposal, PricePoint } from "@/lib/types"
-import type { Address } from "viem"
+import { AuctionView } from "@/components/auction-view"
+import { MarketView } from "@/components/market-view"
+import { AuctionTradePanel } from "@/components/auction-trade-panel"
+import { MarketTradePanel } from "@/components/market-trade-panel"
+import { useChainId } from "wagmi"
+import type { Proposal, UserOrder, MarketOption, UserBalance } from "@/lib/types"
 import { useGetProposalById } from "@/hooks/use-get-proposalById"
 
 interface PageProps {
   params: { id: string }
 }
 
-function generateMockPriceData(): PricePoint[] {
-  const now = Date.now()
-  const data: PricePoint[] = []
 
-  // Generate 7 days of hourly data
-  for (let i = 7 * 24; i >= 0; i--) {
-    const timestamp = now - i * 60 * 60 * 1000
-    const yesPrice = 0.45 + Math.random() * 0.15 + (i / (7 * 24)) * 0.1
-    const noPrice = 1 - yesPrice + (Math.random() - 0.5) * 0.05
+function generateMockOrders(): UserOrder[] {
+  return [
+    {
+      id: "1",
+      market: "YES",
+      type: "limit",
+      side: "BUY",
+      price: 0.52,
+      amount: 100,
+      filled: 50,
+      status: "pending",
+      timestamp: Date.now() - 3600000,
+    },
+    {
+      id: "2",
+      market: "YES",
+      type: "market",
+      side: "SELL",
+      price: 0.55,
+      amount: 50,
+      filled: 50,
+      status: "filled",
+      timestamp: Date.now() - 7200000,
+    },
+  ]
+}
 
-    data.push({
-      timestamp,
-      yesPrice: Math.max(0.1, Math.min(0.9, yesPrice)),
-      noPrice: Math.max(0.1, Math.min(0.9, noPrice)),
-    })
+function generateMockUserBalance(): UserBalance {
+  return {
+    yesTokens: BigInt(1500000000000000000), // 1.5 tokens
+    noTokens: BigInt(2300000000000000000), // 2.3 tokens
+    collateral: BigInt(10000000), // 10 USDC
   }
-
-  return data
 }
 
 export default function ProposalDetailPage({ params }: PageProps) {
   const { id } = params
   const chainId = useChainId()
 
-  // Use the hook created earlier to fetch the proposal by id
   const { proposal: hookProposal, isLoading: hookLoading, error: hookError } = useGetProposalById(id)
 
   const [proposal, setProposal] = useState<Proposal | null>(null)
-  const [priceData, setPriceData] = useState<PricePoint[]>([])
+  const [userOrders, setUserOrders] = useState<UserOrder[]>([])
+  const [userBalance, setUserBalance] = useState<UserBalance | null>(null)
+  const [selectedMarket, setSelectedMarket] = useState<MarketOption>("YES")
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Map the hook's proposal shape to the app Proposal type
   useEffect(() => {
+
     if (!hookProposal) {
       setProposal(null)
       setError(hookError ? String(hookError) : null)
@@ -59,44 +77,68 @@ export default function ProposalDetailPage({ params }: PageProps) {
       return
     }
 
+    const zero = '0x0000000000000000000000000000000000000000'
     const mapped: Proposal = {
       id: hookProposal.id,
-      title: hookProposal.title,
-      description: hookProposal.description,
-      creator: hookProposal.createdBy,
-      startTime: BigInt(Math.floor(hookProposal.startTime || 0)),
-      endTime: BigInt(Math.floor(hookProposal.endTime || 0)),
-      executed: hookProposal.status === 'executed',
-      passed: false,
-      // markets are not read by the hook yet; use zero-address fallback
-      yesMarket: '0x0000000000000000000000000000000000000000',
-      noMarket: '0x0000000000000000000000000000000000000000',
-      status: hookProposal.status === 'pending' ? 'pending' : hookProposal.status === 'active' ? 'active' : hookProposal.status === 'executed' ? 'executed' : 'closed',
+      admin: hookProposal.admin || zero,
+      title: hookProposal.title || '',
+      description: hookProposal.description || '',
+
+      // state already matches the frontend `Proposal.state` union from the hook
+      state: (hookProposal.state as 'Auction' | 'Live' | 'Resolved' | 'Cancelled') || 'Auction',
+
+      // Auction / live times (seconds)
+      auctionStartTime: Number(hookProposal.auctionStartTime || 0),
+      auctionEndTime: Number(hookProposal.auctionEndTime || 0),
+      liveStart: Number(hookProposal.liveStart || hookProposal.auctionEndTime || 0),
+      liveEnd: Number(hookProposal.liveEnd || hookProposal.auctionEndTime || 0),
+      liveDuration: Number(hookProposal.liveDuration || 0),
+
+      // Token / treasury / auctions (use zero-address fallbacks)
+      subjectToken: (hookProposal.subjectToken as `0x${string}`) || zero,
+      pyUSD: (hookProposal.pyUSD as `0x${string}`) || zero,
+      minToOpen: hookProposal.minToOpen ? String(hookProposal.minToOpen) : '0',
+      maxCap: hookProposal.maxCap ? String(hookProposal.maxCap) : '0',
+      yesAuction: (hookProposal.yesAuction as `0x${string}`) || zero,
+      noAuction: (hookProposal.noAuction as `0x${string}`) || zero,
+      yesToken: (hookProposal.yesToken as `0x${string}`) || zero,
+      noToken: (hookProposal.noToken as `0x${string}`) || zero,
+      treasury: (hookProposal.treasury as `0x${string}`) || zero,
+
+      // Execution target and calldata
+      target: (hookProposal.target as `0x${string}`) || zero,
+      data: hookProposal.data || '0x',
+
+      // Proposal contract instance address
+      address: (hookProposal.address as `0x${string}`) || zero,
     }
 
-    setProposal(mapped)
-    setError(null)
-    setIsLoading(hookLoading)
 
-    // generate mock price data for the proposal view
-    setPriceData(generateMockPriceData())
+    const loadProposal = async () => {
+      try {
+        setIsLoading(true)
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+
+        const mockOrders = generateMockOrders()
+        const mockBalance = generateMockUserBalance()
+
+        setUserOrders(mockOrders)
+        setUserBalance(mockBalance)
+        setError(null)
+      } catch (err) {
+        console.error("[v0] Error loading proposal:", err)
+        setError("Failed to load proposal data")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadProposal()
   }, [hookProposal, hookLoading, hookError])
 
-  useEffect(() => {
-    // Poll for price updates every 10 seconds
-    const interval = setInterval(() => {
-      setPriceData((prev) => {
-        const newPoint: PricePoint = {
-          timestamp: Date.now(),
-          yesPrice: Math.max(0.1, Math.min(0.9, 0.5 + (Math.random() - 0.5) * 0.2)),
-          noPrice: Math.max(0.1, Math.min(0.9, 0.5 + (Math.random() - 0.5) * 0.2)),
-        }
-        return [...prev, newPoint].slice(-7 * 24) // Keep last 7 days
-      })
-    }, 10000)
-
-    return () => clearInterval(interval)
-  }, [])
+  const handleCancelOrder = (orderId: string) => {
+    setUserOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "cancelled" as const } : o)))
+  }
 
   if (isLoading) {
     return (
@@ -105,12 +147,10 @@ export default function ProposalDetailPage({ params }: PageProps) {
           <div className="lg:col-span-2 space-y-6">
             <Skeleton className="h-8 w-32" />
             <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-24 w-full" />
             <Skeleton className="h-96 w-full" />
           </div>
           <div className="space-y-4">
             <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-48 w-full" />
             <Skeleton className="h-64 w-full" />
           </div>
         </div>
@@ -137,17 +177,30 @@ export default function ProposalDetailPage({ params }: PageProps) {
       <div className="grid lg:grid-cols-3 gap-8">
         {/* Left/Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          <ProposalHeader proposal={proposal} chainId={chainId} />
-          <PriceChart data={priceData} />
+          <ProposalHeader proposal={proposal} chainId={1} />
+
+          {(((proposal as any).status === "Auction" || (proposal as any).status === "Canceled") && (proposal as any).auctionData && userBalance) ? (
+            <AuctionView auctionData={(proposal as any).auctionData} userBalance={userBalance} />
+          ) : (
+            (proposal as any).marketData && (
+              <MarketView
+                marketData={(proposal as any).marketData}
+                userOrders={userOrders}
+                selectedMarket={selectedMarket}
+                onMarketChange={setSelectedMarket}
+                onCancelOrder={handleCancelOrder}
+              />
+            )
+          )}
         </div>
 
         {/* Right Sidebar */}
         <div className="lg:sticky lg:top-4 lg:self-start">
-          <TradePanel
-            yesMarketAddress={proposal.yesMarket as Address}
-            noMarketAddress={proposal.noMarket as Address}
-            proposalStatus={proposal.status}
-          />
+          {(((proposal as any).status === "Auction" || (proposal as any).status === "Canceled") && (proposal as any).auctionData) ? (
+            <AuctionTradePanel auctionData={(proposal as any).auctionData} isFailed={(proposal as any).status === "Canceled"} />
+          ) : (
+            <MarketTradePanel />
+          )}
         </div>
       </div>
     </div>

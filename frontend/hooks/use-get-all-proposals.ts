@@ -3,39 +3,8 @@ import { proposalManager_abi } from '@/contracts/proposalManager-abi'
 import { proposal_abi } from '@/contracts/proposal-abi'
 import { getContractAddress } from '@/contracts/constants'
 import { useEffect, useState } from 'react'
+import type { Proposal } from '@/lib/types'
 
-export interface Proposal {
-  id: string;
-  admin: string;
-  title: string;
-  description: string;
-  state: 'Auction' | 'Live' | 'Resolved' | 'Cancelled';
-
-  // Auction / live times (timestamps in seconds)
-  auctionStartTime: number;
-  auctionEndTime: number;
-  liveStart: number;
-  liveEnd: number;
-  liveDuration: number;
-
-  // Token / treasury / auctions
-  subjectToken: `0x${string}`;
-  pyUSD: `0x${string}`;
-  minToOpen: string; // uint256 kept as string to avoid precision loss in JS
-  maxCap: string;    // uint256 kept as string
-  yesAuction: `0x${string}`;
-  noAuction: `0x${string}`;
-  yesToken: `0x${string}`;
-  noToken: `0x${string}`;
-  treasury: `0x${string}`;
-
-  // Execution target and calldata
-  target: `0x${string}`;
-  data: string; // raw bytes (hex string)
-
-  // Contract address (proposal instance)
-  address: `0x${string}`;
-}
 
 export function useGetAllProposals() {
   const chainId = useChainId()
