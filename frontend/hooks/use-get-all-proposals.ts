@@ -9,6 +9,7 @@ export interface Proposal {
   admin: string;
   title: string;
   description: string;
+  // State from Solidity: enum State { Auction, Live, Resolved, Cancelled }
   state: 'Auction' | 'Live' | 'Resolved' | 'Cancelled';
 
   // Auction / live times (timestamps in seconds)
@@ -88,59 +89,75 @@ export function useGetAllProposals() {
         // Use Promise.allSettled to handle individual proposal failures gracefully
         const proposalPromises = (proposalAddresses as string[]).map(async (proposalAddress) => {
           try {
-            // Read only functions present in proposal_abi to avoid TS ABI mismatches
+            // Read functions that actually exist in the frontend ABI
             const [
               id,
               admin,
-              title,
-              description,
               stateVal,
-              startTime,
-              endTime,
-              isActive,
-              proposalExecuted,
-              proposalEnded
+              auctionStartTime,
+              auctionEndTime,
+              liveStart,
+              liveEnd,
+              liveDuration,
+              subjectToken,
+              pyusd,
+              minToOpen,
+              maxCap,
+              yesAuction,
+              noAuction,
+              yesToken,
+              noToken,
+              treasury
             ] = await Promise.all([
               publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'id' }),
               publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'admin' }),
-              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'title' }),
-              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'description' }),
               publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'state' }),
-              // startTime/endTime exist in the frontend ABI; use them as auction/live fallbacks
-              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'startTime' }).catch(() => null),
-              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'endTime' }).catch(() => null),
-              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'isActive' }).catch(() => null),
-              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'proposalExecuted' }).catch(() => null),
-              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'proposalEnded' }).catch(() => null),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'auctionStartTime' }).catch(() => 0),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'auctionEndTime' }).catch(() => 0),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'liveStart' }).catch(() => 0),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'liveEnd' }).catch(() => 0),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'liveDuration' }).catch(() => 0),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'subjectToken' }).catch(() => '0x0000000000000000000000000000000000000000'),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'pyUSD' }).catch(() => '0x0000000000000000000000000000000000000000'),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'minToOpen' }).catch(() => 0),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'maxCap' }).catch(() => 0n),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'yesAuction' }).catch(() => '0x0000000000000000000000000000000000000000'),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'noAuction' }).catch(() => '0x0000000000000000000000000000000000000000'),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'yesToken' }).catch(() => '0x0000000000000000000000000000000000000000'),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'noToken' }).catch(() => '0x0000000000000000000000000000000000000000'),
+              publicClient.readContract({ address: proposalAddress as `0x${string}`, abi: proposal_abi, functionName: 'treasury' }).catch(() => '0x0000000000000000000000000000000000000000'),
             ])
 
             const stateMap = ['Auction', 'Live', 'Resolved', 'Cancelled'] as const;
             const stateStr = stateMap[Number(stateVal ?? 0)];
 
-            // Fallbacks: use startTime/endTime for auctionStartTime/auctionEndTime, live fields default to 0
-            const auctionStartTimeVal = Number((startTime as bigint) || 0)
-            const auctionEndTimeVal = Number((endTime as bigint) || 0)
+            // Convert on-chain seconds to JS milliseconds for Date()
+            const auctionStartTimeMs = Number(auctionStartTime ?? 0) * 1000
+            const auctionEndTimeMs = Number(auctionEndTime ?? 0) * 1000
+            const liveStartMs = Number(liveStart ?? 0) * 1000
+            const liveEndMs = Number(liveEnd ?? 0) * 1000
 
             return {
               id: (id as bigint)?.toString() || '0',
               admin: (admin as string) || '',
-              title: (title as string) || 'Untitled Proposal',
-              description: (description as string) || 'No description available',
+              title: 'Untitled Proposal',
+              description: 'No description available',
               state: stateStr,
-              auctionStartTime: auctionStartTimeVal,
-              auctionEndTime: auctionEndTimeVal,
-              liveStart: 0,
-              liveEnd: 0,
-              liveDuration: 0,
-              subjectToken: '0x0000000000000000000000000000000000000000' as `0x${string}`,
-              pyUSD: '0x0000000000000000000000000000000000000000' as `0x${string}`,
-              minToOpen: '0',
-              maxCap: '0',
-              yesAuction: '0x0000000000000000000000000000000000000000' as `0x${string}`,
-              noAuction: '0x0000000000000000000000000000000000000000' as `0x${string}`,
-              yesToken: '0x0000000000000000000000000000000000000000' as `0x${string}`,
-              noToken: '0x0000000000000000000000000000000000000000' as `0x${string}`,
-              treasury: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+              auctionStartTime: auctionStartTimeMs,
+              auctionEndTime: auctionEndTimeMs,
+              liveStart: liveStartMs,
+              liveEnd: liveEndMs,
+              liveDuration: Number(liveDuration ?? 0),
+              subjectToken: (subjectToken as string) as `0x${string}`,
+              pyUSD: (pyusd as string) as `0x${string}`,
+              // Convert on-chain uints to strings safely. Fallback to '0' when missing.
+              minToOpen: String(minToOpen ?? '0'),
+              maxCap: String(maxCap ?? '0'),
+              yesAuction: (yesAuction as string) as `0x${string}`,
+              noAuction: (noAuction as string) as `0x${string}`,
+              yesToken: (yesToken as string) as `0x${string}`,
+              noToken: (noToken as string) as `0x${string}`,
+              treasury: (treasury as string) as `0x${string}`,
               target: '0x0000000000000000000000000000000000000000' as `0x${string}`,
               data: '0x',
               address: proposalAddress as `0x${string}`,
