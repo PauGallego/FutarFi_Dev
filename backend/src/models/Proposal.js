@@ -85,13 +85,13 @@ const proposalSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Virtual fields for compatibility
+// Virtual token addresses from auctions snapshot
 proposalSchema.virtual('approveToken').get(function() {
-  return this.marketAddress ? `${this.marketAddress}-approve` : null;
+  return this.auctions && this.auctions.yes ? this.auctions.yes.marketToken || null : null;
 });
 
 proposalSchema.virtual('rejectToken').get(function() {
-  return this.marketAddress ? `${this.marketAddress}-reject` : null;
+  return this.auctions && this.auctions.no ? this.auctions.no.marketToken || null : null;
 });
 
 proposalSchema.set('toJSON', { virtuals: true });
