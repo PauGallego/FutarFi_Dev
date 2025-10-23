@@ -12,6 +12,14 @@ const {
   notifyMarketData,
   notifyUserOrdersUpdate
 } = require('../middleware/websocket');
+const PriceHistory = require('../models/PriceHistory');
+const TWAP = require('../models/TWAP');
+
+function normalizeSide(side) { if (side === 'yes') return 'approve'; if (side === 'no') return 'reject'; return side; }
+function isValidSide(side) { return ['approve', 'reject'].includes(side); }
+function isValidOrderType(orderType) { return ['buy', 'sell'].includes(orderType); }
+function isValidOrderExecution(orderExecution) { return ['limit', 'market'].includes(orderExecution); }
+function sendError(res, status, message) { return res.status(status).json({ error: message }); }
 
 /**
  * @swagger
@@ -47,14 +55,12 @@ const {
  */
 router.get('/:proposalId/:side/market-data', async (req, res) => {
   try {
-    const { proposalId, side } = req.params;
-    
-    if (!['approve', 'reject'].includes(side)) {
-      return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
-    }
+    const { proposalId } = req.params;
+    let { side } = req.params;
+    side = normalizeSide(side);
+    if (!isValidSide(side)) return sendError(res, 400, 'Invalid side. Must be approve or reject');
 
     const orderBook = await OrderBook.findOne({ proposalId, side });
-    
     if (!orderBook) {
       return res.json({
         proposalId,
@@ -89,7 +95,7 @@ router.get('/:proposalId/:side/market-data', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendError(res, 500, error.message);
   }
 });
 
@@ -118,14 +124,12 @@ router.get('/:proposalId/:side/market-data', async (req, res) => {
  */
 router.get('/:proposalId/:side/twap', async (req, res) => {
   try {
-    const { proposalId, side } = req.params;
-    
-    if (!['approve', 'reject'].includes(side)) {
-      return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
-    }
+    const { proposalId } = req.params;
+    let { side } = req.params;
+    side = normalizeSide(side);
+    if (!isValidSide(side)) return sendError(res, 400, 'Invalid side. Must be approve or reject');
 
     const orderBook = await OrderBook.findOne({ proposalId, side });
-    
     res.json({
       proposalId,
       side,
@@ -136,7 +140,85 @@ router.get('/:proposalId/:side/twap', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendError(res, 500, error.message);
+  }
+});
+
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/twap/history:
+ *   get:
+ *     summary: Get TWAP history data
+ *     description: Time-weighted average price data for a range of timestamps
+ *     tags: [Orderbooks]
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject]
+ *       - in: query
+ *         name: timeframe
+ *         schema:
+ *           type: string
+ *           enum: [1m, 5m, 15m, 1h, 4h, 1d, 1w, 1M, all]
+ *           default: 1h
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *       - in: query
+ *         name: from
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: to
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *     responses:
+ *       200:
+ *         description: TWAP history data
+ */
+router.get('/:proposalId/:side/twap/history', async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    let { side } = req.params;
+    const { timeframe = '1m', limit = 300, from, to } = req.query;
+    side = normalizeSide(side);
+    if (!isValidSide(side)) return sendError(res, 400, 'Invalid side. Must be approve or reject');
+
+    let tf = String(timeframe);
+    if (tf === '24h') tf = '1d';
+    if (tf === '1mo') tf = '1M';
+
+    const allowed = ['1m', '5m', '15m', '1h', '4h', '1d', '1w', '1M', 'all'];
+    if (!allowed.includes(tf)) {
+      return sendError(res, 400, `Invalid timeframe. Allowed: ${allowed.join(', ')}`);
+    }
+
+    const filter = { proposalId, side, timeframe: tf };
+    if (from || to) {
+      filter.timestamp = {};
+      if (from) filter.timestamp.$gte = new Date(isNaN(from) ? from : Number(from));
+      if (to) filter.timestamp.$lte = new Date(isNaN(to) ? to : Number(to));
+    }
+
+    const items = await TWAP.find(filter)
+      .sort({ timestamp: 1 })
+      .limit(parseInt(limit));
+
+    res.json({ proposalId, side, timeframe: tf, count: items.length, items });
+  } catch (error) {
+    sendError(res, 500, error.message);
   }
 });
 
@@ -176,14 +258,12 @@ router.get('/:proposalId/:side/twap', async (req, res) => {
  */
 router.get('/:proposalId/:side/candles', async (req, res) => {
   try {
-    const { proposalId, side } = req.params;
+    const { proposalId } = req.params;
+    let { side } = req.params;
     const { interval = '1h', limit = 100 } = req.query;
-    
-    if (!['approve', 'reject'].includes(side)) {
-      return res.status(400).json({ error: 'Invalid side. Must be approve or reject' });
-    }
+    side = normalizeSide(side);
+    if (!isValidSide(side)) return sendError(res, 400, 'Invalid side. Must be approve or reject');
 
-    // Convert interval to milliseconds
     const intervalMs = {
       '1m': 60 * 1000,
       '5m': 5 * 60 * 1000,
@@ -194,29 +274,21 @@ router.get('/:proposalId/:side/candles', async (req, res) => {
     }[interval];
 
     if (!intervalMs) {
-      return res.status(400).json({ error: 'Invalid interval' });
+      return sendError(res, 400, 'Invalid interval');
     }
 
-    // Get aggregated price data (not individual trades)
-    const PriceHistory = require('../models/PriceHistory');
     const priceData = await PriceHistory.find({
       proposalId,
       side,
       timestamp: { $gte: new Date(Date.now() - parseInt(limit) * intervalMs) }
     }).sort({ timestamp: 1 });
 
-    // Group into candles
     const candles = [];
     let currentTime = Date.now() - parseInt(limit) * intervalMs;
-    
     for (let i = 0; i < parseInt(limit); i++) {
       const candleStart = new Date(currentTime);
       const candleEnd = new Date(currentTime + intervalMs);
-      
-      const candleData = priceData.filter(data => 
-        data.timestamp >= candleStart && data.timestamp < candleEnd
-      );
-
+      const candleData = priceData.filter(data => data.timestamp >= candleStart && data.timestamp < candleEnd);
       if (candleData.length > 0) {
         const prices = candleData.map(d => parseFloat(d.price));
         candles.push({
@@ -228,18 +300,12 @@ router.get('/:proposalId/:side/candles', async (req, res) => {
           volume: candleData.reduce((sum, d) => sum + parseFloat(d.volume), 0)
         });
       }
-      
       currentTime += intervalMs;
     }
 
-    res.json({
-      proposalId,
-      side,
-      interval,
-      candles
-    });
+    res.json({ proposalId, side, interval, candles });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendError(res, 500, error.message);
   }
 });
 
@@ -469,84 +535,31 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
 router.delete('/orders/:orderId', verifyWalletSignature, async (req, res) => {
   try {
     const { orderId } = req.params;
-    const userAddress = req.userAddress; // From wallet authentication
+    const userAddress = req.userAddress;
     const io = req.app.get('io');
 
-    // Validate inputs
-    if (!orderId) {
-      return res.status(400).json({ error: 'Order ID is required' });
-    }
+    if (!orderId) return sendError(res, 400, 'Order ID is required');
+    if (!userAddress) return sendError(res, 401, 'User address not found in authentication');
 
-    if (!userAddress) {
-      return res.status(401).json({ error: 'User address not found in authentication' });
-    }
-    
-    // First check if order exists and belongs to authenticated user
     const existingOrder = await Order.findById(orderId);
-    if (!existingOrder) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    if (!existingOrder) return sendError(res, 404, 'Order not found');
+    if (!existingOrder.userAddress) return sendError(res, 400, 'Order userAddress is missing');
+    if (!existingOrder.proposalId || !existingOrder.side) return sendError(res, 400, 'Order data is incomplete');
+    if (existingOrder.userAddress.toLowerCase() !== userAddress.toLowerCase()) return sendError(res, 403, 'Not authorized to cancel this order');
+    if (existingOrder.status === 'cancelled') return sendError(res, 400, 'Order is already cancelled');
+    if (existingOrder.status === 'filled') return sendError(res, 400, 'Cannot cancel a filled order');
 
-    // Check if order has required fields
-    if (!existingOrder.userAddress) {
-      return res.status(400).json({ error: 'Order userAddress is missing' });
-    }
+    const order = await Order.findByIdAndUpdate(orderId, { status: 'cancelled', updatedAt: new Date() }, { new: true });
+    if (!order) return sendError(res, 500, 'Failed to update order status');
 
-    if (!existingOrder.proposalId || !existingOrder.side) {
-      return res.status(400).json({ error: 'Order data is incomplete' });
-    }
-    
-    if (existingOrder.userAddress.toLowerCase() !== userAddress.toLowerCase()) {
-      return res.status(403).json({ error: 'Not authorized to cancel this order' });
-    }
-
-    // Check if order can be cancelled
-    if (existingOrder.status === 'cancelled') {
-      return res.status(400).json({ error: 'Order is already cancelled' });
-    }
-
-    if (existingOrder.status === 'filled') {
-      return res.status(400).json({ error: 'Cannot cancel a filled order' });
-    }
-    
-    const order = await Order.findByIdAndUpdate(
-      orderId,
-      { 
-        status: 'cancelled',
-        updatedAt: new Date()
-      },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(500).json({ error: 'Failed to update order status' });
-    }
-
-    // NEW: notify this user that their orders changed
     try { if (io) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-cancelled', changedOrderId: order._id.toString() }); } catch (e) {}
-
-    // Update order book (with error handling)
-    try {
-      await updateOrderBook(order.proposalId, order.side, io);
-    } catch (updateError) {
-      console.error('Error updating order book after cancellation:', updateError);
-      // Don't fail the whole operation if order book update fails
-    }
-
-    // Notify clients (with error handling)
-    try {
-      if (io && typeof notifyOrderStatusChange === 'function') {
-        notifyOrderStatusChange(io, order, 'cancelled');
-      }
-    } catch (notifyError) {
-      console.error('Error notifying order status change:', notifyError);
-      // Don't fail the whole operation if notification fails
-    }
+    try { await updateOrderBook(order.proposalId, order.side, io); } catch (updateError) { console.error('Error updating order book after cancellation:', updateError); }
+    try { if (io && typeof notifyOrderStatusChange === 'function') { notifyOrderStatusChange(io, order, 'cancelled'); } } catch (notifyError) { console.error('Error notifying order status change:', notifyError); }
 
     res.json(order);
   } catch (error) {
     console.error('Error cancelling order:', error);
-    res.status(500).json({ error: error.message });
+    sendError(res, 500, error.message);
   }
 });
 
@@ -983,84 +996,31 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
 router.delete('/orders/:orderId', verifyWalletSignature, async (req, res) => {
   try {
     const { orderId } = req.params;
-    const userAddress = req.userAddress; // From wallet authentication
+    const userAddress = req.userAddress;
     const io = req.app.get('io');
 
-    // Validate inputs
-    if (!orderId) {
-      return res.status(400).json({ error: 'Order ID is required' });
-    }
+    if (!orderId) return sendError(res, 400, 'Order ID is required');
+    if (!userAddress) return sendError(res, 401, 'User address not found in authentication');
 
-    if (!userAddress) {
-      return res.status(401).json({ error: 'User address not found in authentication' });
-    }
-    
-    // First check if order exists and belongs to authenticated user
     const existingOrder = await Order.findById(orderId);
-    if (!existingOrder) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    if (!existingOrder) return sendError(res, 404, 'Order not found');
+    if (!existingOrder.userAddress) return sendError(res, 400, 'Order userAddress is missing');
+    if (!existingOrder.proposalId || !existingOrder.side) return sendError(res, 400, 'Order data is incomplete');
+    if (existingOrder.userAddress.toLowerCase() !== userAddress.toLowerCase()) return sendError(res, 403, 'Not authorized to cancel this order');
+    if (existingOrder.status === 'cancelled') return sendError(res, 400, 'Order is already cancelled');
+    if (existingOrder.status === 'filled') return sendError(res, 400, 'Cannot cancel a filled order');
 
-    // Check if order has required fields
-    if (!existingOrder.userAddress) {
-      return res.status(400).json({ error: 'Order userAddress is missing' });
-    }
+    const order = await Order.findByIdAndUpdate(orderId, { status: 'cancelled', updatedAt: new Date() }, { new: true });
+    if (!order) return sendError(res, 500, 'Failed to update order status');
 
-    if (!existingOrder.proposalId || !existingOrder.side) {
-      return res.status(400).json({ error: 'Order data is incomplete' });
-    }
-    
-    if (existingOrder.userAddress.toLowerCase() !== userAddress.toLowerCase()) {
-      return res.status(403).json({ error: 'Not authorized to cancel this order' });
-    }
-
-    // Check if order can be cancelled
-    if (existingOrder.status === 'cancelled') {
-      return res.status(400).json({ error: 'Order is already cancelled' });
-    }
-
-    if (existingOrder.status === 'filled') {
-      return res.status(400).json({ error: 'Cannot cancel a filled order' });
-    }
-    
-    const order = await Order.findByIdAndUpdate(
-      orderId,
-      { 
-        status: 'cancelled',
-        updatedAt: new Date()
-      },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(500).json({ error: 'Failed to update order status' });
-    }
-
-    // NEW: notify this user that their orders changed
     try { if (io) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-cancelled', changedOrderId: order._id.toString() }); } catch (e) {}
-
-    // Update order book (with error handling)
-    try {
-      await updateOrderBook(order.proposalId, order.side, io);
-    } catch (updateError) {
-      console.error('Error updating order book after cancellation:', updateError);
-      // Don't fail the whole operation if order book update fails
-    }
-
-    // Notify clients (with error handling)
-    try {
-      if (io && typeof notifyOrderStatusChange === 'function') {
-        notifyOrderStatusChange(io, order, 'cancelled');
-      }
-    } catch (notifyError) {
-      console.error('Error notifying order status change:', notifyError);
-      // Don't fail the whole operation if notification fails
-    }
+    try { await updateOrderBook(order.proposalId, order.side, io); } catch (updateError) { console.error('Error updating order book after cancellation:', updateError); }
+    try { if (io && typeof notifyOrderStatusChange === 'function') { notifyOrderStatusChange(io, order, 'cancelled'); } } catch (notifyError) { console.error('Error notifying order status change:', notifyError); }
 
     res.json(order);
   } catch (error) {
     console.error('Error cancelling order:', error);
-    res.status(500).json({ error: error.message });
+    sendError(res, 500, error.message);
   }
 });
 
@@ -1497,84 +1457,31 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
 router.delete('/orders/:orderId', verifyWalletSignature, async (req, res) => {
   try {
     const { orderId } = req.params;
-    const userAddress = req.userAddress; // From wallet authentication
+    const userAddress = req.userAddress;
     const io = req.app.get('io');
 
-    // Validate inputs
-    if (!orderId) {
-      return res.status(400).json({ error: 'Order ID is required' });
-    }
+    if (!orderId) return sendError(res, 400, 'Order ID is required');
+    if (!userAddress) return sendError(res, 401, 'User address not found in authentication');
 
-    if (!userAddress) {
-      return res.status(401).json({ error: 'User address not found in authentication' });
-    }
-    
-    // First check if order exists and belongs to authenticated user
     const existingOrder = await Order.findById(orderId);
-    if (!existingOrder) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    if (!existingOrder) return sendError(res, 404, 'Order not found');
+    if (!existingOrder.userAddress) return sendError(res, 400, 'Order userAddress is missing');
+    if (!existingOrder.proposalId || !existingOrder.side) return sendError(res, 400, 'Order data is incomplete');
+    if (existingOrder.userAddress.toLowerCase() !== userAddress.toLowerCase()) return sendError(res, 403, 'Not authorized to cancel this order');
+    if (existingOrder.status === 'cancelled') return sendError(res, 400, 'Order is already cancelled');
+    if (existingOrder.status === 'filled') return sendError(res, 400, 'Cannot cancel a filled order');
 
-    // Check if order has required fields
-    if (!existingOrder.userAddress) {
-      return res.status(400).json({ error: 'Order userAddress is missing' });
-    }
+    const order = await Order.findByIdAndUpdate(orderId, { status: 'cancelled', updatedAt: new Date() }, { new: true });
+    if (!order) return sendError(res, 500, 'Failed to update order status');
 
-    if (!existingOrder.proposalId || !existingOrder.side) {
-      return res.status(400).json({ error: 'Order data is incomplete' });
-    }
-    
-    if (existingOrder.userAddress.toLowerCase() !== userAddress.toLowerCase()) {
-      return res.status(403).json({ error: 'Not authorized to cancel this order' });
-    }
-
-    // Check if order can be cancelled
-    if (existingOrder.status === 'cancelled') {
-      return res.status(400).json({ error: 'Order is already cancelled' });
-    }
-
-    if (existingOrder.status === 'filled') {
-      return res.status(400).json({ error: 'Cannot cancel a filled order' });
-    }
-    
-    const order = await Order.findByIdAndUpdate(
-      orderId,
-      { 
-        status: 'cancelled',
-        updatedAt: new Date()
-      },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(500).json({ error: 'Failed to update order status' });
-    }
-
-    // NEW: notify this user that their orders changed
     try { if (io) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-cancelled', changedOrderId: order._id.toString() }); } catch (e) {}
-
-    // Update order book (with error handling)
-    try {
-      await updateOrderBook(order.proposalId, order.side, io);
-    } catch (updateError) {
-      console.error('Error updating order book after cancellation:', updateError);
-      // Don't fail the whole operation if order book update fails
-    }
-
-    // Notify clients (with error handling)
-    try {
-      if (io && typeof notifyOrderStatusChange === 'function') {
-        notifyOrderStatusChange(io, order, 'cancelled');
-      }
-    } catch (notifyError) {
-      console.error('Error notifying order status change:', notifyError);
-      // Don't fail the whole operation if notification fails
-    }
+    try { await updateOrderBook(order.proposalId, order.side, io); } catch (updateError) { console.error('Error updating order book after cancellation:', updateError); }
+    try { if (io && typeof notifyOrderStatusChange === 'function') { notifyOrderStatusChange(io, order, 'cancelled'); } } catch (notifyError) { console.error('Error notifying order status change:', notifyError); }
 
     res.json(order);
   } catch (error) {
     console.error('Error cancelling order:', error);
-    res.status(500).json({ error: error.message });
+    sendError(res, 500, error.message);
   }
 });
 
