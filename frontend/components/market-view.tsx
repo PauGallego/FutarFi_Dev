@@ -14,7 +14,7 @@ import {
 } from "recharts"
 import { OrderBook } from "@/components/order-book"
 import { OrderList } from "@/components/order-list"
-import type { MarketData, MarketOption, UserOrder } from "@/lib/types"
+import type { MarketData, MarketOption, OrderBookEntry, UserOrder } from "@/lib/types"
 
 interface MarketViewProps {
   marketData: MarketData
@@ -23,10 +23,14 @@ interface MarketViewProps {
   onMarketChange: (market: MarketOption) => void
   onCancelOrder: (orderId: string) => void
   userOrdersError?: string | null
+  // New: live orderbook from hook
+  orderBookEntries?: OrderBookEntry[]
+  proposalId?: string
 }
 
-export function MarketView({ marketData, userOrders, selectedMarket, onMarketChange, onCancelOrder, userOrdersError }: MarketViewProps) {
-  const orderBook = selectedMarket === "YES" ? marketData.yesOrderBook : marketData.noOrderBook
+export function MarketView({ marketData, userOrders, selectedMarket, onMarketChange, onCancelOrder, userOrdersError, orderBookEntries }: MarketViewProps) {
+  const fallbackOrderBook = selectedMarket === "YES" ? marketData.yesOrderBook : marketData.noOrderBook
+  const orderBook = orderBookEntries && orderBookEntries.length > 0 ? orderBookEntries : fallbackOrderBook
   const baseOrders = userOrders ?? []
   const marketOrders = baseOrders.filter((order) => order.market === selectedMarket)
 

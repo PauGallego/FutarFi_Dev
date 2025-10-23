@@ -17,6 +17,7 @@ import { useGetProposalById } from "@/hooks/use-get-proposalById"
 import { useGetUserOrders } from "@/hooks/use-get-user-orders"
 import { useCancelOrder } from "@/hooks/use-cancel-order"
 import { toast } from "sonner"
+import { useGetOrderbookOrders } from "@/hooks/use-get-orderbook-orders"
 
 interface PageProps {
   params: {id: string}
@@ -164,6 +165,9 @@ export default function ProposalDetailPage({ params }: PageProps) {
 
   const { cancelOrder, isLoading: cancellingOrder } = useCancelOrder()
 
+  // Live public orderbook for selected market
+  const { orders: liveOrderbook, refetch: refetchOrderbook } = useGetOrderbookOrders({ proposalId: id, market: selectedMarket, auto: true })
+
   useEffect(() => {
     if (!hookProposal) {
       setProposal(null)
@@ -260,6 +264,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
                 onMarketChange={setSelectedMarket}
                 onCancelOrder={handleCancelOrder}
                 userOrdersError={userOrdersError}
+                orderBookEntries={liveOrderbook}
               />
             )
           )}
@@ -270,7 +275,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
           {(((proposal as any).status === "Auction" || (proposal as any).status === "Canceled") && (proposal as any).auctionData) ? (
             <AuctionTradePanel auctionData={(proposal as any).auctionData} isFailed={(proposal as any).status === "Canceled"} />
           ) : (
-            <MarketTradePanel selectedMarket={selectedMarket} onMarketChange={setSelectedMarket} proposalId={proposal.id} onOrderPlaced={refetchUserOrders} />
+            <MarketTradePanel selectedMarket={selectedMarket} onMarketChange={setSelectedMarket} proposalId={proposal.id} onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }} />
           )}
         </div>
       </div>
