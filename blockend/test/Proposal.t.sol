@@ -18,16 +18,18 @@ contract ProposalBasicTest is Test {
     MockERC20 public pyusd;
     Proposal public proposal;
     address public admin;
+    
 
     function setUp() public {
         admin = makeAddr("admin");
         pyusd = new MockERC20();
+        proposal = new Proposal();
     }
 
     /// @notice After auctions finalize the Proposal should have live times set but remain in Auction state (new contract behavior)
     function test_Auctions_SetLiveTimes_but_stateRemainsAuction() public {
         // Deploy Proposal with auctionDuration=10, liveDuration=100, minToOpen=0 so finalize succeeds when time passes
-        proposal = new Proposal(
+        proposal.initialize(
             1,
             admin,
             "T",
@@ -83,21 +85,21 @@ contract ProposalBasicTest is Test {
     function test_Refund_afterAuctionCancelled() public {
         address buyer = makeAddr("buyer");
 
-        proposal = new Proposal(
-            2,
+        proposal.initialize(
+            1,
             admin,
-            "Refund Proposal",
-            "Description",
-            10,             // auctionDuration
-            100,            // liveDuration
-            address(1),     // subjectToken
+            "T",
+            "D",
+            10,            // auctionDuration
+            100,           // liveDuration
+            address(1),    // subjectToken
             address(pyusd),
-            500e18,           // minToOpen 
-            1000e18,        // maxCap
-            address(0),     // target
-            "",            // data
-            address(0),     // pythAddr
-            bytes32(0)      // pythId
+            0,             // minToOpen (allow finalize without tokens)
+            1000e18,       // maxCap
+            address(0),    // target
+            "",           // data
+            address(0),    // pythAddr
+            bytes32(0)     // pythId
         );
 
         DutchAuction yes = proposal.yesAuction();

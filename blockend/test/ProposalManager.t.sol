@@ -15,6 +15,7 @@ contract MockERC20 is ERC20 {
 contract ProposalManagerBasicTest is Test {
     ProposalManager public pm;
     MockERC20 public pyusd;
+    Proposal public proposal;
 
     address public bob = makeAddr("bob");
     address public alice = makeAddr("alice");
@@ -22,8 +23,8 @@ contract ProposalManagerBasicTest is Test {
     function setUp() public {
         pyusd = new MockERC20();
         vm.label(address(pyusd), "pyUSD");
-
-        pm = new ProposalManager(address(pyusd));
+        proposal = new Proposal();
+        pm = new ProposalManager(address(pyusd), address(proposal));
         vm.label(address(pm), "ProposalManager");
     }
 

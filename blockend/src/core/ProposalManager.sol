@@ -6,12 +6,15 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IProposal} from "../interfaces/IProposal.sol";
 import {Proposal} from "./Proposal.sol";
 import {IProposalManager} from "../interfaces/IProposalManager.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 /// @title ProposalManager
 /// @notice Deploys Proposal contracts and indexes them for discovery by ID and admin.
 
 contract ProposalManager is Ownable, IProposalManager {
     address public immutable PYUSD;       // Collateral/stable used by auctions/treasury
+
+    address public proposalImpl;
 
     // --- Indexing ---
     uint256 public nextId;
@@ -21,9 +24,10 @@ contract ProposalManager is Ownable, IProposalManager {
     // --- Events ---
     event ProposalCreated(uint256 indexed id, address indexed admin, address proposal, string title);
 
-    constructor(address _pyusd) Ownable(msg.sender) {
+    constructor(address _pyusd, address _proposalImpl) Ownable(msg.sender) {
         require(_pyusd != address(0), "PM:PYUSD=0");
         PYUSD = _pyusd;
+        proposalImpl = _proposalImpl;
     }
 
     /// @param _title Proposal title
@@ -57,14 +61,15 @@ contract ProposalManager is Ownable, IProposalManager {
 
         id = ++nextId;
 
-        // deploy a new Proposal 
-        Proposal proposal = new Proposal(
+        // deploy a new Proposal
+        address proposalClone = Clones.clone(proposalImpl);
+        Proposal(proposalClone).initialize(
             id,
             msg.sender,
             _title,
             _description,
-            _auctionDuration,     // auction duration
-            _liveDuration,        // live duration 
+            _auctionDuration,
+            _liveDuration,
             _subjectToken,
             PYUSD,
             _minToOpen,
@@ -74,9 +79,10 @@ contract ProposalManager is Ownable, IProposalManager {
             _pythAddr,
             _pythId
         );
+      
 
         // Indexing
-        address proposalAddr = address(proposal);
+        address proposalAddr = address(Proposal(proposalClone));
         proposals[id] = proposalAddr;
         allProposals.push(proposalAddr);
         emit ProposalCreated(id, msg.sender, proposalAddr, _title);

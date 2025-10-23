@@ -35,21 +35,21 @@ contract DutchAuctionTest is Test {
         // Deploy tokens with owner = this test contract so we can set minter later
         yesToken = new MarketToken("YES", "YES", address(this), address(1), CAP);
         noToken = new MarketToken("NO", "NO", address(this), address(1), CAP);
-
-        proposal = new Proposal(
+        proposal = new Proposal();
+        proposal.initialize(
             1,
             admin,
-            "Test Proposal",
-            "Description",
-            100,            // auctionDuration
-            200,            // liveDuration
-            address(1),     // subjectToken
+            "T",
+            "D",
+            10,            // auctionDuration
+            100,           // liveDuration
+            address(1),    // subjectToken
             address(pyusd),
-            500_000e18,     // minToOpen
-            CAP,            // maxCap
-            address(0),     // target
-            "",             // data
-            address(0),     // pythAddr
+            0,             // minToOpen (allow finalize without tokens)
+            1000e18,       // maxCap
+            address(0),    // target
+            "",           // data
+            address(0),    // pythAddr
             bytes32(0)     // pythId
         );
 

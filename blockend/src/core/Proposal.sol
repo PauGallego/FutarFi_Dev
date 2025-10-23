@@ -45,15 +45,19 @@ contract Proposal is Ownable, IProposal {
     address public pythAddr;
     bytes32 public pythId;
 
+
+    bool private _initialized;
+
     event ProposalActivated(uint256 indexed id, uint256 liveStart, uint256 liveEnd);
     event ProposalResolved(uint256 indexed id, uint256 when);
     event ProposalCancelled(uint256 when);
     event ProposalLive(uint256 liveEnd);
 
-    
-    constructor(
+    constructor() Ownable(msg.sender) {}
+
+    function initialize(
         uint256 _id,
-        address _admin, // creator of the proposal
+        address _admin,
         string memory _title,
         string memory _description,
         uint256 _auctionDuration,
@@ -66,8 +70,10 @@ contract Proposal is Ownable, IProposal {
         bytes memory _data,
         address _pythAddr,
         bytes32 _pythId
-    ) Ownable(msg.sender) {
-        // Initialize proposal metadata and auction parameters
+    ) external {
+        require(!_initialized, "Already initialized");
+        _initialized = true;
+
         id = _id;
         admin = _admin;
         title = _title;
@@ -132,6 +138,8 @@ contract Proposal is Ownable, IProposal {
         Treasury(treasury).setAuctions(address(yesAuction), address(noAuction));
         state = State.Auction;
     }
+
+    
 
     // Settle the auctions and handles cancellation or activation
     function settleAuctions() external { // TODO:maybe onlyAuction if not called by front/back

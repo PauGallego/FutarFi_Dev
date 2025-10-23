@@ -9,6 +9,22 @@ import {Treasury} from "../core/Treasury.sol";
 interface IProposal {
     enum State { Auction, Live, Resolved, Cancelled }
 
+    function initialize(
+        uint256 _id,
+        address _admin,
+        string memory _title,
+        string memory _description,
+        uint256 _auctionDuration,
+        uint256 _liveDuration,
+        address _subjectToken,
+        address _pyUSD,
+        uint256 _minToOpen,
+        uint256 _maxCap,
+        address _target,
+        bytes memory _data,
+        address _pythAddr,
+        bytes32 _pythId
+    ) external;
 
     function settleAuctions() external;
     function resolve() external;

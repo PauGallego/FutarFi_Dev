@@ -20,17 +20,17 @@ import {
   useWaitForTransactionReceipt, 
   useWriteContract,
   useChainId,
-  usePublicClient,
   useAccount
 } from "wagmi"
+import { usePublicClient } from "wagmi"
 import { proposalManager_abi } from "@/contracts/proposalManager-abi"
 import { getContractAddress } from "@/contracts/constants"
 
 export default function NewProposalPage() {
 
   const chainId = useChainId()
+  const { address: account, isConnected } = useAccount()
   const publicClient = usePublicClient()
-  const { address: accountAddress } = useAccount()
   const contractAddress = getContractAddress(chainId, "PROPOSAL_MANAGER")
 
   const tokenOptions: Collateral[] = React.useMemo(
@@ -40,6 +40,8 @@ export default function NewProposalPage() {
 
   const router = useRouter()
   const { toast } = useToast()
+
+  const isUint = (v: string) => /^\d+$/.test(v)
 
   const [formData, setFormData] = useState({
     title: "",
@@ -71,33 +73,34 @@ export default function NewProposalPage() {
     writeContract 
   } = useWriteContract() 
 
+
   const { isLoading: isConfirming, isSuccess: isConfirmed } =
     useWaitForTransactionReceipt({
       hash,
   })
-
-  useEffect(() => {
-    if (isConfirmed) {
-      toast({
-        title: "Proposal Created",
-        description: "Your proposal has been submitted successfully.",
-      })
-      router.push("/proposals")
-    }
-  }, [isConfirmed, toast, router])
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent)=>{
     e.preventDefault()
 
     const fail = (desc: string) => toast({ title: "Validation Error", description: desc, variant: "destructive" })
 
+    toast({ title: "Submitting", description: "Validating inputs and preparing transaction..." })
+
+    if (!isConnected || !account) {
+      return fail("Connect your wallet to submit a proposal.")
+    }
+
+    // Strongly encourage using the Anvil chain when developing locally
+    if (chainId !== 31337) {
+      return fail("Wrong network. Please switch your wallet to Anvil (31337).")
+    }
+
     if (!formData.title.trim()) return fail("Please provide a proposal title.")
     if (!formData.description.trim()) return fail("Please provide a proposal description.")
-    if (!formData.auctionDuration || Number(formData.auctionDuration) <= 0) return fail("Please provide a valid auction duration (days).")
-    if (!formData.liveDuration || Number(formData.liveDuration) <= 0) return fail("Please provide a valid live duration (days).")
+  if (!formData.auctionDuration || Number(formData.auctionDuration) <= 0 || !isUint(formData.auctionDuration)) return fail("Auction duration must be a positive whole number of days.")
+  if (!formData.liveDuration || Number(formData.liveDuration) <= 0 || !isUint(formData.liveDuration)) return fail("Live duration must be a positive whole number of days.")
     if (!formData.collateralToken || !isAddress(formData.collateralToken)) return fail("Please select a valid collateral token address.")
-    if (!formData.minToOpen || Number(formData.minToOpen) <= 0) return fail("Please provide a valid minimum to open.")
-    if (!formData.maxCap || Number(formData.maxCap) <= 0) return fail("Please provide a valid maximum cap.")
+  if (!formData.minToOpen || Number(formData.minToOpen) <= 0 || !isUint(formData.minToOpen)) return fail("Min to open must be a positive integer.")
+  if (!formData.maxCap || Number(formData.maxCap) <= 0 || !isUint(formData.maxCap)) return fail("Max cap must be a positive integer.")
 
     if (useTarget === "YES") {
       if (!formData.targetAddress.trim() || !isAddress(formData.targetAddress)) {
@@ -122,29 +125,56 @@ export default function NewProposalPage() {
       : "0x0000000000000000000000000000000000000000000000000000000000000000"
 
     // Let wallet/provider handle nonce to avoid races
-
-    writeContract({
-      address: contractAddress as `0x${string}`,
-      abi: proposalManager_abi,
-      functionName: "createProposal",
-      args: [
-        formData.title,
-        formData.description,
-        BigInt(formData.auctionDuration) * BigInt(86400),
-        BigInt(formData.liveDuration) * BigInt(86400),
-        formData.collateralToken as `0x${string}`,
-        BigInt(formData.minToOpen),
-        BigInt(formData.maxCap),
-        targetAddressArg,
-        formData.calldata ? (formData.calldata as `0x${string}`) : "0x",
-        pythAddrArg,
-        pythIdArg,
-      ],
+    console.log("Creating proposal with data:", {
+      ...formData,
+      targetAddressArg,
+      pythAddrArg,
+      pythIdArg,
     })
+
+    try {
+      await writeContract?.({
+        address: contractAddress as `0x${string}`,
+        abi: proposalManager_abi,
+        functionName: "createProposal",
+        args: [
+          formData.title,
+          formData.description,
+          BigInt(formData.auctionDuration) * BigInt(86400),
+          BigInt(formData.liveDuration) * BigInt(86400),
+          formData.collateralToken as `0x${string}`,
+          BigInt(formData.minToOpen),
+          BigInt(formData.maxCap),
+          targetAddressArg,
+          formData.calldata ? (formData.calldata as `0x${string}`) : "0x",
+          pythAddrArg,
+          pythIdArg,
+        ],
+      })
+    } catch (err: any) {
+      toast({ title: "Transaction Error", description: err?.message || String(err), variant: "destructive" })
+    }
   }
+
+  // Move hook to top-level: react hooks cannot be called conditionally or inside handlers
+  useEffect(() => {
+    if (isConfirmed) {
+      toast({
+        title: "Proposal Created",
+        description: "Your proposal has been submitted successfully.",
+      })
+      router.push("/proposals")
+    }
+  }, [isConfirmed, toast, router])
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
+      {/* Debug status bar (dev only) */}
+      <div className="mb-4 text-xs text-muted-foreground">
+        <div>ChainId: {String(chainId)}</div>
+        <div>Account: {account ?? "-"}</div>
+        <div>ProposalManager: {contractAddress ?? "-"}</div>
+      </div>
       <Button asChild variant="ghost" className="mb-6">
         <Link href="/proposals">
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -158,6 +188,30 @@ export default function NewProposalPage() {
           <CardDescription className="text-base">
             Submit a proposal to vote on. Provide clear details about your proposal and its expected impact.
           </CardDescription>
+          <div className="mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  if (!contractAddress) throw new Error("No ProposalManager address for this chain")
+                  if (!publicClient) throw new Error("Public client not ready")
+                  const proposals = await publicClient.readContract({
+                    address: contractAddress as `0x${string}`,
+                    abi: proposalManager_abi,
+                    functionName: "getAllProposals",
+                    args: [],
+                  })
+                  toast({ title: "RPC OK", description: `Proposals on-chain: ${(proposals as string[]).length}` })
+                } catch (err: any) {
+                  toast({ title: "Read Test Failed", description: err?.message || String(err), variant: "destructive" })
+                }
+              }}
+            >
+              Quick test: read proposals
+            </Button>
+          </div>
         </CardHeader>
 
         <CardContent>

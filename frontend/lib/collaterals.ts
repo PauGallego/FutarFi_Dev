@@ -40,7 +40,7 @@ export const SUPPORTED_COLLATERALS: Record<number, Collateral[]> = {
   // Local Anvil (31337): dev-only mock
   31337: [
     { symbol: "wETH", address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", decimals: 18, note: "Wrapped ETH (Anvil-funded accounts)" },
-    { symbol: "MarketTest", address: getContractAddress(31337, 'MARKET_TOKEN_IMPL') || "0x0000000000000000000000000000000000000000", decimals: 18, note: "Local mock token (18d)" },
+    { symbol: "MarketTest", address: getContractAddress(31337, "PYUSD") || "0x0000000000000000000000000000000000000000", decimals: 18, note: "Local mock token (18d)" },
   ],
 }
 

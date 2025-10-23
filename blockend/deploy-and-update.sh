@@ -12,9 +12,6 @@ if [ $? -eq 0 ]; then
     
     # Extract addresses from the deployment output
     PROPOSAL_MANAGER=$(echo "$DEPLOY_OUTPUT" | grep "ProposalManager:" | awk '{print $2}')
-    PROPOSAL_IMPL=$(echo "$DEPLOY_OUTPUT" | grep "Proposal Implementation:" | awk '{print $3}')
-    MARKET_IMPL=$(echo "$DEPLOY_OUTPUT" | grep "Market Implementation:" | awk '{print $3}')
-    MARKET_TOKEN_IMPL=$(echo "$DEPLOY_OUTPUT" | grep "MarketToken Implementation:" | awk '{print $3}')
     
     echo "Now minting WETH..."
     
@@ -35,9 +32,6 @@ if [ $? -eq 0 ]; then
   "31337": {
     "WETH": "$WETH_CONTRACT",
     "PROPOSAL_MANAGER": "$PROPOSAL_MANAGER",
-    "PROPOSAL_IMPL": "$PROPOSAL_IMPL",
-    "MARKET_IMPL": "$MARKET_IMPL",
-    "MARKET_TOKEN_IMPL": "$MARKET_TOKEN_IMPL"
   }
 }
 EOF
@@ -45,9 +39,6 @@ EOF
         echo "Updated frontend/contracts/deployed-addresses.json with new addresses:"
         echo "WETH: $WETH_CONTRACT"
         echo "ProposalManager: $PROPOSAL_MANAGER"
-        echo "Proposal Impl: $PROPOSAL_IMPL"
-        echo "Market Impl: $MARKET_IMPL"
-        echo "MarketToken Impl: $MARKET_TOKEN_IMPL"
         echo "User WETH Balance: $WETH_BALANCE WETH"
         
     else
