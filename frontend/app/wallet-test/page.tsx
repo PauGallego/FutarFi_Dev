@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { io, Socket } from 'socket.io-client'
+import { useWalletAuth } from '@/hooks/use-wallet-auth'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
@@ -29,6 +30,8 @@ interface TestResult {
 export default function WalletTestPage() {
   const { address, isConnected } = useAccount()
   const { signMessageAsync } = useSignMessage()
+  // Use global auth
+  const { auth, ensureAuth } = useWalletAuth()
   
   const [authData, setAuthData] = useState<AuthData | null>(null)
   const [testResults, setTestResults] = useState<TestResult[]>([])
@@ -53,6 +56,24 @@ export default function WalletTestPage() {
   const [orderIdToCancel, setOrderIdToCancel] = useState('')
 
   const socketRef = useRef<Socket | null>(null)
+
+  // Ensure global auth on connect
+  useEffect(() => {
+    if (isConnected) {
+      ensureAuth().catch(() => {})
+    }
+  }, [isConnected, ensureAuth])
+
+  // Sync local page state with global auth
+  useEffect(() => {
+    if (auth && address) {
+      setAuthData({
+        message: auth.message,
+        timestamp: auth.timestamp,
+        signature: auth.signature,
+      })
+    }
+  }, [auth, address])
 
   // helper to fetch my orders
   const fetchMyOrders = async () => {

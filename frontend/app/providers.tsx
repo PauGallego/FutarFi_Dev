@@ -9,6 +9,7 @@ import { WagmiProvider } from 'wagmi'
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import { config } from '@/lib/wagmi-config'
 import { ThemeProvider } from "next-themes"
+import { GlobalWalletAuth } from '@/components/global-wallet-auth'
 
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -23,6 +24,8 @@ export function Providers({ children }: { children: ReactNode }) {
           <WagmiProvider config={config}>
             <QueryClientProvider client={queryClient}>
               <RainbowKitProvider theme={darkTheme()}>
+                {/* Automatically authenticate on wallet connect */}
+                <GlobalWalletAuth />
                 {children}
               </RainbowKitProvider>
             </QueryClientProvider>
