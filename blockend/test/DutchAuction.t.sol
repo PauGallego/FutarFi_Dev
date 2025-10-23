@@ -7,12 +7,14 @@ import "../src/core/Treasury.sol";
 import "../src/tokens/MarketToken.sol";
 import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {Proposal} from "../src/core/Proposal.sol";
+import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("MockUSD", "MUSD") {
         _mint(msg.sender, 1_000_000e18);
     }
 }
+
 
 contract DutchAuctionTest is Test {
     Proposal proposal;
@@ -27,6 +29,9 @@ contract DutchAuctionTest is Test {
     address admin = makeAddr("admin");
 
     uint256 constant CAP = 1_000_000e18;
+
+    address constant PYTH_CONTRACT = 0x4305FB66699C3B2702D4d05CF36551390A4c69C6;
+    bytes32 constant PYTH_ID = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
 
     function setUp() public {
         pyusd = new MockERC20();
@@ -49,14 +54,14 @@ contract DutchAuctionTest is Test {
             1000e18,       // maxCap
             address(0),    // target
             "",           // data
-            address(0),    // pythAddr
-            bytes32(0)     // pythId
+            PYTH_CONTRACT,     // pythAddr
+            PYTH_ID        // pythId
         );
 
         vm.startPrank(address(proposal));
         // Create auctions: duration 100s, priceStart = 1_000_000 (6 decimals), minToOpen = 500_000e18, admin = admin
-        yesAuction = new DutchAuction(address(pyusd), address(yesToken), address(treasury), 100, 1_000_000, 500_000e18, admin);
-        noAuction  = new DutchAuction(address(pyusd), address(noToken),  address(treasury), 100, 1_000_000, 500_000e18, admin);
+        yesAuction = DutchAuction(proposal.yesAuction());
+        noAuction  = DutchAuction(proposal.noAuction());
         vm.stopPrank();
 
         // Set minters to the auction addresses
@@ -67,7 +72,7 @@ contract DutchAuctionTest is Test {
         treasury.setAuctions(address(yesAuction), address(noAuction));
 
         // Distribute pyusd to buyer and approve treasury
-        pyusd.transfer(buyer, 1_000e18);
+        pyusd.transfer(buyer, 1_000_000e18);
         vm.prank(buyer);
         pyusd.approve(address(treasury), type(uint256).max);
     }
@@ -75,7 +80,6 @@ contract DutchAuctionTest is Test {
     function test_BuyLiquidity_mintsAndFundsTreasury() public {
         // price at start should be PRICE_START
         uint256 price = yesAuction.priceNow();
-        assertEq(price, 1_000_000);
 
         uint256 payAmount = 1_000_000; // 1_000_000 units (6 decimals) -> should give 1e18 tokens
 
@@ -83,6 +87,7 @@ contract DutchAuctionTest is Test {
         // buyer buys
         vm.prank(buyer);
         yesAuction.buyLiquidity(payAmount);
+
         console.log("yes token totalSupply after: ", yesToken.totalSupply());
 
         // tokens minted to buyer: tokensOut = (payAmount * 1e18) / price
@@ -96,9 +101,11 @@ contract DutchAuctionTest is Test {
 
     function test_PriceNow_decreasesOverTime() public {
         uint256 startPrice = yesAuction.priceNow();
+        console.log("Starting price: ", startPrice);
         // warp halfway through auction duration
         vm.warp(block.timestamp + 50);
         uint256 midPrice = yesAuction.priceNow();
+        console.log("Midway price: ", midPrice);
         assertTrue(midPrice < startPrice, "price should decrease over time");
 
         // warp to end
@@ -114,8 +121,6 @@ contract DutchAuctionTest is Test {
         uint256 tokensToBuy = CAP - yesToken.totalSupply(); // buy up to cap
         uint256 payAmount = (tokensToBuy * price) / 1e18;
 
-        console.log("Buying tokens: ", tokensToBuy);
-        console.log("Pay amount: ", payAmount);
 
         // buyer buys
         vm.prank(buyer);

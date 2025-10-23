@@ -17,7 +17,7 @@ interface IDutchAuction {
     function PYUSD() external view returns (address);
     function START_TIME() external view returns (uint256);
     function END_TIME() external view returns (uint256);
-    function PRICE_START() external view returns (uint256);
+    function START_PRICE() external view returns (int64);
     function isFinalized() external view returns (bool);
     function isValid() external view returns (bool);
     function isCanceled() external view returns (bool);

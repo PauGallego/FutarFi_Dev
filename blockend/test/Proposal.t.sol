@@ -6,6 +6,7 @@ import "../src/core/Proposal.sol";
 import "../src/core/DutchAuction.sol";
 import "../src/interfaces/IProposal.sol";
 import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
+import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 
 /// @notice Simple mock ERC20 used as PYUSD collateral in tests
 contract MockERC20 is ERC20 {
@@ -14,16 +15,24 @@ contract MockERC20 is ERC20 {
     }
 }
 
+
+
 contract ProposalBasicTest is Test {
     MockERC20 public pyusd;
     Proposal public proposal;
     address public admin;
-    
+
+    address constant PYTH_CONTRACT = 0x4305FB66699C3B2702D4d05CF36551390A4c69C6;
+    bytes32 constant PYTH_ID = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
+
 
     function setUp() public {
         admin = makeAddr("admin");
         pyusd = new MockERC20();
         proposal = new Proposal();
+
+        
+        
     }
 
     /// @notice After auctions finalize the Proposal should have live times set but remain in Auction state (new contract behavior)
@@ -42,8 +51,8 @@ contract ProposalBasicTest is Test {
             1000e18,       // maxCap
             address(0),    // target
             "",           // data
-            address(0),    // pythAddr
-            bytes32(0)     // pythId
+            PYTH_CONTRACT,     // pythAddr
+            PYTH_ID        // pythId
         );
 
         // initial state should be Auction
@@ -94,12 +103,12 @@ contract ProposalBasicTest is Test {
             100,           // liveDuration
             address(1),    // subjectToken
             address(pyusd),
-            0,             // minToOpen (allow finalize without tokens)
+            1e18,          // minToOpen (set to 1 token so 0.5e18 does not meet threshold)
             1000e18,       // maxCap
             address(0),    // target
             "",           // data
-            address(0),    // pythAddr
-            bytes32(0)     // pythId
+            PYTH_CONTRACT,     // pythAddr
+            PYTH_ID        // pythId
         );
 
         DutchAuction yes = proposal.yesAuction();

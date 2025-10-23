@@ -10,6 +10,9 @@ import {DutchAuction} from "./DutchAuction.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Treasury} from "./Treasury.sol";
 import {console} from "forge-std/console.sol";
+import "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
+import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
+ 
 
 contract Proposal is Ownable, IProposal {
 
@@ -42,8 +45,9 @@ contract Proposal is Ownable, IProposal {
     Treasury public treasury;
 
     // Pyth Oracle
+    IPyth pyth;
     address public pythAddr;
-    bytes32 public pythId;
+    bytes32 public priceFeedId;
 
 
     bool private _initialized;
@@ -68,10 +72,19 @@ contract Proposal is Ownable, IProposal {
         uint256 _maxCap,
         address _target,
         bytes memory _data,
-        address _pythAddr,
-        bytes32 _pythId
+        address _pythContract,
+        bytes32 _priceFeedId
     ) external {
         require(!_initialized, "Already initialized");
+        require(_admin != address(0), "Invalid admin");
+        require(_subjectToken != address(0), "Invalid subject token");
+        require(_pyUSD != address(0), "Invalid pyUSD");
+        require(_pythContract != address(0), "Invalid Pyth address");
+
+        require(_minToOpen < _maxCap, "Invalid min/max");
+        require(_auctionDuration > 0 && _auctionDuration < 7 days, "Invalid auction duration");
+        require(_liveDuration > 0 && _liveDuration < 30 days, "Invalid live duration");
+
         _initialized = true;
 
         id = _id;
@@ -88,8 +101,8 @@ contract Proposal is Ownable, IProposal {
         maxCap = _maxCap;
         target = _target;
         data = _data;
-        pythAddr = _pythAddr;
-        pythId = _pythId;
+        pyth = IPyth(_pythContract);
+        priceFeedId = _priceFeedId;
 
         treasury= new Treasury(pyUSD);
 
@@ -109,13 +122,16 @@ contract Proposal is Ownable, IProposal {
             maxCap
         );
 
+        int64 initialPrice = getPythPriceFeed(priceFeedId);
+        console.log("Initial price: ", initialPrice);
+
         // Deploy Dutch auctions for YES and NO (require token addresses in constructor)
         yesAuction = new DutchAuction(
             pyUSD,
             address(yesToken),
             address(treasury),
             _auctionDuration,
-            1_000_000,   // pyth
+            initialPrice, // pyth: initial token price
             minToOpen,
             admin
         );
@@ -125,7 +141,7 @@ contract Proposal is Ownable, IProposal {
             address(noToken),
             address(treasury),
             _auctionDuration,
-            1_000_000,   // pyth
+            initialPrice,   // pyth: initial token price
             minToOpen,
             admin
         );
@@ -139,6 +155,13 @@ contract Proposal is Ownable, IProposal {
         state = State.Auction;
     }
 
+
+    // Get the initial Pyth price feed info for the proposal's subject asset
+    function getPythPriceFeed(bytes32 _priceFeedId) private view returns (int64) {
+
+        PythStructs.Price memory price = pyth.getPriceUnsafe(_priceFeedId);
+        return price.price;
+    }
     
 
     // Settle the auctions and handles cancellation or activation

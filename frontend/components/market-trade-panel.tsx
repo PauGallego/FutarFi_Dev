@@ -9,20 +9,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Slider } from "@/components/ui/slider"
 import { useAccount } from "wagmi"
 import { toast } from "sonner"
-import type { OrderType, TradeAction, MarketOption } from "@/lib/types"
-import { useCreateOrder } from "@/hooks/use-create-order"
+import type { OrderType, TradeAction } from "@/lib/types"
 
-type MarketTradePanelProps = {
-  selectedMarket: MarketOption
-  onMarketChange: (market: MarketOption) => void
-  proposalId: string
-  onOrderPlaced?: () => void
-}
+type MarketTradePanelProps = {}
 
-export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, onOrderPlaced }: MarketTradePanelProps) {
+export function MarketTradePanel({}: MarketTradePanelProps) {
   const { isConnected } = useAccount()
-  const { createOrder, isLoading: creating, error: createError } = useCreateOrder()
-
   const [orderType, setOrderType] = useState<OrderType>("market")
   const [tradeAction, setTradeAction] = useState<TradeAction>("BUY")
   const [amount, setAmount] = useState("")
@@ -36,99 +28,57 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   const estimatedSlippage = orderType === "market" ? (estimatedTotal * slippage[0]) / 100 : 0
   const finalTotal = estimatedTotal + estimatedSlippage
 
-  const handleCreateOrder = async () => {
+  const handleCreateOrder = () => {
     if (!amount) return
+    const orderDetails =
+      orderType === "market"
+        ? `${tradeAction} ${amount} tokens at market price`
+        : `${tradeAction} ${amount} tokens @ $${limitPrice}`
 
-    const side: 'approve' | 'reject' = selectedMarket === "YES" ? 'approve' : 'reject'
-    const payload = {
-      proposalId,
-      side,
-      orderType: tradeAction === "BUY" ? ("buy" as const) : ("sell" as const),
-      orderExecution: orderType,
-      price: orderType === "market" ? 0 : Number(limitPrice || 0),
-      amount: Number(amount || 0),
-    }
-
-    const out = await createOrder(payload)
-    if (!out) {
-      if (createError) toast.error("Order failed", { description: createError })
-      return
-    }
-
-    if (out.ok) {
-      toast.success("Order created!", { description: `${tradeAction} ${amount}${orderType === "limit" ? ` @ $${limitPrice}` : " at market"}` })
-      setAmount("")
-      setLimitPrice("")
-      onOrderPlaced?.()
-    } else {
-      toast.error("Order failed", { description: out.data?.error || `Status ${out.status}` })
-    }
+    toast.success("Order created!", { description: orderDetails })
+    setAmount("")
+    setLimitPrice("")
   }
 
   return (
     <div className="space-y-4">
       {/* Order Form */}
       <Card>
-        <CardHeader className="space-y-3">
-          {/* Market Selector – full width top, no borders between */}
-          <div className="relative -mx-6 -mt-6 rounded-t-md bg-muted overflow-hidden">
-            <div
-              className={`absolute inset-y-0 w-1/2 transition-all duration-300 ease-out ${
-                selectedMarket === "YES" ? "left-0 bg-primary" : "left-1/2 bg-destructive"
-              }`}
-            />
-            <div className="relative z-10 flex w-full">
-              <button
-                onClick={() => onMarketChange("YES")}
-                className={`${
-                  selectedMarket === "YES" ? "text-black" : "text-muted-foreground hover:text-foreground"
-                } w-1/2 py-3 font-semibold text-sm text-center`}
-              >
-                YES Market
-              </button>
-              <button
-                onClick={() => onMarketChange("NO")}
-                className={`${
-                  selectedMarket === "NO" ? "text-black" : "text-muted-foreground hover:text-foreground"
-                } w-1/2 py-3 font-semibold text-sm text-center`}
-              >
-                NO Market
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <CardTitle className="text-lg">Create Order</CardTitle>
-            <CardDescription>Place market or limit orders</CardDescription>
-          </div>
+        <CardHeader>
+          <CardTitle className="text-lg">Create Order</CardTitle>
+          <CardDescription>Place market or limit orders</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label className="text-sm font-medium">Action</Label>
-            <div className="relative rounded-md bg-muted overflow-hidden">
+            <div className="relative p-1 rounded-full bg-muted border-2 border-border">
               <div
-                className={`absolute inset-y-0 w-1/2 transition-all duration-300 ease-out ${
-                  tradeAction === "BUY" ? "left-0 bg-primary" : "left-1/2 bg-destructive"
-                }`}
+                className={`
+                  absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-full
+                  transition-all duration-300 ease-out
+                  ${tradeAction === "BUY" ? "left-1 bg-primary" : "left-[calc(50%+3px)] bg-destructive"}
+                `}
               />
-              <div className="relative z-10 flex w-full">
-                <button
-                  onClick={() => setTradeAction("BUY")}
-                  className={`${
-                    tradeAction === "BUY" ? "text-black" : "text-muted-foreground hover:text-foreground"
-                  } w-1/2 py-2 font-semibold text-sm text-center`}
-                >
-                  BUY
-                </button>
-                <button
-                  onClick={() => setTradeAction("SELL")}
-                  className={`${
-                    tradeAction === "SELL" ? "text-black" : "text-muted-foreground hover:text-foreground"
-                  } w-1/2 py-2 font-semibold text-sm text-center`}
-                >
-                  SELL
-                </button>
-              </div>
+              <button
+                onClick={() => setTradeAction("BUY")}
+                className={`
+                  relative z-10 w-1/2 px-6 py-3 rounded-full font-semibold text-sm
+                  transition-colors duration-300
+                  ${tradeAction === "BUY" ? "text-black" : "text-muted-foreground hover:text-foreground"}
+                `}
+              >
+                BUY
+              </button>
+              <button
+                onClick={() => setTradeAction("SELL")}
+                className={`
+                  relative z-10 w-1/2 px-6 py-3 rounded-full font-semibold text-sm
+                  transition-colors duration-300
+                  ${tradeAction === "SELL" ? "text-black" : "text-muted-foreground hover:text-foreground"}
+                `}
+              >
+                SELL
+              </button>
             </div>
           </div>
 
@@ -147,7 +97,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
               placeholder="0.00"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              disabled={!isConnected || creating}
+              disabled={!isConnected}
             />
           </div>
 
@@ -160,7 +110,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                 placeholder="0.00"
                 value={limitPrice}
                 onChange={(e) => setLimitPrice(e.target.value)}
-                disabled={!isConnected || creating}
+                disabled={!isConnected}
               />
             </div>
           )}
@@ -178,7 +128,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                 step={0.1}
                 value={slippage}
                 onValueChange={setSlippage}
-                disabled={!isConnected || creating}
+                disabled={!isConnected}
               />
             </div>
           )}
@@ -209,9 +159,9 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
           <Button
             className="w-full"
             onClick={handleCreateOrder}
-            disabled={!isConnected || creating || !amount || (orderType === "limit" && !limitPrice)}
+            disabled={!isConnected || !amount || (orderType === "limit" && !limitPrice)}
           >
-            {creating ? "Creating..." : `${tradeAction} ${orderType === "market" ? "at Market" : "with Limit"}`}
+            {tradeAction} {orderType === "market" ? "at Market" : "with Limit"}
           </Button>
         </CardContent>
       </Card>

@@ -24,8 +24,8 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
 
     uint256 public immutable START_TIME;           
     uint256 public immutable END_TIME;             
-    uint256 public immutable PRICE_START;       // starting price (PYUSD 6d per 1 token)
-    uint256 public constant PRICE_END = 0;
+    int64 public immutable START_PRICE;       // starting price (PYUSD 6d per 1 token)
+    int8 public constant END_PRICE = 0;
     uint256 public immutable MIN_TO_OPEN;        // marketToken sold threshold to open market    
 
     bool public isFinalized;
@@ -46,7 +46,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
     event LiquidityAdded(
         address indexed buyer,
         address indexed tokenToBuy,
-        uint256 _payAmount,
+        uint256 payAmount,
         uint256 unitPrice,
         uint256 tokensOut
     );
@@ -58,17 +58,17 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         address _marketToken,
         address _treasury,
         uint256 _duration,
-        uint256 _priceStart,
+        int64 _startPrice,
         uint256 _minToOpen,
         address _admin
     ) Ownable(msg.sender) {
-        require(_priceStart >= 0, "bad prices"); 
+        require(_startPrice >= 0, "bad prices"); 
         PYUSD    = _pyUSD;
         MARKET_TOKEN  = MarketToken(_marketToken);
         TREASURY  = _treasury;
         START_TIME    = block.timestamp;
         END_TIME      = block.timestamp + _duration;
-        PRICE_START   = _priceStart;
+        START_PRICE   = _startPrice * 2;
         MIN_TO_OPEN    = _minToOpen;
         ADMIN = _admin;
     }
@@ -88,12 +88,16 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
     /// @notice Current price (PYUSD, 6 decimals) per 1 token
     function priceNow() public view returns (uint256) {
         uint256 ts = block.timestamp;
-        if (ts <= START_TIME) return PRICE_START;
-        if (ts >= END_TIME)   return PRICE_END;
+        if (ts <= START_TIME) return uint256(uint64(START_PRICE));
+        if (ts >= END_TIME)   return uint256(uint8(END_PRICE));
         uint256 dt   = END_TIME - START_TIME;
         uint256 gone = ts - START_TIME;
-        uint256 diff = PRICE_START - PRICE_END;
-        return PRICE_START - (diff * gone) / dt;
+        // perform unsigned arithmetic after casting the signed immutables
+        uint256 start = uint256(uint64(START_PRICE));
+        uint256 end = uint256(uint8(END_PRICE));
+        uint256 diff = start - end;
+        uint256 price = start - (diff * gone) / dt;
+        return price;
     }
 
 
@@ -110,7 +114,8 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         if (actualPrice == 0) revert PriceZero();
 
         // tokens = payAmount / price per token
-        uint256 tokensOut = (_payAmount * 1e18) / actualPrice;
+        uint256 price = actualPrice;
+        uint256 tokensOut = (_payAmount * 1e18) / price;
 
         // future permit implementation
         // pyUSD.permit(
