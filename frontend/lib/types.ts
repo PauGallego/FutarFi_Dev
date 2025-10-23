@@ -39,6 +39,8 @@ export interface Proposal {
 
   // Contract address (proposal instance)
   address: `0x${string}`;
+  auctionData?: AuctionData
+  marketData?: MarketData
 }
 
 export interface AuctionData {

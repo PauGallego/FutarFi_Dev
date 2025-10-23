@@ -15,7 +15,6 @@ import {
 import { OrderBook } from "@/components/order-book"
 import { OrderList } from "@/components/order-list"
 import type { MarketData, MarketOption, UserOrder } from "@/lib/types"
-import { Label } from "@/components/ui/label"
 
 interface MarketViewProps {
   marketData: MarketData
@@ -23,11 +22,13 @@ interface MarketViewProps {
   selectedMarket: MarketOption
   onMarketChange: (market: MarketOption) => void
   onCancelOrder: (orderId: string) => void
+  userOrdersError?: string | null
 }
 
-export function MarketView({ marketData, userOrders, selectedMarket, onMarketChange, onCancelOrder }: MarketViewProps) {
+export function MarketView({ marketData, userOrders, selectedMarket, onMarketChange, onCancelOrder, userOrdersError }: MarketViewProps) {
   const orderBook = selectedMarket === "YES" ? marketData.yesOrderBook : marketData.noOrderBook
-  const marketOrders = userOrders.filter((order) => order.market === selectedMarket)
+  const baseOrders = userOrders ?? []
+  const marketOrders = baseOrders.filter((order) => order.market === selectedMarket)
 
   const twapChartData = marketData.twapHistory.map((point) => ({
     time: new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -43,39 +44,6 @@ export function MarketView({ marketData, userOrders, selectedMarket, onMarketCha
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">Select Market</Label>
-        <div className="relative p-1 rounded-full bg-muted border-2 border-border">
-          <div
-            className={`
-              absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-full
-              transition-all duration-300 ease-out
-              ${selectedMarket === "YES" ? "left-1 bg-primary" : "left-[calc(50%+3px)] bg-destructive"}
-            `}
-          />
-          <button
-            onClick={() => onMarketChange("YES")}
-            className={`
-              relative z-10 w-1/2 px-6 py-3 rounded-full font-semibold text-sm
-              transition-colors duration-300
-              ${selectedMarket === "YES" ? "text-black" : "text-muted-foreground hover:text-foreground"}
-            `}
-          >
-            YES Market
-          </button>
-          <button
-            onClick={() => onMarketChange("NO")}
-            className={`
-              relative z-10 w-1/2 px-6 py-3 rounded-full font-semibold text-sm
-              transition-colors duration-300
-              ${selectedMarket === "NO" ? "text-black" : "text-muted-foreground hover:text-foreground"}
-            `}
-          >
-            NO Market
-          </button>
-        </div>
-      </div>
-
       {/* TWAP Chart */}
       <Card>
         <CardHeader>
@@ -136,8 +104,8 @@ export function MarketView({ marketData, userOrders, selectedMarket, onMarketCha
       {/* Order Book */}
       <OrderBook orderBook={orderBook} market={selectedMarket} />
 
-      {/* User Orders */}
-      {marketOrders.length > 0 && <OrderList orders={marketOrders} onCancelOrder={onCancelOrder} />}
+      {/* User Orders - always visible */}
+      <OrderList orders={marketOrders} onCancelOrder={onCancelOrder} error={userOrdersError} />
     </div>
   )
 }

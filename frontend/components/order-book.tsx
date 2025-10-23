@@ -23,17 +23,17 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
         <div className="grid grid-cols-2 gap-4">
           {/* Buy Orders */}
           <div className="space-y-2">
-            <div className="flex justify-between text-xs font-semibold text-muted-foreground pb-2 border-b">
-              <span>Price</span>
-              <span>Amount</span>
-              <span>Total</span>
+            <div className="grid grid-cols-3 items-center text-xs font-semibold text-muted-foreground pb-2 border-b">
+              <span className="text-left">Price</span>
+              <span className="text-center">Amount</span>
+              <span className="text-right">Total</span>
             </div>
             <div className="space-y-1">
               {buyOrders.map((order, i) => (
-                <div key={i} className="flex justify-between text-sm font-mono">
-                  <span className={`text-${accentColor}`}>${order.price.toFixed(4)}</span>
-                  <span>{order.amount.toFixed(2)}</span>
-                  <span className="text-muted-foreground">${order.total.toFixed(2)}</span>
+                <div key={i} className="grid grid-cols-3 items-center text-sm font-mono">
+                  <span className={`text-${accentColor} text-left`}>${order.price.toFixed(4)}</span>
+                  <span className="text-center">{order.amount.toFixed(2)}</span>
+                  <span className="text-right text-muted-foreground">${order.total.toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -41,17 +41,17 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
 
           {/* Sell Orders */}
           <div className="space-y-2">
-            <div className="flex justify-between text-xs font-semibold text-muted-foreground pb-2 border-b">
-              <span>Price</span>
-              <span>Amount</span>
-              <span>Total</span>
+            <div className="grid grid-cols-3 items-center text-xs font-semibold text-muted-foreground pb-2 border-b">
+              <span className="text-left">Price</span>
+              <span className="text-center">Amount</span>
+              <span className="text-right">Total</span>
             </div>
             <div className="space-y-1">
               {sellOrders.map((order, i) => (
-                <div key={i} className="flex justify-between text-sm font-mono">
-                  <span className="text-destructive">${order.price.toFixed(4)}</span>
-                  <span>{order.amount.toFixed(2)}</span>
-                  <span className="text-muted-foreground">${order.total.toFixed(2)}</span>
+                <div key={i} className="grid grid-cols-3 items-center text-sm font-mono">
+                  <span className="text-destructive text-left">${order.price.toFixed(4)}</span>
+                  <span className="text-center">{order.amount.toFixed(2)}</span>
+                  <span className="text-right text-muted-foreground">${order.total.toFixed(2)}</span>
                 </div>
               ))}
             </div>
