@@ -28,7 +28,7 @@ contract Proposal is Ownable, IProposal {
     uint256 public liveStart;
     uint256 public liveEnd;
     uint256 public liveDuration;
-    address public subjectToken;
+    string  public subjectToken;
     uint256 public minToOpen;
     uint256 public maxCap;
 
@@ -66,7 +66,7 @@ contract Proposal is Ownable, IProposal {
         string memory _description,
         uint256 _auctionDuration,
         uint256 _liveDuration,
-        address _subjectToken,
+        string memory _subjectToken,
         address _pyUSD,
         uint256 _minToOpen,
         uint256 _maxCap,
@@ -77,7 +77,6 @@ contract Proposal is Ownable, IProposal {
     ) external {
         require(!_initialized, "Already initialized");
         require(_admin != address(0), "Invalid admin");
-        require(_subjectToken != address(0), "Invalid subject token");
         require(_pyUSD != address(0), "Invalid pyUSD");
         require(_pythContract != address(0), "Invalid Pyth address");
 

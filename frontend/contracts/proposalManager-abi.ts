@@ -1,5 +1,5 @@
 export const proposalManager_abi = [
-    {
+   {
       "type": "function",
       "name": "createProposal",
       "inputs": [
@@ -15,11 +15,7 @@ export const proposalManager_abi = [
           "type": "uint256",
           "internalType": "uint256"
         },
-        {
-          "name": "_subjectToken",
-          "type": "address",
-          "internalType": "address"
-        },
+        { "name": "_subjectToken", "type": "string", "internalType": "string" },
         { "name": "_minToOpen", "type": "uint256", "internalType": "uint256" },
         { "name": "_maxCap", "type": "uint256", "internalType": "uint256" },
         { "name": "_target", "type": "address", "internalType": "address" },

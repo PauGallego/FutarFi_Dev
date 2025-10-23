@@ -45,7 +45,7 @@ contract ProposalBasicTest is Test {
             "D",
             10,            // auctionDuration
             100,           // liveDuration
-            address(1),    // subjectToken
+            "Subject Token",    // subjectToken
             address(pyusd),
             0,             // minToOpen (allow finalize without tokens)
             1000e18,       // maxCap
@@ -101,7 +101,7 @@ contract ProposalBasicTest is Test {
             "D",
             10,            // auctionDuration
             100,           // liveDuration
-            address(1),    // subjectToken
+            "Subject Token",    // subjectToken
             address(pyusd),
             1e18,          // minToOpen (set to 1 token so 0.5e18 does not meet threshold)
             1000e18,       // maxCap

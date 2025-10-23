@@ -45,7 +45,7 @@ contract ProposalManager is Ownable, IProposalManager {
         string memory _description,
         uint256 _auctionDuration,
         uint256 _liveDuration,
-        address _subjectToken,
+        string memory _subjectToken,
         uint256 _minToOpen,
         uint256 _maxCap,
         address _target,
@@ -53,8 +53,6 @@ contract ProposalManager is Ownable, IProposalManager {
         address _pythAddr,
         bytes32 _pythId
     ) external returns (uint256 id) {
-
-        require(_subjectToken != address(0), "PM:subject=0");
         require(_auctionDuration > 0, "PM:duration=0");
         require(_liveDuration > 0, "PM:duration=0");
         require(_maxCap > 0, "PM:max=0");

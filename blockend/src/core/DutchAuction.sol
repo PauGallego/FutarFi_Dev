@@ -74,8 +74,13 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
     }
 
     modifier onlyAdmin() {
-        require(msg.sender == ADMIN, "Not admin");
+        _onlyAdmin();
         _;
+    }
+
+    function _onlyAdmin() internal view {
+        require(msg.sender == ADMIN, "Not admin");
+        
     }
 
     // ---------------- Helpers ----------------

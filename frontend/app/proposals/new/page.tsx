@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
-import { isAddress } from "viem"
+import { isAddress,  Hex } from "viem"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -25,6 +25,7 @@ import {
 import { usePublicClient } from "wagmi"
 import { proposalManager_abi } from "@/contracts/proposalManager-abi"
 import { getContractAddress } from "@/contracts/constants"
+import { form } from "viem/chains"
 
 export default function NewProposalPage() {
 
@@ -38,6 +39,11 @@ export default function NewProposalPage() {
     [chainId]
   )
 
+  const byPythID = React.useMemo(
+   () => new Map(tokenOptions.map(t => [t.pythID, t])),
+    [tokenOptions]    
+  )
+
   const router = useRouter()
   const { toast } = useToast()
 
@@ -48,7 +54,7 @@ export default function NewProposalPage() {
     description: "",
     auctionDuration: "",
     liveDuration: "",
-    collateralToken: "",
+    subjectToken: "",
     minToOpen: "",
     maxCap: "",
     targetAddress: "",
@@ -59,12 +65,12 @@ export default function NewProposalPage() {
 
   const [useTarget, setUseTarget] = useState<"YES" | "NO">("NO")
 
-  useEffect(() => {
-    if (!formData.collateralToken || !tokenOptions.some(t => t.address.toLowerCase() === formData.collateralToken.toLowerCase())) {
-      setFormData((prev) => ({ ...prev, collateralToken: tokenOptions[0]?.address ?? "" }))
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chainId])
+  // useEffect(() => {
+  //   if (!formData.subjectToken || !tokenOptions.some(t => t.address.toLowerCase() === formData.subjectToken.toLowerCase())) {
+  //     setFormData((prev) => ({ ...prev, subjectToken: tokenOptions[0]?.address ?? "" }))
+  //   }
+  // // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [chainId])
 
   const { 
     data: hash,
@@ -100,7 +106,7 @@ export default function NewProposalPage() {
     if (Number(formData.auctionDuration) > 30) return fail("Auction duration cannot exceed 30 days.")
     if (!formData.liveDuration || Number(formData.liveDuration) <= 0 || !isUint(formData.liveDuration)) return fail("Live duration must be a positive whole number of days.")
     if (Number(formData.liveDuration) > 30) return fail("Live duration cannot exceed 30 days.")
-    if (!formData.collateralToken || !isAddress(formData.collateralToken)) return fail("Please select a valid collateral token address.")
+    if (!formData.subjectToken ) return fail("Please select a valid collateral token address.")
     if (!formData.minToOpen || Number(formData.minToOpen) <= 0 || !isUint(formData.minToOpen)) return fail("Min to open must be a positive integer greater than 0.")
     if (!formData.maxCap || Number(formData.maxCap) <= 0 || !isUint(formData.maxCap)) return fail("Max cap must be a positive integer.")
     if (Number(formData.maxCap) <= Number(formData.minToOpen)) return fail("Max cap must be greater than Min to open.")
@@ -119,20 +125,11 @@ export default function NewProposalPage() {
       ? (formData.targetAddress as `0x${string}`)
       : "0x0000000000000000000000000000000000000000"
 
-    const pythAddrArg = formData.pythAddress && isAddress(formData.pythAddress)
-      ? (formData.pythAddress as `0x${string}`)
-      : "0x0000000000000000000000000000000000000000"
-
-    const pythIdArg = formData.pythId && formData.pythId.startsWith("0x") && formData.pythId.length === 66
-      ? (formData.pythId as `0x${string}`)
-      : "0x0000000000000000000000000000000000000000000000000000000000000000"
-
+   
     // Let wallet/provider handle nonce to avoid races
     console.log("Creating proposal with data:", {
       ...formData,
-      targetAddressArg,
-      pythAddrArg,
-      pythIdArg,
+      targetAddressArg
     })
 
     try {
@@ -145,13 +142,13 @@ export default function NewProposalPage() {
           formData.description,
           BigInt(formData.auctionDuration) * BigInt(86400),
           BigInt(formData.liveDuration) * BigInt(86400),
-          formData.collateralToken as `0x${string}`,
+          formData.subjectToken,
           BigInt(formData.minToOpen),
           BigInt(formData.maxCap),
           targetAddressArg,
           formData.calldata ? (formData.calldata as `0x${string}`) : "0x",
-          pythAddrArg,
-          pythIdArg,
+          formData.pythAddress as `0x${string}`,
+          `0x${formData.pythId}`
         ],
       })
     } catch (err: any) {
@@ -247,18 +244,25 @@ export default function NewProposalPage() {
 
             {/* Collateral token */}
             <div className="space-y-2">
-              <Label htmlFor="collateralToken" className="text-base">Collateral Token *</Label>
+              <Label htmlFor="subjectToken" className="text-base">Collateral Token *</Label>
               <Select
-                value={formData.collateralToken}
-                onValueChange={(value) => setFormData({ ...formData, collateralToken: value as `0x${string}` })}
-                required
+                value={formData.subjectToken}
+                onValueChange={(value) =>{
+                  const selected = byPythID.get(value);
+                  setFormData(prev => ({
+                    ...prev,
+                    subjectToken: value,
+                    pythAddress: selected?.pythAddress ?? "",
+                    pythId: selected?.pythID ?? "",
+                  }))
+                }}
               >
-                <SelectTrigger id="collateralToken" className="text-base">
+                <SelectTrigger id="subjectToken" className="text-base">
                   <SelectValue placeholder={tokenOptions.length ? "Select a token" : "No tokens for this chain"} />
                 </SelectTrigger>
                 <SelectContent>
                   {tokenOptions.map((t) => (
-                    <SelectItem key={t.address} value={t.address}>
+                    <SelectItem key={t.pythID} value={t.pythID}>
                       {t.symbol}
                     </SelectItem>
                   ))}
@@ -349,29 +353,6 @@ export default function NewProposalPage() {
                 onChange={(e) => setFormData({ ...formData, calldata: e.target.value })}
                 className={`font-mono text-sm min-h-[100px] ${useTarget === "NO" ? "opacity-60 cursor-not-allowed" : ""}`}
                 disabled={useTarget === "NO"}
-              />
-            </div>
-
-            {/* Optional pyth fields */}
-            <div className="space-y-2">
-              <Label htmlFor="pythAddress" className="text-base">Pyth Address (optional)</Label>
-              <Input
-                id="pythAddress"
-                placeholder="0x... or leave empty"
-                value={formData.pythAddress}
-                onChange={(e) => setFormData({ ...formData, pythAddress: e.target.value })}
-                className="font-mono text-sm"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="pythId" className="text-base">Pyth ID (optional)</Label>
-              <Input
-                id="pythId"
-                placeholder="0x... (32 bytes) or leave empty"
-                value={formData.pythId}
-                onChange={(e) => setFormData({ ...formData, pythId: e.target.value })}
-                className="font-mono text-sm"
               />
             </div>
 

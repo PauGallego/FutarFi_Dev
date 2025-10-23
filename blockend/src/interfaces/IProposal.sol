@@ -16,7 +16,7 @@ interface IProposal {
         string memory _description,
         uint256 _auctionDuration,
         uint256 _liveDuration,
-        address _subjectToken,
+        string memory _subjectToken,
         address _pyUSD,
         uint256 _minToOpen,
         uint256 _maxCap,
@@ -40,7 +40,7 @@ interface IProposal {
     function liveStart() external view returns (uint256);
     function liveEnd() external view returns (uint256);
     function liveDuration() external view returns (uint256);
-    function subjectToken() external view returns (address);
+    function subjectToken() external view returns (string memory);
     function pyUSD() external view returns (address);
     function minToOpen() external view returns (uint256);
     function maxCap() external view returns (uint256);

@@ -9,7 +9,7 @@ interface IProposalManager {
         string memory _description,
         uint256 _auctionDuration,
         uint256 _liveDuration,
-        address _subjectToken,
+        string memory _subjectToken,
         uint256 _minToOpen,
         uint256 _maxCap,
         address _target,

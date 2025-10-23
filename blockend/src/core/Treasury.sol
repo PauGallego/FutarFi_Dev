@@ -29,9 +29,14 @@ contract Treasury is Ownable , ITreasury {
     event FundedFromAuction(address indexed auction, address indexed payer, uint256 amount);
     event RefundPaid(address indexed auction, address indexed user, uint256 amount);
 
+
     modifier onlyAuction() {
+           _onlyAuction();
+           _;
+    }
+
+    function _onlyAuction() internal view {
         if (msg.sender != yesAuction && msg.sender != noAuction) revert NotAuction();
-        _;
     }
 
 

@@ -48,7 +48,7 @@ contract DutchAuctionTest is Test {
             "D",
             10,            // auctionDuration
             100,           // liveDuration
-            address(1),    // subjectToken
+            "Subject Token",    // subjectToken
             address(pyusd),
             0,             // minToOpen (allow finalize without tokens)
             1000e18,       // maxCap

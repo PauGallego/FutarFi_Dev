@@ -1,5 +1,5 @@
 export const proposal_abi = [
-    {
+     {
       "type": "function",
       "name": "admin",
       "inputs": [],
@@ -52,11 +52,7 @@ export const proposal_abi = [
           "type": "uint256",
           "internalType": "uint256"
         },
-        {
-          "name": "_subjectToken",
-          "type": "address",
-          "internalType": "address"
-        },
+        { "name": "_subjectToken", "type": "string", "internalType": "string" },
         { "name": "_pyUSD", "type": "address", "internalType": "address" },
         { "name": "_minToOpen", "type": "uint256", "internalType": "uint256" },
         { "name": "_maxCap", "type": "uint256", "internalType": "uint256" },
@@ -163,7 +159,7 @@ export const proposal_abi = [
       "type": "function",
       "name": "subjectToken",
       "inputs": [],
-      "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+      "outputs": [{ "name": "", "type": "string", "internalType": "string" }],
       "stateMutability": "view"
     },
     {

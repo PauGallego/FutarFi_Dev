@@ -36,7 +36,7 @@ contract ProposalManagerBasicTest is Test {
             "Description",
             100,            // auctionDuration
             200,            // liveDuration
-            address(1),     // subjectToken (non-zero placeholder)
+            "Subject Token",     // subjectToken (non-zero placeholder)
             1,              // minToOpen
             1000e18,        // maxCap
             address(0),     // target
@@ -65,7 +65,7 @@ contract ProposalManagerBasicTest is Test {
             "Description",
             100,            
             200,            
-            address(1),     
+            "Subject Token",     
             1,              
             1000e18,        
             address(0),     
