@@ -1783,4 +1783,118 @@ router.get('/:proposalId/:side/orders', async (req, res) => {
   }
 });
 
+
+async function executeOrder(order, io) {
+  try {
+    if (!order || !order.proposalId || !order.side) {
+      console.error('Invalid order data for executeOrder');
+      return;
+    }
+
+    console.log(`Executing order: ${order._id}, side: ${order.side}, type: ${order.orderType}, execution: ${order.orderExecution}, price: ${order.price}, amount: ${order.amount}`);
+
+    const oppositeOrderType = order.orderType === 'buy' ? 'sell' : 'buy';
+
+    // Build price filter for limit orders
+    let priceFilter = {};
+    if (order.orderExecution === 'limit') {
+      priceFilter = order.orderType === 'buy'
+        ? { $expr: { $lte: [{ $toDouble: '$price' }, parseFloat(order.price)] } }
+        : { $expr: { $gte: [{ $toDouble: '$price' }, parseFloat(order.price)] } };
+    }
+
+    // Find matching orders
+    const matchingOrders = await Order.find({
+      proposalId: order.proposalId,
+      side: order.side,
+      orderType: oppositeOrderType,
+      status: { $in: ['open', 'partial'] },
+      ...(order.orderExecution === 'limit' ? { ...priceFilter } : {})
+    }).sort({
+      price: order.orderType === 'buy' ? 1 : -1, // Best price first
+      createdAt: 1
+    });
+
+    let remainingAmount = parseFloat(order.amount);
+    let totalExecuted = 0;
+
+    for (const matchingOrder of matchingOrders) {
+      if (remainingAmount <= 0) break;
+
+      if(matchingOrder.userAddress === order.userAddress) {
+        console.log(`Skipping matching order ${matchingOrder._id} as it belongs to the same user`);
+        continue;
+      }
+
+      const availableAmount = parseFloat(matchingOrder.amount) - parseFloat(matchingOrder.filledAmount || '0');
+      const tradeAmount = Math.min(remainingAmount, availableAmount);
+
+      if (tradeAmount <= 0) continue;
+
+      console.log(`Executing trade: ${tradeAmount} at price ${matchingOrder.price}`);
+
+      // Update matching order
+      const newFilledAmount = parseFloat(matchingOrder.filledAmount || '0') + tradeAmount;
+      matchingOrder.filledAmount = newFilledAmount.toString();
+      matchingOrder.status = newFilledAmount >= parseFloat(matchingOrder.amount) ? 'filled' : 'partial';
+      matchingOrder.updatedAt = new Date();
+
+      // Record fill for matching order
+      matchingOrder.fills.push({
+        price: matchingOrder.price,
+        amount: tradeAmount.toString(),
+        timestamp: new Date(),
+        matchedOrderId: order._id.toString()
+      });
+
+      await matchingOrder.save();
+
+      // NEW: notify counterparty user about their order update
+      try { if (io) notifyUserOrdersUpdate(io, matchingOrder.userAddress, { reason: 'order-updated', changedOrderId: matchingOrder._id.toString() }); } catch (e) {}
+
+      // Update our order
+      remainingAmount -= tradeAmount;
+      totalExecuted += tradeAmount;
+
+      if (order.orderExecution === 'market') {
+        order.price = matchingOrder.price; // Use matching order price for market
+      }
+
+      // Record fill for original order
+      order.fills.push({
+        price: matchingOrder.price,
+        amount: tradeAmount.toString(),
+        timestamp: new Date(),
+        matchedOrderId: matchingOrder._id.toString()
+      });
+
+      console.log(`Trade executed: ${tradeAmount}, remaining: ${remainingAmount}`);
+    }
+
+    // Finalize original order
+    order.filledAmount = totalExecuted.toString();
+    if (totalExecuted >= parseFloat(order.amount)) {
+      order.status = 'filled';
+    } else if (totalExecuted > 0) {
+      order.status = 'partial';
+    }
+    order.updatedAt = new Date();
+    await order.save();
+
+    console.log(`Order ${order._id} final status: ${order.status}, filled: ${order.filledAmount}/${order.amount}`);
+
+    // NEW: notify original user if anything executed or changed
+    try { if (io && totalExecuted > 0) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-updated', changedOrderId: order._id.toString() }); } catch (e) {}
+
+    // Notify clients if any execution happened
+    if (io && typeof notifyOrderMatched === 'function' && totalExecuted > 0) {
+      // keep existing behavior (signature mismatch tolerated elsewhere)
+      try { notifyOrderMatched(io, order); } catch (e) {}
+    }
+
+  } catch (error) {
+    console.error('Error executing order:', error);
+  }
+}
+
 module.exports = router;
