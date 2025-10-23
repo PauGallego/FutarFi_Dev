@@ -10,14 +10,16 @@ interface ProposalHeaderProps {
 }
 
 const statusColors = {
-  pending: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-  active: "bg-green-500/10 text-green-500 border-green-500/20",
-  closed: "bg-muted text-muted-foreground border-border",
-  executed: "bg-primary/10 text-primary border-primary/20",
+  Auction: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
+  Live: "bg-green-500/10 text-green-500 border-green-500/20",
+  Resolved: "bg-muted text-muted-foreground border-border",
+  Cancelled: "bg-primary/10 text-primary border-primary/20",
 }
 
 export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
-  const explorerUrl = getExplorerUrl(chainId, proposal.creator)
+  // Use admin (on-chain) or fallback to contract instance address as the creator
+  const creatorAddress = (proposal as any).admin || (proposal as any).address || ''
+  const explorerUrl = getExplorerUrl(chainId, creatorAddress)
 
   return (
     <div className="space-y-6">
@@ -31,8 +33,8 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
       <div className="space-y-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <h1 className="text-4xl font-bold text-balance">{proposal.title}</h1>
-          <Badge variant="outline" className={statusColors[proposal.status]}>
-            {proposal.status}
+          <Badge variant="outline" className={statusColors[proposal.state]}>
+            {proposal.state}
           </Badge>
         </div>
 
@@ -46,14 +48,14 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
               rel="noopener noreferrer"
               className="text-primary hover:underline inline-flex items-center gap-1"
             >
-              {formatAddress(proposal.creator)}
+              {formatAddress(creatorAddress)}
               <ExternalLink className="h-3 w-3" />
             </a>
           </div>
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4" />
             <span>
-              {formatDate(proposal.startTime)} - {formatDate(proposal.endTime)}
+              {formatDate(proposal.auctionStartTime)} - {formatDate(proposal.auctionEndTime)}
             </span>
           </div>
         </div>
@@ -67,11 +69,16 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
 }
 
 function formatAddress(address: string): string {
+  if (!address) return ''
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
-function formatDate(timestamp: bigint): string {
-  return new Date(Number(timestamp) * 1000).toLocaleDateString()
+function formatDate(timestamp: number | bigint | undefined): string {
+  if (!timestamp && timestamp !== 0) return 'N/A'
+  const tsNum = typeof timestamp === 'bigint' ? Number(timestamp) : Number(timestamp)
+  // If timestamp looks like milliseconds already (>= 1e12), use as-is; otherwise treat as seconds
+  const ms = tsNum > 1e12 ? tsNum : tsNum * 1000
+  return new Date(ms).toLocaleDateString()
 }
 
 function getExplorerUrl(chainId: number, address: string): string {

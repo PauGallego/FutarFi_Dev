@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -16,7 +16,7 @@ import type { Proposal, UserOrder, MarketOption, UserBalance } from "@/lib/types
 import { useGetProposalById } from "@/hooks/use-get-proposalById"
 
 interface PageProps {
-  params: { id: string }
+  params: {id: string}
 }
 
 
@@ -57,6 +57,7 @@ function generateMockUserBalance(): UserBalance {
 
 export default function ProposalDetailPage({ params }: PageProps) {
   const { id } = params
+
   const chainId = useChainId()
 
   const { proposal: hookProposal, isLoading: hookLoading, error: hookError } = useGetProposalById(id)
@@ -114,26 +115,13 @@ export default function ProposalDetailPage({ params }: PageProps) {
     }
 
 
-    const loadProposal = async () => {
-      try {
-        setIsLoading(true)
-        await new Promise((resolve) => setTimeout(resolve, 1000))
+    setProposal(mapped)
+    setError(null)
+    setIsLoading(hookLoading)
 
-        const mockOrders = generateMockOrders()
-        const mockBalance = generateMockUserBalance()
+    setUserOrders(generateMockOrders())
+    setUserBalance(generateMockUserBalance())
 
-        setUserOrders(mockOrders)
-        setUserBalance(mockBalance)
-        setError(null)
-      } catch (err) {
-        console.error("[v0] Error loading proposal:", err)
-        setError("Failed to load proposal data")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadProposal()
   }, [hookProposal, hookLoading, hookError])
 
   const handleCancelOrder = (orderId: string) => {
@@ -177,7 +165,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
       <div className="grid lg:grid-cols-3 gap-8">
         {/* Left/Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          <ProposalHeader proposal={proposal} chainId={1} />
+          <ProposalHeader proposal={proposal} chainId={chainId} />
 
           {(((proposal as any).status === "Auction" || (proposal as any).status === "Canceled") && (proposal as any).auctionData && userBalance) ? (
             <AuctionView auctionData={(proposal as any).auctionData} userBalance={userBalance} />

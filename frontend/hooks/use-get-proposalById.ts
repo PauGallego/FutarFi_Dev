@@ -11,6 +11,7 @@ export function useGetProposalById(id: string) {
   const contractAddress = getContractAddress(chainId, 'PROPOSAL_MANAGER')
   const publicClient = usePublicClient()
 
+  console.log(`useGetProposalById: Fetching proposal for id=${id} on chainId=${chainId}`)
   // Fetch the proposal address by id. The contract returns a single address for a given id.
   const { data: proposalAddress, isLoading: isLoadingAddress, error, refetch: refetchAddress } = useReadContract({
     address: contractAddress as `0x${string}`,
@@ -21,6 +22,7 @@ export function useGetProposalById(id: string) {
       enabled: !!contractAddress && typeof id !== 'undefined' && id !== '',
     },
   })
+
 
   const [proposal, setProposal] = useState<Proposal | null>(null)
   const [isLoadingProposal, setIsLoadingProposal] = useState(false)
@@ -43,177 +45,85 @@ export function useGetProposalById(id: string) {
       }
 
       // Only one proposal expected for a given id - use the first valid address
-      const proposalAddr = validAddresses[0]
+      const proposalAddr = validAddresses[0] as string
 
       setIsLoadingProposal(true)
-
       try {
         const [
-          pid,
+          id,
           admin,
           title,
           description,
+          stateVal,
           auctionStartTime,
           auctionEndTime,
           liveStart,
           liveEnd,
           liveDuration,
           subjectToken,
-          pyUSD,
+          pyusd,
           minToOpen,
           maxCap,
           yesAuction,
           noAuction,
           yesToken,
           noToken,
-          treasury,
-          target,
-          data,
-          state,
+          treasury
         ] = await Promise.all([
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'id',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'admin',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'title',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'description',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'auctionStartTime',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'auctionEndTime',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'liveStart',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'liveEnd',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'liveDuration',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'subjectToken',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'pyUSD',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'minToOpen',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'maxCap',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'yesAuction',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'noAuction',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'yesToken',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'noToken',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'treasury',
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'target' as any,
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'data' as any,
-          }),
-          publicClient.readContract({
-            address: proposalAddr as `0x${string}`,
-            abi: proposal_abi,
-            functionName: 'state',
-          }),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'id' }).catch(() => BigInt(0)),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'admin' }).catch(() => ''),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'title' }).catch(() => ''),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'description' }).catch(() => ''),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'state' }).catch(() => 0),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'auctionStartTime' }).catch(() => 0),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'auctionEndTime' }).catch(() => 0),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'liveStart' }).catch(() => 0),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'liveEnd' }).catch(() => 0),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'liveDuration' }).catch(() => 0),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'subjectToken' }).catch(() => zeroAddress),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'pyUSD' }).catch(() => zeroAddress),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'minToOpen' }).catch(() => BigInt(0)),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'maxCap' }).catch(() => BigInt(0)),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'yesAuction' }).catch(() => zeroAddress),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'noAuction' }).catch(() => zeroAddress),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'yesToken' }).catch(() => zeroAddress),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'noToken' }).catch(() => zeroAddress),
+          publicClient.readContract({ address: proposalAddr as `0x${string}`, abi: proposal_abi, functionName: 'treasury' }).catch(() => zeroAddress),
         ])
 
-        // Map the Solidity enum/state to the frontend `state` string
-        const stateNum = Number(state as any)
-        const stateStr = stateNum === 0 ? 'Auction' : stateNum === 1 ? 'Live' : stateNum === 2 ? 'Resolved' : 'Cancelled'
+        const stateMap = ['Auction', 'Live', 'Resolved', 'Cancelled'] as const
+        const stateStr = stateMap[Number(stateVal ?? 0)]
+
+        // Convert on-chain seconds to JS milliseconds for Date()
+        const auctionStartTimeMs = Number(auctionStartTime ?? 0) * 1000
+        const auctionEndTimeMs = Number(auctionEndTime ?? 0) * 1000
+        const liveStartMs = Number(liveStart ?? 0) * 1000
+        const liveEndMs = Number(liveEnd ?? 0) * 1000
 
         const proposalObj: Proposal = {
-          id: (pid as bigint)?.toString() || '0',
-          admin: (admin as string) || '0x0000000000000000000000000000000000000000',
+          id: (id as bigint)?.toString() || '0',
+          admin: (admin as string) || '',
           title: (title as string) || 'Untitled Proposal',
           description: (description as string) || 'No description available',
-
-          state: stateStr as 'Auction' | 'Live' | 'Resolved' | 'Cancelled',
-
-          // Auction / live times (timestamps in seconds)
-          auctionStartTime: Number((auctionStartTime as bigint) || 0),
-          auctionEndTime: Number((auctionEndTime as bigint) || 0),
-          liveStart: Number((liveStart as bigint) || 0),
-          liveEnd: Number((liveEnd as bigint) || 0),
-          liveDuration: Number((liveDuration as bigint) || 0),
-
-          // Token / treasury / auctions
-          subjectToken: (subjectToken as `0x${string}`) || '0x0000000000000000000000000000000000000000',
-          pyUSD: (pyUSD as `0x${string}`) || '0x0000000000000000000000000000000000000000',
-          minToOpen: minToOpen ? String(minToOpen as bigint) : '0',
-          maxCap: maxCap ? String(maxCap as bigint) : '0',
-          yesAuction: (yesAuction as `0x${string}`) || '0x0000000000000000000000000000000000000000',
-          noAuction: (noAuction as `0x${string}`) || '0x0000000000000000000000000000000000000000',
-          yesToken: (yesToken as `0x${string}`) || '0x0000000000000000000000000000000000000000',
-          noToken: (noToken as `0x${string}`) || '0x0000000000000000000000000000000000000000',
-          treasury: (treasury as `0x${string}`) || '0x0000000000000000000000000000000000000000',
-
-          // Execution target and calldata
-          target: (target as `0x${string}`) || '0x0000000000000000000000000000000000000000',
-          data: (data as string) || '0x',
-
-          // Contract address (proposal instance)
-          address: (proposalAddr as `0x${string}`) || '0x0000000000000000000000000000000000000000',
+          state: stateStr,
+          auctionStartTime: auctionStartTimeMs,
+          auctionEndTime: auctionEndTimeMs,
+          liveStart: liveStartMs,
+          liveEnd: liveEndMs,
+          liveDuration: Number(liveDuration ?? 0),
+          subjectToken: (subjectToken as string) as `0x${string}`,
+          pyUSD: (pyusd as string) as `0x${string}`,
+          // Convert on-chain uints to strings safely. Fallback to '0' when missing.
+          minToOpen: String(minToOpen ?? '0'),
+          maxCap: String(maxCap ?? '0'),
+          yesAuction: (yesAuction as string) as `0x${string}`,
+          noAuction: (noAuction as string) as `0x${string}`,
+          yesToken: (yesToken as string) as `0x${string}`,
+          noToken: (noToken as string) as `0x${string}`,
+          treasury: (treasury as string) as `0x${string}`,
+          target: zeroAddress as `0x${string}`,
+          data: '0x',
+          address: proposalAddr as `0x${string}`,
         }
 
         setProposal(proposalObj)
