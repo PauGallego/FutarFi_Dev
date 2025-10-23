@@ -96,11 +96,14 @@ export default function NewProposalPage() {
 
     if (!formData.title.trim()) return fail("Please provide a proposal title.")
     if (!formData.description.trim()) return fail("Please provide a proposal description.")
-  if (!formData.auctionDuration || Number(formData.auctionDuration) <= 0 || !isUint(formData.auctionDuration)) return fail("Auction duration must be a positive whole number of days.")
-  if (!formData.liveDuration || Number(formData.liveDuration) <= 0 || !isUint(formData.liveDuration)) return fail("Live duration must be a positive whole number of days.")
+    if (!formData.auctionDuration || Number(formData.auctionDuration) <= 0 || !isUint(formData.auctionDuration)) return fail("Auction duration must be a positive whole number of days.")
+    if (Number(formData.auctionDuration) > 30) return fail("Auction duration cannot exceed 30 days.")
+    if (!formData.liveDuration || Number(formData.liveDuration) <= 0 || !isUint(formData.liveDuration)) return fail("Live duration must be a positive whole number of days.")
+    if (Number(formData.liveDuration) > 30) return fail("Live duration cannot exceed 30 days.")
     if (!formData.collateralToken || !isAddress(formData.collateralToken)) return fail("Please select a valid collateral token address.")
-  if (!formData.minToOpen || Number(formData.minToOpen) <= 0 || !isUint(formData.minToOpen)) return fail("Min to open must be a positive integer.")
-  if (!formData.maxCap || Number(formData.maxCap) <= 0 || !isUint(formData.maxCap)) return fail("Max cap must be a positive integer.")
+    if (!formData.minToOpen || Number(formData.minToOpen) <= 0 || !isUint(formData.minToOpen)) return fail("Min to open must be a positive integer greater than 0.")
+    if (!formData.maxCap || Number(formData.maxCap) <= 0 || !isUint(formData.maxCap)) return fail("Max cap must be a positive integer.")
+    if (Number(formData.maxCap) <= Number(formData.minToOpen)) return fail("Max cap must be greater than Min to open.")
 
     if (useTarget === "YES") {
       if (!formData.targetAddress.trim() || !isAddress(formData.targetAddress)) {
@@ -169,12 +172,6 @@ export default function NewProposalPage() {
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
-      {/* Debug status bar (dev only) */}
-      <div className="mb-4 text-xs text-muted-foreground">
-        <div>ChainId: {String(chainId)}</div>
-        <div>Account: {account ?? "-"}</div>
-        <div>ProposalManager: {contractAddress ?? "-"}</div>
-      </div>
       <Button asChild variant="ghost" className="mb-6">
         <Link href="/proposals">
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -188,30 +185,6 @@ export default function NewProposalPage() {
           <CardDescription className="text-base">
             Submit a proposal to vote on. Provide clear details about your proposal and its expected impact.
           </CardDescription>
-          <div className="mt-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                try {
-                  if (!contractAddress) throw new Error("No ProposalManager address for this chain")
-                  if (!publicClient) throw new Error("Public client not ready")
-                  const proposals = await publicClient.readContract({
-                    address: contractAddress as `0x${string}`,
-                    abi: proposalManager_abi,
-                    functionName: "getAllProposals",
-                    args: [],
-                  })
-                  toast({ title: "RPC OK", description: `Proposals on-chain: ${(proposals as string[]).length}` })
-                } catch (err: any) {
-                  toast({ title: "Read Test Failed", description: err?.message || String(err), variant: "destructive" })
-                }
-              }}
-            >
-              Quick test: read proposals
-            </Button>
-          </div>
         </CardHeader>
 
         <CardContent>

@@ -31,10 +31,28 @@ if [ $? -eq 0 ]; then
 {
   "31337": {
     "WETH": "$WETH_CONTRACT",
-    "PROPOSAL_MANAGER": "$PROPOSAL_MANAGER",
+    "PROPOSAL_MANAGER": "$PROPOSAL_MANAGER"
   }
 }
 EOF
+
+        # Update backend .env with ProposalManager address
+        ENV_FILE="../backend/.env"
+        if [ -z "$PROPOSAL_MANAGER" ]; then
+            echo "Warning: Could not extract ProposalManager address from deploy output; skipping .env update."
+        else
+            if [ -f "$ENV_FILE" ]; then
+                if grep -q '^PROPOSAL_MANAGER_ADDRESS=' "$ENV_FILE"; then
+                    sed -i -E "s|^PROPOSAL_MANAGER_ADDRESS=.*|PROPOSAL_MANAGER_ADDRESS=$PROPOSAL_MANAGER|" "$ENV_FILE"
+                else
+                    echo "" >> "$ENV_FILE"
+                    echo "PROPOSAL_MANAGER_ADDRESS=$PROPOSAL_MANAGER" >> "$ENV_FILE"
+                fi
+                echo "Updated backend .env with PROPOSAL_MANAGER_ADDRESS: $PROPOSAL_MANAGER"
+            else
+                echo "Warning: $ENV_FILE not found; skipping .env update."
+            fi
+        fi
         
         echo "Updated frontend/contracts/deployed-addresses.json with new addresses:"
         echo "WETH: $WETH_CONTRACT"
