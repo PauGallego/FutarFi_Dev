@@ -16,14 +16,17 @@ const verifyWalletSignature = async (req, res, next) => {
       });
     }
 
-    // Check timestamp not too old (5 minutes)
+    // Configurable TTL (default 1 hour)
+    const AUTH_TTL_MS = Number(process.env.AUTH_MESSAGE_TTL_MS || process.env.WALLET_AUTH_TTL_MS || 60 * 60 * 1000);
+
+    // Check timestamp not too old
     const currentTime = Date.now();
     const messageTime = parseInt(timestamp);
-    const fiveMinutes = 5 * 60 * 1000;
 
-    if (currentTime - messageTime > fiveMinutes) {
+    if (currentTime - messageTime > AUTH_TTL_MS) {
       return res.status(401).json({ 
-        error: 'Message timestamp too old. Please sign a new message.'
+        error: 'Message timestamp too old. Please sign a new message.',
+        ttlMs: AUTH_TTL_MS
       });
     }
 
