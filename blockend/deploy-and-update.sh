@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Deploy contracts and mint WETH, then update frontend addresses
+# Deploy contracts and mint PYUSD, then update frontend addresses
 echo "Deploying contracts..."
 
 # Run the deployment
@@ -12,25 +12,42 @@ if [ $? -eq 0 ]; then
     
     # Extract addresses from the deployment output
     PROPOSAL_MANAGER=$(echo "$DEPLOY_OUTPUT" | grep "ProposalManager:" | awk '{print $2}')
-    
-    echo "Now minting WETH..."
-    
-    # Run the WETH minting script
-    WETH_OUTPUT=$(forge script script/Mintweth.sol --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast 2>&1)
-    
-    # Check if WETH minting was successful
+    PYUSD_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep "PYUSD:" | awk '{print $2}')
+    OWNER_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep "Owner:" | awk '{print $2}')
+
+    echo "Now minting PYUSD..."
+
+    # Defaults for minting
+    TO_ADDRESS=${TO_ADDRESS:-$OWNER_ADDRESS}
+    # Amount uses 6 decimals. Example: 1,000,000 PYUSD => 1_000_000 * 10^6 = 1000000000000
+    AMOUNT_WEI=${AMOUNT_WEI:-1000000000000}
+
+    if [ -z "$PYUSD_ADDRESS" ]; then
+        echo "Error: Could not extract PYUSD address from deployment output."
+        exit 1
+    fi
+
+    if [ -z "$TO_ADDRESS" ]; then
+        # Fallback to default Anvil first account if not found in logs
+        TO_ADDRESS=0xF39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+    fi
+
+    # Run the PYUSD minting script
+    PYUSD_MINT_OUTPUT=$(TO=$TO_ADDRESS AMOUNT=$AMOUNT_WEI PYUSD_CONTRACT=$PYUSD_ADDRESS forge script script/Mintpyusd.sol --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast 2>&1)
+
+    # Check if PYUSD minting was successful
     if [ $? -eq 0 ]; then
-        echo "WETH minting successful!"
+        echo "PYUSD minting successful!"
         
-        # Extract WETH address and balance from the minting output
-        WETH_CONTRACT=$(echo "$WETH_OUTPUT" | grep "WETH Contract:" | awk '{print $3}')
-        WETH_BALANCE=$(echo "$WETH_OUTPUT" | grep "WETH Balance:" | tail -1 | awk '{print $3}')
+        # Extract PYUSD address and balance from the minting output
+        PYUSD_CONTRACT=$(echo "$PYUSD_MINT_OUTPUT" | grep "PYUSD Contract:" | awk '{print $3}')
+        PYUSD_BALANCE=$(echo "$PYUSD_MINT_OUTPUT" | grep "User PYUSD Balance:" | tail -1 | awk '{print $4}')
         
-        # Create the JSON file
+        # Create/Update the JSON file used by frontend
         cat > ../frontend/contracts/deployed-addresses.json << EOF
 {
   "31337": {
-    "WETH": "$WETH_CONTRACT",
+    "PYUSD": "${PYUSD_CONTRACT:-$PYUSD_ADDRESS}",
     "PROPOSAL_MANAGER": "$PROPOSAL_MANAGER"
   }
 }
@@ -55,16 +72,19 @@ EOF
         fi
         
         echo "Updated frontend/contracts/deployed-addresses.json with new addresses:"
-        echo "WETH: $WETH_CONTRACT"
+        echo "PYUSD: ${PYUSD_CONTRACT:-$PYUSD_ADDRESS}"
         echo "ProposalManager: $PROPOSAL_MANAGER"
-        echo "User WETH Balance: $WETH_BALANCE WETH"
+        echo "Recipient: $TO_ADDRESS"
+        echo "User PYUSD Balance: $PYUSD_BALANCE PYUSD (6 decimals)"
         
     else
-        echo "WETH minting failed!"
+        echo "PYUSD minting failed!"
+        echo "$PYUSD_MINT_OUTPUT"
         exit 1
     fi
 
 else
     echo "Deployment failed!"
+    echo "$DEPLOY_OUTPUT"
     exit 1
 fi

@@ -325,8 +325,8 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
     }
 
-    // Verify that the proposal exists
-    const proposal = await Proposal.findOne({ id: proposalId });
+    // Verify that the proposal exists using on-chain contract id (string)
+    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -726,8 +726,8 @@ router.get('/:proposalId/:side/orders', async (req, res) => {
       return res.status(400).json({ error: 'Invalid side. Must be approve/reject (or yes/no alias)' });
     }
 
-    // Verify proposal exists (by numeric id stored as string in related models)
-    const proposal = await Proposal.findOne({ id: proposalId });
+    // Verify proposal exists using on-chain contract id (string)
+    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -839,8 +839,8 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
     }
 
-    // Verify that the proposal exists
-    const proposal = await Proposal.findOne({ id: proposalId });
+    // Verify that the proposal exists using on-chain contract id (string)
+    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -1240,8 +1240,8 @@ router.get('/:proposalId/:side/orders', async (req, res) => {
       return res.status(400).json({ error: 'Invalid side. Must be approve/reject (or yes/no alias)' });
     }
 
-    // Verify proposal exists (by numeric id stored as string in related models)
-    const proposal = await Proposal.findOne({ id: proposalId });
+    // Verify proposal exists using on-chain contract id (string)
+    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -1353,8 +1353,8 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
     }
 
-    // Verify that the proposal exists
-    const proposal = await Proposal.findOne({ id: proposalId });
+    // Verify that the proposal exists using on-chain contract id (string)
+    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -1754,8 +1754,8 @@ router.get('/:proposalId/:side/orders', async (req, res) => {
       return res.status(400).json({ error: 'Invalid side. Must be approve/reject (or yes/no alias)' });
     }
 
-    // Verify proposal exists (by numeric id stored as string in related models)
-    const proposal = await Proposal.findOne({ id: proposalId });
+    // Verify proposal exists using on-chain contract id (string)
+    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
