@@ -40,11 +40,11 @@ export function MarketView({ marketData, userOrders, selectedMarket, onMarketCha
     NO: point.noTWAP,
   }))
 
-  const volumeChartData = marketData.volumeDistribution.map((point) => ({
-    price: point.price.toFixed(3),
-    Buy: point.buyVolume,
-    Sell: point.sellVolume,
-  }))
+  // const volumeChartData = marketData.volumeDistribution.map((point) => ({
+  //   price: point.price.toFixed(3),
+  //   Buy: point.buyVolume,
+  //   Sell: point.sellVolume,
+  // }))
 
   return (
     <div className="space-y-6">
@@ -82,7 +82,7 @@ export function MarketView({ marketData, userOrders, selectedMarket, onMarketCha
           <CardTitle>Order Volume Distribution</CardTitle>
           <CardDescription>Buy and sell order volumes at different price levels</CardDescription>
         </CardHeader>
-        <CardContent>
+        {/* <CardContent>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={volumeChartData}>
@@ -102,7 +102,7 @@ export function MarketView({ marketData, userOrders, selectedMarket, onMarketCha
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </CardContent>
+        </CardContent> */}
       </Card>
 
       {/* Order Book */}

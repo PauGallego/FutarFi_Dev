@@ -36,9 +36,12 @@ export function useGetOrderbookOrders(options: UseGetOrderbookOrdersOptions) {
       const entries: OrderBookEntry[] = Array.isArray(data?.orders) ? data.orders.map((o: any) => {
         const price = typeof o.price === 'number' ? o.price : Number(o.price || 0)
         const amount = typeof o.amount === 'number' ? o.amount : Number(o.amount || 0)
+        const filled = typeof o.filledAmount === 'number' ? o.filledAmount : Number(o.filledAmount || 0)
+        const remaining = Math.max(0, amount - filled)
         const total = price * amount
+        const fillPct = amount > 0 ? Math.min(1, Math.max(0, filled / amount)) : 0
         const side: 'buy' | 'sell' = (o.orderType === 'sell' ? 'sell' : 'buy')
-        return { price, amount, total, side }
+        return { price, amount, total, side, filled, remaining, fillPct }
       }) : []
       setOrders(entries)
     } catch (e) {

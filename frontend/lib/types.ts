@@ -62,12 +62,10 @@ export interface AuctionPricePoint {
 }
 
 export interface MarketData {
-  yesMarket: Address
-  noMarket: Address
   yesOrderBook: OrderBookEntry[]
   noOrderBook: OrderBookEntry[]
   twapHistory: TWAPPoint[]
-  volumeDistribution: VolumePoint[]
+  // volumeDistribution: VolumePoint[]
 }
 
 export interface OrderBookEntry {
@@ -75,6 +73,10 @@ export interface OrderBookEntry {
   amount: number
   total: number
   side: "buy" | "sell"
+  // Optional fill metadata for UI shading
+  filled?: number
+  remaining?: number
+  fillPct?: number // 0..1
 }
 
 export interface TWAPPoint {

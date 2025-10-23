@@ -14,6 +14,28 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
 
   const accentColor = market === "YES" ? "primary" : "destructive"
 
+  const Row = ({ order, align }: { order: OrderBookEntry; align: "left" | "right" }) => {
+    const filled = typeof order.filled === 'number' ? order.filled : 0
+    const amount = typeof order.amount === 'number' ? order.amount : 0
+    const computedPct = amount > 0 ? Math.min(1, Math.max(0, filled / amount)) : 0
+    const fillPct = typeof order.fillPct === 'number' ? order.fillPct : computedPct
+    const width = `${(fillPct * 100).toFixed(2)}%`
+
+    return (
+      <div className="relative grid grid-cols-3 items-center text-sm font-mono py-0.5">
+        {/* background fill bar */}
+        <div
+          className={`absolute inset-y-0 ${align === 'left' ? 'left-0' : 'right-0'} ${align === 'left' ? 'bg-primary/15' : 'bg-destructive/15'}`}
+          style={{ width }}
+        />
+        {/* foreground content */}
+        <span className={`relative z-10 ${align === 'left' ? `text-${accentColor}` : 'text-destructive'} text-left`}>${order.price.toFixed(4)}</span>
+        <span className="relative z-10 text-center">{order.amount.toFixed(2)}</span>
+        <span className="relative z-10 text-right text-muted-foreground">${order.total.toFixed(2)}</span>
+      </div>
+    )
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -30,11 +52,7 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
             </div>
             <div className="space-y-1">
               {buyOrders.map((order, i) => (
-                <div key={i} className="grid grid-cols-3 items-center text-sm font-mono">
-                  <span className={`text-${accentColor} text-left`}>${order.price.toFixed(4)}</span>
-                  <span className="text-center">{order.amount.toFixed(2)}</span>
-                  <span className="text-right text-muted-foreground">${order.total.toFixed(2)}</span>
-                </div>
+                <Row key={`buy-${i}`} order={order} align="left" />
               ))}
             </div>
           </div>
@@ -48,11 +66,7 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
             </div>
             <div className="space-y-1">
               {sellOrders.map((order, i) => (
-                <div key={i} className="grid grid-cols-3 items-center text-sm font-mono">
-                  <span className="text-destructive text-left">${order.price.toFixed(4)}</span>
-                  <span className="text-center">{order.amount.toFixed(2)}</span>
-                  <span className="text-right text-muted-foreground">${order.total.toFixed(2)}</span>
-                </div>
+                <Row key={`sell-${i}`} order={order} align="right" />
               ))}
             </div>
           </div>

@@ -52,24 +52,6 @@ function generateProposalData(id: string, hookProposal: any): Proposal {
     sellVolume: 50 + Math.random() * 200,
   }))
 
-  const generateOrderBook = () => {
-    const buyOrders = Array.from({ length: 15 }, (_, i) => ({
-      price: 0.5 - i * 0.01,
-      amount: 100 + Math.random() * 500,
-      total: 0,
-      side: "buy" as const,
-    }))
-    const sellOrders = Array.from({ length: 15 }, (_, i) => ({
-      price: 0.51 + i * 0.01,
-      amount: 100 + Math.random() * 500,
-      total: 0,
-      side: "sell" as const,
-    }))
-    buyOrders.forEach((o) => (o.total = o.price * o.amount))
-    sellOrders.forEach((o) => (o.total = o.price * o.amount))
-    return [...buyOrders, ...sellOrders]
-  }
-
   return {
       id: hookProposal.id,
       admin: hookProposal.admin || zero,
@@ -106,12 +88,10 @@ function generateProposalData(id: string, hookProposal: any): Proposal {
       marketData:
       hookProposal.state === "Live" || hookProposal.state === "Resolved" || hookProposal.state === "Auction"
         ? {
-            yesMarket: "0x1234567890123456789012345678901234567890",
-            noMarket: "0x0987654321098765432109876543210987654321",
-            yesOrderBook: generateOrderBook(),
-            noOrderBook: generateOrderBook(),
+            yesOrderBook: [],
+            noOrderBook: [],
             twapHistory,
-            volumeDistribution,
+            // volumeDistribution,
           }
         : undefined,
   }
