@@ -9,7 +9,6 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IDutchAuction} from "../interfaces/IDutchAuction.sol";
 import {ITreasury} from "../interfaces/ITreasury.sol";
 import {IProposal} from "../interfaces/IProposal.sol";
-import {console} from "forge-std/console.sol";
 
 /// @notice Buyer supplies PYUSD and receives YES/NO tokens at the linear price at that moment.
 /// @dev Collects PYUSD into Treasury and mints tokens to the buyer (mint-on-buy).
@@ -120,7 +119,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
 
         // tokens = payAmount / price per token
         uint256 price = actualPrice;
-        uint256 tokensOut = (_payAmount * 1e18) / price;
+        uint256 tokensOut = (_payAmount * 1e6) / price;
 
         if (MARKET_TOKEN.totalSupply() + tokensOut > MARKET_TOKEN.cap()) revert OverCap();
         // future permit implementation

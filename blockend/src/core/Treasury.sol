@@ -24,11 +24,16 @@ contract Treasury is Ownable , ITreasury {
     mapping(address => uint256) public balances;
 
     error NotAuction();
+    error NotAuthorised();
     error RefundsNotEnabled();
 
     event FundedFromAuction(address indexed auction, address indexed payer, uint256 amount);
     event RefundPaid(address indexed auction, address indexed user, uint256 amount);
 
+    modifier onlyAuctionOrOwner(){
+        if (msg.sender != owner() && msg.sender != yesAuction && msg.sender != noAuction) revert NotAuction();
+        _;
+    }
 
     modifier onlyAuction() {
            _onlyAuction();
@@ -65,8 +70,14 @@ contract Treasury is Ownable , ITreasury {
         refundsEnabled = true;
     }
 
+    function transferBalance(address from, address to, uint256 amount) external onlyOwner {
+        // transfer internal balance from one user to another when trade is executed
+        balances[from] -= amount;
+        balances[to] += amount;
+    }
+
     /// @notice Called by auctions during user refund flow (after burning user tokens).
-    function refundTo(address _user, address _token , uint256 _amount) external onlyAuction {
+    function refundTo(address _user, address _token , uint256 _amount) external onlyAuctionOrOwner() {
         if (!refundsEnabled) revert RefundsNotEnabled();
         
         IERC20(_token).safeTransferFrom(_user, address(this), _amount); 

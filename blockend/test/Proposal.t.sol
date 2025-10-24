@@ -61,12 +61,13 @@ contract ProposalBasicTest is Test {
 
         DutchAuction yes = proposal.yesAuction();
         MarketToken yesToken = proposal.yesToken();
-        Treasury treasury = proposal.treasury();
+        Treasury treasuryInstance = proposal.treasury();
+        address treasury = address(treasuryInstance);
 
         // Give buyer some pyUSD and approve treasury to pull pyUSD when buying
         pyusd.transfer(buyer, 1_000e18);
         vm.prank(buyer);
-        pyusd.approve(address(treasury), type(uint256).max);
+        pyusd.approve(treasury, type(uint256).max);
 
         // Buyer buys a small amount (half a token) so it does NOT meet minToOpen
         uint256 payAmount = 500_000; // yields 0.5e18 tokens at price 1_000_000
@@ -90,15 +91,15 @@ contract ProposalBasicTest is Test {
 
         // Tokens should be finalized as loser (paused)
         assertTrue(yesToken.paused(), "yes token paused");
-        assertTrue(treasury.refundsEnabled(), "refunds enabled in treasury");
+        assertTrue(Treasury(treasury).refundsEnabled(), "refunds enabled in treasury");
 
         // Buyer approves Treasury to pull their outcome tokens for refund
         vm.prank(buyer);
-        yesToken.approve(address(treasury), userTokens);
+        yesToken.approve(treasury, userTokens);
 
         uint256 beforePy = pyusd.balanceOf(buyer);
-        uint256 beforeYesTokens = yesToken.balanceOf(address(treasury));
-        uint256 beforePyTokens = pyusd.balanceOf(address(treasury));
+        uint256 beforeYesTokens = yesToken.balanceOf(treasury);
+        uint256 beforePyTokens = pyusd.balanceOf(treasury);
 
         // Buyer calls auction.refundTokens() which will cause Treasury to refund PYUSD
         vm.prank(buyer);
@@ -107,8 +108,8 @@ contract ProposalBasicTest is Test {
         // After refund, buyer should have no outcome tokens and should have received pyUSD refund
         assertEq(yesToken.balanceOf(buyer), 0, "buyer has zero yes tokens after refund");
         assertTrue(pyusd.balanceOf(buyer) > beforePy, "buyer received pyUSD refund");
-        assertEq(yesToken.balanceOf(address(treasury)), beforeYesTokens + userTokens, "treasury received yes tokens");
-        assertLt(pyusd.balanceOf(address(treasury)), beforePyTokens, "treasury pyusd balance increased");
+        assertEq(yesToken.balanceOf(treasury), beforeYesTokens + userTokens, "treasury received yes tokens");
+        assertLt(pyusd.balanceOf(treasury), beforePyTokens, "treasury pyusd balance increased");
     }
 
 
@@ -124,8 +125,8 @@ contract ProposalBasicTest is Test {
             10,              // auctionDuration
             20,              // liveDuration
             "Subject Token",
-            2,            // minToOpen (1 token)
-            3_000_000,            // maxCap (1 token)
+            1,            // minToOpen (1 token)
+            100000e6,            // maxCap (1 token)
             address(target), // target
             data,            // data
             PYTH_CONTRACT,   // pythAddr (mock)
@@ -137,22 +138,22 @@ contract ProposalBasicTest is Test {
         DutchAuction no = proposal.noAuction();
         MarketToken yesToken = proposal.yesToken();
         MarketToken noToken = proposal.noToken();
-        Treasury treasury = proposal.treasury();
-
+        Treasury treasuryInstance = proposal.treasury();
+        address treasury = address(treasuryInstance);
         // Fund two buyers for the auctions and approve Treasury
         address buyerYes = makeAddr("buyerYes");
         address buyerNo = makeAddr("buyerNo");
         pyusd.transfer(buyerYes, 2_100_000); // enough for auction + later trades
         pyusd.transfer(buyerNo, 2_100_000);
         vm.prank(buyerYes);
-        pyusd.approve(address(treasury), type(uint256).max);
+        pyusd.approve(treasury, type(uint256).max);
         vm.prank(buyerNo);
-        pyusd.approve(address(treasury), type(uint256).max);
+        pyusd.approve(treasury, type(uint256).max);
 
         vm.prank(buyerYes);
-        yes.buyLiquidity(1); 
+        yes.buyLiquidity(2e6);  // buy to cap
         vm.prank(buyerNo);
-        no.buyLiquidity(1);  
+        no.buyLiquidity(2e6);   // buy to cap
 
         uint256 endTime = yes.END_TIME();
         vm.warp(endTime + 1);
@@ -161,6 +162,7 @@ contract ProposalBasicTest is Test {
         yes.finalize();
         vm.prank(attestor);
         no.finalize();
+        assertEq(uint8(proposal.state()), uint8(IProposal.State.Live), "Proposal not in Live state");
 
         // After both auctions, proposal live times are set
         assertGt(proposal.liveStart(), 0, "liveStart not set");
@@ -175,22 +177,20 @@ contract ProposalBasicTest is Test {
 
         // Approvals for Proposal to move funds in applyBatch
         vm.prank(buyerYes);
-        yesToken.approve(address(proposal), 2e17); // sell 0.2 YES
+        yesToken.approve(address(proposal), type(uint256).max); // sell 0.2 YES
         vm.prank(takerYes);
         pyusd.approve(address(proposal), 10_000);
         vm.prank(buyerNo);
-        noToken.approve(address(proposal), 2e17);  // sell 0.2 NO
+        noToken.approve(address(proposal), type(uint256).max);  // sell 0.2 NO
         vm.prank(takerNo);
         pyusd.approve(address(proposal), 10_000);
 
         // Force Proposal owner to be attestor so _executeTargetCalldata (onlyOwner) passes
-        vm.store(address(proposal), bytes32(uint256(0)), bytes32(uint256(uint160(attestor))));
+        // vm.store(address(proposal), bytes32(uint256(0)), bytes32(uint256(uint160(attestor))));
 
         // Move to after live end and set state to Live (enum: 0=Auction,1=Live,2=Resolved,3=Cancelled)
         uint256 le = proposal.liveEnd();
         vm.warp(le + 1);
-        // Ownable._owner is slot 0; Proposal.state is the next variable at slot 1
-        vm.store(address(proposal), bytes32(uint256(1)), bytes32(uint256(1)));
 
         // Build trades with higher TWAP for YES so YES wins
         IProposal.Trade[] memory ops = new IProposal.Trade[](2);
@@ -198,7 +198,7 @@ contract ProposalBasicTest is Test {
             seller: buyerYes,
             buyer: takerYes,
             outcomeToken: address(yesToken),
-            tokenAmount: 2e17,
+            tokenAmount: yesToken.balanceOf(buyerYes),
             pyUsdAmount: 5_000,
             twapPrice: 200
         });
@@ -206,7 +206,7 @@ contract ProposalBasicTest is Test {
             seller: buyerNo,
             buyer: takerNo,
             outcomeToken: address(noToken),
-            tokenAmount: 2e17,
+            tokenAmount: noToken.balanceOf(buyerNo),
             pyUsdAmount: 4_000,
             twapPrice: 100
         });
@@ -215,11 +215,34 @@ contract ProposalBasicTest is Test {
         vm.prank(attestor);
         proposal.applyBatch(ops);
 
+
+        vm.warp(proposal.liveEnd() + 1);
+        proposal.resolve();
+
         // Expect proposal resolved and target flag toggled to false
         assertEq(uint8(proposal.state()), uint8(IProposal.State.Resolved), "proposal not resolved");
-        assertEq(target.flag(), false, "target flag should be false after execution");
+        assertEq(target.flag(), true, "target flag should be true after execution");
 
         // NO should be loser and paused
         assertTrue(noToken.paused(), "NO token should be paused as loser");
+        assertFalse(yesToken.paused(), "YES token should not be paused as winner");
+
+        // test users with noToken can claim
+        uint256 balanceTakerNoTokenNoBefore = noToken.balanceOf(takerNo);
+        uint256 balanceTreasuryTokenNoBefore = noToken.balanceOf(treasury);
+
+        uint256 balanceTakerNoPyUsdBefore = pyusd.balanceOf(takerNo);
+        uint256 balanceTreasuryNoPyUsdBefore = pyusd.balanceOf(treasury);
+        assertEq(Treasury(treasury).refundsEnabled(), true);
+
+        vm.startPrank(takerNo);
+        noToken.approve(treasury, type(uint256).max);
+        proposal.claimTokens(address(noToken));
+        vm.stopPrank();
+
+        assertEq(noToken.balanceOf(takerNo), 0, "after claiming, takerNo should have 0 noTokens");
+        assertGt(pyusd.balanceOf(takerNo), balanceTakerNoPyUsdBefore, "after claiming, takerNo should have more pyUSD");
+        assertEq(noToken.balanceOf(treasury), balanceTreasuryTokenNoBefore + balanceTakerNoTokenNoBefore, "a");
+        assertLt(pyusd.balanceOf(treasury), balanceTreasuryNoPyUsdBefore, "b");
     }
 }

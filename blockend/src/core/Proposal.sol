@@ -9,12 +9,10 @@ import {Treasury} from "./Treasury.sol";
 import {DutchAuction} from "./DutchAuction.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Treasury} from "./Treasury.sol";
-import {console} from "forge-std/console.sol";
 import "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
 import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
 
 contract Proposal is Ownable, IProposal {
     using SafeERC20 for IERC20;
@@ -65,6 +63,7 @@ contract Proposal is Ownable, IProposal {
     event ProposalCancelled(uint256 when);
     event ProposalLive(uint256 liveEnd);
     event BatchApplied(uint256 ops);
+    event TokenClaimed(uint256 amout, address token);
 
     modifier onlyAttestor() {
         require(msg.sender == attestor, "Proposal: not attestor");
@@ -143,7 +142,6 @@ contract Proposal is Ownable, IProposal {
         );
 
         int64 initialPrice = getPythPriceFeed(priceFeedId);
-        console.log("Initial Pyth price feed:", initialPrice);
 
         // Deploy Dutch auctions for YES and NO (require token addresses in constructor)
         yesAuction = new DutchAuction(
@@ -230,6 +228,7 @@ contract Proposal is Ownable, IProposal {
         bool noAuctionValid  = noAuction.isValid();
         if (yesAuctionValid && noAuctionValid) {
             // If both auctions are ready, activate proposal
+            state = State.Live;
             auctionEndTime = block.timestamp;
             liveStart = block.timestamp;
             liveEnd = liveStart + liveDuration;
@@ -240,6 +239,7 @@ contract Proposal is Ownable, IProposal {
 
     /// @notice Apply a batch of trades. Requires allowances set by both sides.
     function applyBatch(Trade[] calldata ops) external onlyAttestor {
+        require(state == State.Live, "Bad state (not live), can't apply batches");
         for (uint256 i = 0; i < ops.length; ++i) {
             Trade calldata t = ops[i];
             require(t.seller != address(0) && t.buyer != address(0), "Verifier:zero addr");
@@ -253,6 +253,8 @@ contract Proposal is Ownable, IProposal {
             // Transfer outcome token from seller to buyer (must have allowance on outcome token)
             IERC20(t.outcomeToken).safeTransferFrom(t.seller, t.buyer, t.tokenAmount);
 
+            Treasury(treasury).transferBalance(t.seller, t.buyer, t.pyUsdAmount);
+
             // update TWAP prices
             if (t.outcomeToken == address(yesToken)) {
                 // Update TWAP price for YES token if its different
@@ -262,13 +264,15 @@ contract Proposal is Ownable, IProposal {
                 twapPriceTokenNo = twapPriceTokenNo == t.twapPrice ? twapPriceTokenNo : t.twapPrice;
             }
 
-            // call resolve if live period is over
-            if (state == State.Live && block.timestamp >= liveEnd) {
-                _resolve();
-            }
-
             emit BatchApplied(ops.length);
         }
+    }
+
+
+    function resolve() public {
+        require(state == State.Live, "Bad state (not live)");
+        require(block.timestamp >= liveEnd, "Live period not ended");
+        _resolve();
     }
 
 
@@ -281,25 +285,28 @@ contract Proposal is Ownable, IProposal {
             // YES wins
             // yesToken.finalizeAsWinner(address(treasury));
             noToken.finalizeAsLoser(address(treasury));
+            Treasury(treasury).enableRefunds();
             state = State.Resolved;
             _executeTargetCalldata();
         } else if (twapPriceTokenNo > twapPriceTokenYes) {
             // NO wins
             // noToken.finalizeAsWinner(address(treasury));
             yesToken.finalizeAsLoser(address(treasury));
+            Treasury(treasury).enableRefunds();
             state = State.Resolved;
         } else {
             // Tie - both lose
             state = State.Resolved;
             yesToken.finalizeAsLoser(address(treasury));
             noToken.finalizeAsLoser(address(treasury));
+            Treasury(treasury).enableRefunds();
         }
 
         emit ProposalResolved(id, block.timestamp);
     }
 
 
-    function _executeTargetCalldata() private onlyOwner {
+    function _executeTargetCalldata() private {
         require(state == State.Resolved, "Bad state (not resolved)");
         require(target != address(0), "Proposal:no-target");
         require(data.length > 0, "Proposal:no-data");
@@ -308,6 +315,16 @@ contract Proposal is Ownable, IProposal {
         require(success, "Proposal:target-call-failed");
     }
 
+
+    function claimTokens(address _tokenToClaim) external{
+        require(state == State.Resolved, "Bad state (not resolved)");
+        require(address(treasury) != address(0), "Proposal:no-treasury");
+        require(_tokenToClaim == address(MarketToken(yesToken)) || _tokenToClaim == address(MarketToken(noToken)), "Proposal: invalid token to claim");
+
+        uint256 amount = MarketToken(_tokenToClaim).balanceOf(msg.sender);
+        Treasury(treasury).refundTo(msg.sender, _tokenToClaim, amount);
+        emit TokenClaimed(amount, _tokenToClaim);
+    }
 
  
 }
