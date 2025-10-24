@@ -81,8 +81,8 @@ contract Proposal is Ownable, IProposal {
         require(_pythContract != address(0), "Invalid Pyth address");
 
         require(_minToOpen < _maxCap, "Invalid min/max");
-        require(_auctionDuration > 0 && _auctionDuration < 7 days, "Invalid auction duration");
-        require(_liveDuration > 0 && _liveDuration < 30 days, "Invalid live duration");
+        require(_auctionDuration > 0 && _auctionDuration <= 7 days, "Invalid auction duration");
+        require(_liveDuration > 0 && _liveDuration <= 30 days, "Invalid live duration");
 
         _initialized = true;
 

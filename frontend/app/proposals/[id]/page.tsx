@@ -85,8 +85,24 @@ function generateProposalData(id: string, hookProposal: any): Proposal {
 
       // Proposal contract instance address
       address: (hookProposal.address as `0x${string}`) || zero,
+
+      auctionData:
+      hookProposal.state === "Auction" || hookProposal.state === "Cancelled" 
+        ? {
+            yesCurrentPrice: 0.52,
+            noCurrentPrice: 0.48,
+            yesTotalBids: BigInt(hookProposal.state === "Cancelled" ? 5000000 : 15000000),
+            noTotalBids: BigInt(hookProposal.state === "Cancelled" ? 3000000 : 12000000),
+            minimumRequired: BigInt(10000000),
+            auctionEndTime: BigInt(Math.floor((now + 1 * 24 * 60 * 60 * 1000) / 1000)),
+            priceHistory: auctionHistory,
+            yesRemainingMintable: BigInt(5000000000000000000000),
+            noRemainingMintable: BigInt(5000000000000000000000)
+          }
+        : undefined,
+
       marketData:
-      hookProposal.state === "Live" || hookProposal.state === "Resolved" || hookProposal.state === "Auction"
+      hookProposal.state === "Live" || hookProposal.state === "Resolved" 
         ? {
             yesOrderBook: [],
             noOrderBook: [],
@@ -159,15 +175,15 @@ export default function ProposalDetailPage({ params }: PageProps) {
 
     const proposalData = generateProposalData(id, hookProposal)
 
+    setUserBalance(generateMockUserBalance())
     setProposal(proposalData)
     setError(null)
     setIsLoading(hookLoading)
 
-    // user orders now come from hook below
-    setUserBalance(generateMockUserBalance())
 
   }, [hookProposal, hookLoading, hookError])
 
+  console.log("treasury address:", proposal?.treasury);
   // Map hook orders -> UI orders
   useEffect(() => {
     if (!rawUserOrders || !Array.isArray(rawUserOrders)) {
@@ -186,11 +202,11 @@ export default function ProposalDetailPage({ params }: PageProps) {
     if (res.ok) {
       toast.success("Order cancelled")
       // optimistic local update
-      setUserOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "cancelled" as const } : o)))
+      setUserOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, state: "cancelled" as const } : o)))
       // refetch from backend for accuracy
       void refetchUserOrders()
     } else {
-      toast.error("Cancel failed", { description: res.data?.error || `Status ${res.status}` })
+      toast.error("Cancel failed", { description: res.data?.error || `state ${res.status}` })
     }
   }
 
@@ -233,8 +249,8 @@ export default function ProposalDetailPage({ params }: PageProps) {
         <div className="lg:col-span-2 space-y-6">
           <ProposalHeader proposal={proposal} chainId={chainId} />
 
-          {(((proposal as any).status === "Auction" || (proposal as any).status === "Canceled") && (proposal as any).auctionData && userBalance) ? (
-            <AuctionView auctionData={(proposal as any).auctionData} userBalance={userBalance} />
+          {(((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") ) ? (
+            <AuctionView proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} userBalance={(userBalance as any)} />
           ) : (
             (proposal as any).marketData && (
               <MarketView
@@ -252,8 +268,8 @@ export default function ProposalDetailPage({ params }: PageProps) {
 
         {/* Right Sidebar */}
         <div className="lg:sticky lg:top-4 lg:self-start">
-          {(((proposal as any).status === "Auction" || (proposal as any).status === "Canceled") && (proposal as any).auctionData) ? (
-            <AuctionTradePanel auctionData={(proposal as any).auctionData} isFailed={(proposal as any).status === "Canceled"} />
+          {(((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") && (proposal as any).auctionData) ? (
+            <AuctionTradePanel proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} isFailed={(proposal as any).state === "Cancelled"} />
           ) : (
             <MarketTradePanel selectedMarket={selectedMarket} onMarketChange={setSelectedMarket} proposalId={proposal.id} onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }} />
           )}
