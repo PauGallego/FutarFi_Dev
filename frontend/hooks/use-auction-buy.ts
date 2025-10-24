@@ -11,11 +11,13 @@ import { getContractAddress } from "@/contracts/constants"
 
 export type AuctionSide = "YES" | "NO"
 
+const SIX_DECIMALS = 10n ** 6n // PyUSD and oracle price are 6 decimals
+
 export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x${string}`; side: AuctionSide }) {
   const { address } = useAccount()
   const chainId = useChainId()
   const publicClient = usePublicClient()
-  const [amount, setAmount] = useState<string>("") // USDC amount (6d)
+  const [amount, setAmount] = useState<string>("") // PyUSD amount (6d)
   const [lastHash, setLastHash] = useState<`0x${string}` | undefined>()
 
   // Read addresses from Proposal
@@ -32,7 +34,7 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
   const { data: cap } = useReadContract({ address: marketToken, abi: marketToken_abi, functionName: "cap" })
   const { data: totalSupply } = useReadContract({ address: marketToken, abi: marketToken_abi, functionName: "totalSupply" })
   const { data: userBal } = useReadContract({ address: marketToken, abi: marketToken_abi, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] })
-  const { data: onchainPrice } = useReadContract({ address: auctionAddress, abi: dutchAuction_abi, functionName: "priceNow" })
+  const { data: onchainPrice } = useReadContract({ address: auctionAddress, abi: dutchAuction_abi, functionName: "priceNow" }) // 6d
   const { data: pyusdBal } = useReadContract({
     address: pyusd,
     abi: marketToken_abi,
@@ -103,6 +105,7 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
       throw new Error(err)
     }
 
+    // User-entered PyUSD amount -> 6 decimals
     const pay = parseUnits(amount || "0", 6)
     if (pay === 0n) {
       const err = "Enter an amount greater than 0"
@@ -134,7 +137,7 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
     try {
       if (!publicClient) throw new Error('No client')
       const [priceLatest, capNow, tsNow, pyusdNow] = await Promise.all([
-        publicClient.readContract({ address: auctionAddress as `0x${string}`, abi: dutchAuction_abi, functionName: 'priceNow' }) as Promise<bigint>,
+        publicClient.readContract({ address: auctionAddress as `0x${string}`, abi: dutchAuction_abi, functionName: 'priceNow' }) as Promise<bigint>, // 6d
         publicClient.readContract({ address: marketToken as `0x${string}`, abi: marketToken_abi, functionName: 'cap' }) as Promise<bigint>,
         publicClient.readContract({ address: marketToken as `0x${string}`, abi: marketToken_abi, functionName: 'totalSupply' }) as Promise<bigint>,
         publicClient.readContract({ address: pyusd as `0x${string}`, abi: marketToken_abi, functionName: 'balanceOf', args: [address as `0x${string}`] }) as Promise<bigint>,
@@ -149,9 +152,10 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
         setError(err)
         throw new Error(err)
       }
-      const remainingNow = capNow - tsNow
-      const maxPay = (remainingNow * priceLatest) / 10n**18n
-      // apply 1% buffer to avoid cap overflow if price declines slightly between signing and mining
+      const remainingNow = capNow - tsNow // token 18d
+      // Max PyUSD you can spend to not exceed remaining tokens at current price: remaining * price (6d) / 1e18
+      const maxPay = (remainingNow * priceLatest) / (10n ** 18n)
+      // 1% buffer to avoid overflow if price drops before mine
       const buffer = maxPay / 100n > 0n ? maxPay / 100n : 1n
       const maxPayWithBuffer = maxPay > buffer ? maxPay - buffer : 0n
       if (payAmount > maxPayWithBuffer) {
@@ -174,7 +178,7 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
     const erc20 = new ethers.Contract(pyusd as string, marketToken_abi as any, signer)
     const auction = new ethers.Contract(auctionAddress as string, dutchAuction_abi as any, signer)
 
-    // Check current allowance and approve if needed
+    // Check current allowance and approve if needed (approve to Treasury)
     try {
       const cur: bigint = await erc20.allowance(address, treasury as string)
       if (cur < payAmount) {
@@ -197,7 +201,7 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
       throw new Error(msg)
     }
 
-    // Proceed to buy
+    // Proceed to buy using 6d payAmount
     try {
       setIsBuying(true)
       const tx2 = await auction.buyLiquidity(payAmount)

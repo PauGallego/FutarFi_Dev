@@ -157,7 +157,7 @@ export default function NewProposalPage() {
         setIsConfirmed(true)
         toast({
           title: "Proposal Created",
-          description: "Your proposal has been submitted successfully.",
+          description: "Your proposal will use the Pyth price (scaled to 6 decimals) at auction start.",
         })
         router.push("/proposals")
       } else {
@@ -278,6 +278,7 @@ export default function NewProposalPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">Note: Initial auction price is read from the selected Pyth feed and scaled to 6 decimals (PyUSD).</p>
             </div>
 
             {/* MinToOpen + MaxCap */}
