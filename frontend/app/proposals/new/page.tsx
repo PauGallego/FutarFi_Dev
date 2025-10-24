@@ -131,14 +131,16 @@ export default function NewProposalPage() {
         signer
       )
 
+      const to18 = (v: string) => (BigInt(v) * (10n ** 18n))
+
       const tx = await contract.createProposal(
         formData.title,
         formData.description,
         BigInt(formData.auctionDuration) * BigInt(86400),
         BigInt(formData.liveDuration) * BigInt(86400),
         formData.subjectToken,
-        BigInt(formData.minToOpen),
-        BigInt(formData.maxCap),
+        to18(formData.minToOpen),
+        to18(formData.maxCap),
         targetAddressArg,
         formData.calldata ? (formData.calldata as `0x${string}`) : "0x",
         formData.pythAddress as `0x${string}`,

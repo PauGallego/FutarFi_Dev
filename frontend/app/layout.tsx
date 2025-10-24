@@ -6,6 +6,7 @@ import { Providers } from "./providers"
 import { Navigation } from "@/components/navigation"
 import { Toaster } from "@/components/ui/toaster"
 import { Suspense } from "react"
+import { Toaster as SonnerToaster } from "sonner"
 import "@/styles/globals.css"
 
 export const metadata: Metadata = {
@@ -29,7 +30,10 @@ export default function RootLayout({
             </Suspense>
           </div>
           <Suspense fallback={<div>Loading...</div>}>
+            {/* Shadcn toaster (used by use-toast) */}
             <Toaster />
+            {/* Sonner toaster (used by import { toast } from 'sonner') */}
+            <SonnerToaster richColors position="top-center" />
           </Suspense>
         </Providers>
       </body>

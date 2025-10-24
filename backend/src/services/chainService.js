@@ -299,27 +299,19 @@ async function readProposalSnapshot(proposalAddr) {
     }
   } catch (_) { no = null; }
 
-  // Token caps/supply only if market tokens exist
+  // Tokens: tokensSold = totalSupply; currentPrice is already priceNow in readAuctionSnapshot
   try {
     if (yes && yes.marketToken && yes.marketToken !== '0x0000000000000000000000000000000000000000') {
       const yesTokenC = getContract(yes.marketToken, TOKEN_MIN_ABI, false);
-      const [yesSupply, yesCap] = await Promise.all([
-        yesTokenC.totalSupply().catch(() => 0n), yesTokenC.cap().catch(() => 0n)
-      ]);
+      const yesSupply = await yesTokenC.totalSupply().catch(() => 0n);
       yes.tokensSold = toStr(yesSupply);
-      yes.maxTokenCap = toStr(yesCap);
-      yes.minTokenCap = toStr(yes.minToOpen);
     }
   } catch (_) {}
   try {
     if (no && no.marketToken && no.marketToken !== '0x0000000000000000000000000000000000000000') {
       const noTokenC  = getContract(no.marketToken, TOKEN_MIN_ABI, false);
-      const [noSupply, noCap] = await Promise.all([
-        noTokenC.totalSupply().catch(() => 0n), noTokenC.cap().catch(() => 0n)
-      ]);
+      const noSupply = await noTokenC.totalSupply().catch(() => 0n);
       no.tokensSold = toStr(noSupply);
-      no.maxTokenCap = toStr(noCap);
-      no.minTokenCap = toStr(no.minToOpen);
     }
   } catch (_) {}
 
@@ -343,8 +335,6 @@ async function readProposalSnapshot(proposalAddr) {
       cap: toStr(maxCap),
       currentPrice: '0',
       tokensSold: '0',
-      maxTokenCap: '0',
-      minTokenCap: toStr(minToOpen),
       finalized: false,
       isValid: true,
       isCanceled: false
@@ -365,8 +355,6 @@ async function readProposalSnapshot(proposalAddr) {
       cap: toStr(maxCap),
       currentPrice: '0',
       tokensSold: '0',
-      maxTokenCap: '0',
-      minTokenCap: toStr(minToOpen),
       finalized: false,
       isValid: true,
       isCanceled: false
@@ -374,6 +362,8 @@ async function readProposalSnapshot(proposalAddr) {
   }
 
   return {
+    proposalAddress: toAddr(proposalAddr),
+    proposalContractId: toStr(id),
     admin: toAddr(admin),
     state: stateEnum,
     title: metaTitle ? String(metaTitle) : undefined,
@@ -386,31 +376,7 @@ async function readProposalSnapshot(proposalAddr) {
     target: toAddr('0x0000000000000000000000000000000000000000'),
     data: '0x',
     marketAddress: undefined,
-    proposalAddress: toAddr(proposalAddr),
-    proposalContractId: toStr(id),
     auctions: (yes || no) ? { yes: yes || null, no: no || null } : null
-  };
-}
-
-async function readAuctionSnapshot(auctionAddr) {
-  const a = getContract(auctionAddr, AUCTION_ABI, false);
-  const [priceStart, start, end, minToOpen, admin, treasury, pyusd, marketToken, priceNow, isFinalized, isValid, isCanceled] = await Promise.all([
-    a.PRICE_START(), a.START_TIME(), a.END_TIME(), a.MIN_TO_OPEN(), a.ADMIN(), a.TREASURY(), a.PYUSD(), a.MARKET_TOKEN(), a.priceNow(), a.isFinalized(), a.isValid(), a.isCanceled()
-  ]);
-  return {
-    auctionAddress: toAddr(auctionAddr),
-    marketToken: toAddr(marketToken),
-    pyusd: toAddr(pyusd),
-    treasury: toAddr(treasury),
-    admin: toAddr(admin),
-    startTime: toNum(start),
-    endTime: toNum(end),
-    priceStart: toStr(priceStart),
-    minToOpen: toStr(minToOpen),
-    currentPrice: toStr(priceNow),
-    finalized: !!isFinalized,
-    isValid: !!isValid,
-    isCanceled: !!isCanceled
   };
 }
 
@@ -421,9 +387,6 @@ async function upsertProposalAndAuctions(snapshot) {
   // Provide fallbacks for required fields not on-chain
   const fallbackTitle = snapshot.title ?? `Proposal #${snapshot.id}`;
   const fallbackDesc = snapshot.description ?? 'Synced from chain';
-
-  // Build auctions snapshot now
-  const auctionsSnapshot = { yes: snapshot.auctions?.yes || null, no: snapshot.auctions?.no || null };
 
   // Find by contract address or on-chain id
   const query = snapshot.proposalAddress
@@ -484,7 +447,7 @@ async function upsertProposalAndAuctions(snapshot) {
 
   const proposalIdStr = String(doc.id);
 
-  // Upsert Auction docs
+  // Upsert Auction docs (without maxTokenCap/minTokenCap)
   const upsertAuction = async (side, a) => {
     if (!a || !a.auctionAddress) return;
     const payload = {
@@ -502,8 +465,6 @@ async function upsertProposalAndAuctions(snapshot) {
       cap: a.cap ?? snapshot.maxSupply,
       currentPrice: a.currentPrice,
       tokensSold: a.tokensSold,
-      maxTokenCap: a.maxTokenCap,
-      minTokenCap: a.minTokenCap,
       finalized: a.finalized,
       isValid: a.isValid,
       isCanceled: a.isCanceled

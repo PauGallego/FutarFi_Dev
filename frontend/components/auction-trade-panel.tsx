@@ -23,20 +23,20 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
     useAuctionBuy({ proposalAddress, side: selectedMarket })
 
   const currentPrice = useMemo(() => {
-    if (onchainPrice && onchainPrice > 0n) return Number(onchainPrice) / 1_000_000 // to USDC
+    if (onchainPrice && onchainPrice > 0n) return Number(onchainPrice) / 1_000_000
     return selectedMarket === "YES" ? auctionData.yesCurrentPrice : auctionData.noCurrentPrice
   }, [onchainPrice, selectedMarket, auctionData])
-  const estimatedTokens = amount ? (Number.parseFloat(amount) / currentPrice).toFixed(4) : "0.00"
+  const estimatedTokens = amount ? (Number.parseFloat(amount) / currentPrice).toFixed(2) : "0.00"
 
   const canBuy = isConnected && !!amount && !isApproving && !isBuying && !!proposalAddress
   const handleBid = async () => {
     if (!canBuy) return
     try {
       await approveAndBuy()
-      toast.success("Bid placed!", { description: `${amount} USDC for ${estimatedTokens} ${selectedMarket} tokens` })
+      toast.success("Liquidity added!", { description: `${amount} USDC for ${estimatedTokens} ${selectedMarket} tokens` })
       setAmount("")
     } catch (e: any) {
-      toast.error("Bid failed", { description: error || e?.message })
+      toast.error("Liquidity failed", { description: error || e?.message })
     }
   }
 
@@ -92,7 +92,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
           </div>
 
           <div>
-            <CardTitle className="text-lg">Place Bid</CardTitle>
+            <CardTitle className="text-lg">Add Liquidity</CardTitle>
             <CardDescription>Buy {selectedMarket} tokens at current auction price</CardDescription>
           </div>
         </CardHeader>
@@ -127,7 +127,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
           <div className="rounded-lg border bg-muted/50 p-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Current Price:</span>
-              <span className="font-mono">${currentPrice.toFixed(4)}</span>
+              <span className="font-mono">${currentPrice.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Estimated Tokens:</span>
@@ -144,7 +144,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
           </div>
 
           <Button className="w-full" onClick={handleBid} disabled={!canBuy}>
-            {isApproving ? "Approving..." : isBuying ? "Buying..." : "Place Bid"}
+            {isApproving ? "Approving..." : isBuying ? "Buying..." : "Add Liquidity"}
           </Button>
         </CardContent>
       </Card>

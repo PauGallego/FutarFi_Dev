@@ -81,26 +81,95 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
 
   const doApproveAndBuy = useCallback(async () => {
     setError(null)
-    if (!address || !pyusd || !treasury || !auctionAddress) return
+    // Required preconditions
+    if (!address) {
+      const err = "Connect wallet"
+      setError(err)
+      throw new Error(err)
+    }
+    if (!pyusd) {
+      const err = "Token not configured for this network"
+      setError(err)
+      throw new Error(err)
+    }
+    if (!treasury) {
+      const err = "Treasury not ready"
+      setError(err)
+      throw new Error(err)
+    }
+    if (!auctionAddress) {
+      const err = "Auction not ready"
+      setError(err)
+      throw new Error(err)
+    }
+
     const pay = parseUnits(amount || "0", 6)
-    if (pay === 0n) return
+    if (pay === 0n) {
+      const err = "Enter an amount greater than 0"
+      setError(err)
+      throw new Error(err)
+    }
 
     // Setup ethers provider/signer
     const anyWindow = window as any
     if (!anyWindow?.ethereum) {
-      setError("No wallet found")
-      return
+      const err = "No wallet found"
+      setError(err)
+      throw new Error(err)
     }
     const provider = new ethers.BrowserProvider(anyWindow.ethereum)
     const signer = await provider.getSigner()
 
-    // Optional: ensure network matches UI chainId
     try {
       const net = await provider.getNetwork()
-      if (Number(net.chainId) !== chainId) {
-        console.warn(`Network mismatch: provider ${Number(net.chainId)} vs UI ${chainId}`)
+      if (chainId && Number(net.chainId) !== chainId) {
+        try {
+          await anyWindow.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${chainId.toString(16)}` }] })
+        } catch {}
       }
     } catch {}
+
+    // Fresh preflight: auction live and supply available
+    let payAmount = pay
+    try {
+      if (!publicClient) throw new Error('No client')
+      const [priceLatest, capNow, tsNow, pyusdNow] = await Promise.all([
+        publicClient.readContract({ address: auctionAddress as `0x${string}`, abi: dutchAuction_abi, functionName: 'priceNow' }) as Promise<bigint>,
+        publicClient.readContract({ address: marketToken as `0x${string}`, abi: marketToken_abi, functionName: 'cap' }) as Promise<bigint>,
+        publicClient.readContract({ address: marketToken as `0x${string}`, abi: marketToken_abi, functionName: 'totalSupply' }) as Promise<bigint>,
+        publicClient.readContract({ address: pyusd as `0x${string}`, abi: marketToken_abi, functionName: 'balanceOf', args: [address as `0x${string}`] }) as Promise<bigint>,
+      ])
+      if (priceLatest === 0n) {
+        const err = 'Auction ended'
+        setError(err)
+        throw new Error(err)
+      }
+      if (tsNow >= capNow) {
+        const err = 'Sold out'
+        setError(err)
+        throw new Error(err)
+      }
+      const remainingNow = capNow - tsNow
+      const maxPay = (remainingNow * priceLatest) / 10n**18n
+      // apply 1% buffer to avoid cap overflow if price declines slightly between signing and mining
+      const buffer = maxPay / 100n > 0n ? maxPay / 100n : 1n
+      const maxPayWithBuffer = maxPay > buffer ? maxPay - buffer : 0n
+      if (payAmount > maxPayWithBuffer) {
+        payAmount = maxPayWithBuffer
+      }
+      if (payAmount <= 0n) {
+        const err = 'Amount too high for remaining capacity'
+        setError(err)
+        throw new Error(err)
+      }
+      if (payAmount > (pyusdNow ?? 0n)) {
+        const err = 'Insufficient PyUSD balance'
+        setError(err)
+        throw new Error(err)
+      }
+    } catch (e) {
+      throw e
+    }
 
     const erc20 = new ethers.Contract(pyusd as string, marketToken_abi as any, signer)
     const auction = new ethers.Contract(auctionAddress as string, dutchAuction_abi as any, signer)
@@ -108,39 +177,43 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
     // Check current allowance and approve if needed
     try {
       const cur: bigint = await erc20.allowance(address, treasury as string)
-      if (cur < pay) {
+      if (cur < payAmount) {
         setIsApproving(true)
-        const tx = await erc20.approve(treasury as string, pay)
+        const tx = await erc20.approve(treasury as string, payAmount)
         setLastHash(tx.hash)
         const rcpt = await tx.wait(1)
         if (!rcpt || (rcpt.status !== 1n && rcpt.status !== 1)) {
           setIsApproving(false)
-          setError("Approve failed on-chain")
-          return
+          const err = "Approve failed on-chain"
+          setError(err)
+          throw new Error(err)
         }
         setIsApproving(false)
       }
     } catch (e: any) {
       setIsApproving(false)
-      setError(e?.shortMessage || e?.message || "Approve failed")
-      return
+      const msg = e?.shortMessage || e?.message || "Approve failed"
+      setError(msg)
+      throw new Error(msg)
     }
 
     // Proceed to buy
     try {
       setIsBuying(true)
-      const tx2 = await auction.buyLiquidity(pay)
+      const tx2 = await auction.buyLiquidity(payAmount)
       setLastHash(tx2.hash)
       const rcpt2 = await tx2.wait(1)
       if (!rcpt2 || (rcpt2.status !== 1n && rcpt2.status !== 1)) {
-        setError("Buy failed on-chain")
-        return
+        const err = "Buy failed on-chain"
+        setError(err)
+        throw new Error(err)
       }
       // Refresh balances immediately after success
       await refetchOnchain()
     } catch (e: any) {
-      setError(e?.shortMessage || e?.message || "Buy failed")
-      return
+      const msg = e?.shortMessage || e?.message || "Buy failed"
+      setError(msg)
+      throw new Error(msg)
     } finally {
       setIsBuying(false)
     }
