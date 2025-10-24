@@ -9,6 +9,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IDutchAuction} from "../interfaces/IDutchAuction.sol";
 import {ITreasury} from "../interfaces/ITreasury.sol";
 import {IProposal} from "../interfaces/IProposal.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice Buyer supplies PYUSD and receives YES/NO tokens at the linear price at that moment.
 /// @dev Collects PYUSD into Treasury and mints tokens to the buyer (mint-on-buy).
@@ -121,17 +122,11 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         uint256 price = actualPrice;
         uint256 tokensOut = (_payAmount * 1e6) / price;
 
-        if (MARKET_TOKEN.totalSupply() + tokensOut > MARKET_TOKEN.cap()) revert OverCap();
-        // future permit implementation
-        // pyUSD.permit(
-        //     msg.sender,
-        //     treasury,
-        //     _payAmount,
-        //     permit.deadline,
-        //     permit.v,
-        //     permit.r,
-        //     permit.s
-        // );
+        uint256 tokensRemain = MARKET_TOKEN.cap() - MARKET_TOKEN.totalSupply();
+        tokensOut = Math.min(tokensOut, tokensRemain);
+
+        // adjust payAmount if hitting cap
+        if (tokensOut == tokensRemain)_payAmount = (tokensOut * price) / 1e6;
 
         // approval must be given beforehand
         ITreasury(TREASURY).fundFromAuction(msg.sender, _payAmount);

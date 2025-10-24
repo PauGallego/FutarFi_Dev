@@ -106,19 +106,29 @@ contract DutchAuctionTest is Test {
     // test buying all tokens up to cap and verify that auction finalizes
     function test_BuyLiquidity_upToCapAndFinalize() public {
         uint256 price = yesAuction.priceNow();
-        uint256 tokensToBuy = CAP - yesToken.totalSupply(); // buy up to cap
+
+        // buy over the cap, must buy only up to cap and return the rest
+        uint256 tokensToBuy = (CAP - yesToken.totalSupply() ) + 1; // buy up to cap
         uint256 payAmount = (tokensToBuy * price) / 1e6;
 
+        uint256 buyerInitialPYUSD = pyusd.balanceOf(buyer);
         // buyer buys
         vm.startPrank(buyer);
         pyusd.approve(address(treasury), type(uint256).max);
         yesAuction.buyLiquidity(payAmount);
         vm.stopPrank();
+        uint256 buyerFinalPYUSD = pyusd.balanceOf(buyer);
+        // check PYUSD spent
+        assertApproxEqAbs(buyerInitialPYUSD - buyerFinalPYUSD, payAmount, 10000, "PYUSD spent should equal payAmount");
+
+        // check tokens received
+        uint256 expectedTokens = (payAmount * 1e6) / price;
+        assertEq(yesToken.balanceOf(buyer), expectedTokens, "Buyer should receive expected tokens");
 
         // auction should be finalized
         assertEq(yesToken.totalSupply(), CAP, "Yes token total supply should equal cap");
         assertTrue(yesAuction.isFinalized(), "Auction should be finalized");
-        assertEq(yesToken.balanceOf(buyer), tokensToBuy, "Buyer should have all tokens up to cap");
+        assertApproxEqAbs(yesToken.balanceOf(buyer), tokensToBuy, 1, "Buyer should have all tokens up to cap");
     }
 
 
