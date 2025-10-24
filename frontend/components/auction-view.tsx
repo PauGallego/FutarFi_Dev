@@ -6,12 +6,14 @@ import { Progress } from "@/components/ui/progress"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Dot } from "recharts"
 import type { AuctionData, UserBalance } from "@/lib/types"
 import { formatUnits } from "viem"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { Clock } from "lucide-react"
 import { useTheme } from "next-themes"
-import { useAccount, useReadContract } from "wagmi"
+import { useAccount, useReadContract, usePublicClient } from "wagmi"
 import { proposal_abi } from "@/contracts/proposal-abi"
 import { marketToken_abi } from "@/contracts/marketToken-abi"
+import { dutchAuction_abi } from "@/contracts/dutchAuction-abi"
+import { treasury_abi } from "@/contracts/treasury-abi"
 
 interface AuctionViewProps {
   auctionData: AuctionData
@@ -62,16 +64,23 @@ function useCountdown(endTime: bigint) {
 export function AuctionView({ auctionData, userBalance, proposalAddress }: AuctionViewProps) {
   const { resolvedTheme } = useTheme()
   const { address } = useAccount()
+  const publicClient = usePublicClient()
   const isDark = resolvedTheme === "dark"
   const lineColor = isDark ? "#22c55e" : "#000000" // green in dark, black in light
   const textColor = lineColor
   const timeLeft = useCountdown(auctionData.auctionEndTime)
   const totalBids = auctionData.yesTotalBids + auctionData.noTotalBids
-  const isSuccessful = totalBids >= auctionData.minimumRequired
 
   // Onchain token addresses
   const { data: yesTokenAddr } = useReadContract({ address: proposalAddress, abi: proposal_abi, functionName: "yesToken" })
   const { data: noTokenAddr } = useReadContract({ address: proposalAddress, abi: proposal_abi, functionName: "noToken" })
+  // Onchain auction addresses (for current on-chain price)
+  const { data: yesAuctionAddr } = useReadContract({ address: proposalAddress, abi: proposal_abi, functionName: "yesAuction" })
+  const { data: noAuctionAddr } = useReadContract({ address: proposalAddress, abi: proposal_abi, functionName: "noAuction" })
+  const { data: treasuryAddr } = useReadContract({ address: proposalAddress, abi: proposal_abi, functionName: "treasury" })
+  // Onchain minimum required to open (PyUSD, 6d or 18d per contract). Here it's uint256, represents PyUSD amount.
+  const { data: minToOpen } = useReadContract({ address: proposalAddress, abi: proposal_abi, functionName: "minToOpen" })
+  const minimumRequired = (typeof minToOpen === "bigint" ? minToOpen : auctionData.minimumRequired)
 
   // Onchain remaining (cap - totalSupply) and user balances
   const { data: yesCap } = useReadContract({ address: yesTokenAddr as `0x${string}` | undefined, abi: marketToken_abi, functionName: "cap" })
@@ -83,24 +92,44 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
   const { data: yesUserBal } = useReadContract({ address: yesTokenAddr as `0x${string}` | undefined, abi: marketToken_abi, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] })
   const { data: noUserBal } = useReadContract({ address: noTokenAddr as `0x${string}` | undefined, abi: marketToken_abi, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] })
 
-  console.log("yesCap", yesCap)
-  console.log("yesSupply", yesSupply)
-  console.log("noCap", noCap)
-  console.log("noSupply", noSupply)
+  // On-chain raised amounts (PyUSD, 6d) from Treasury
+  const { data: potYes } = useReadContract({ address: treasuryAddr as `0x${string}` | undefined, abi: treasury_abi, functionName: "potYes" })
+  const { data: potNo } = useReadContract({ address: treasuryAddr as `0x${string}` | undefined, abi: treasury_abi, functionName: "potNo" })
 
+  // On-chain current price (6 decimals) like the trade panel
+  const { data: yesPrice6d } = useReadContract({ address: yesAuctionAddr as `0x${string}` | undefined, abi: dutchAuction_abi, functionName: "priceNow" })
+  const { data: noPrice6d } = useReadContract({ address: noAuctionAddr as `0x${string}` | undefined, abi: dutchAuction_abi, functionName: "priceNow" })
+
+  // Local overrides to allow instant updates after tx + periodic polling
+  const [yesRemOverride, setYesRemOverride] = useState<bigint | undefined>(undefined)
+  const [noRemOverride, setNoRemOverride] = useState<bigint | undefined>(undefined)
+  const [yesBalOverride, setYesBalOverride] = useState<bigint | undefined>(undefined)
+  const [noBalOverride, setNoBalOverride] = useState<bigint | undefined>(undefined)
+  const [yesPriceNow, setYesPriceNow] = useState<number>(auctionData.yesCurrentPrice)
+  const [noPriceNow, setNoPriceNow] = useState<number>(auctionData.noCurrentPrice)
+  const [raisedOverride, setRaisedOverride] = useState<bigint | undefined>(undefined)
+
+  useEffect(() => { if (typeof yesPrice6d === "bigint") setYesPriceNow(Number(yesPrice6d) / 1_000_000) }, [yesPrice6d])
+  useEffect(() => { if (typeof noPrice6d === "bigint") setNoPriceNow(Number(noPrice6d) / 1_000_000) }, [noPrice6d])
+
+  // Compute remaining using overrides first, then on-chain read, then fallback to provided auctionData
   const yesRemaining = useMemo(() => {
+    if (typeof yesRemOverride === "bigint") return yesRemOverride
     if (typeof yesCap === "bigint" && typeof yesSupply === "bigint") return yesCap - yesSupply
     return auctionData.yesRemainingMintable
-  }, [yesCap, yesSupply, auctionData.yesRemainingMintable])
+  }, [yesRemOverride, yesCap, yesSupply, auctionData.yesRemainingMintable])
+
   const noRemaining = useMemo(() => {
+    if (typeof noRemOverride === "bigint") return noRemOverride
     if (typeof noCap === "bigint" && typeof noSupply === "bigint") return noCap - noSupply
     return auctionData.noRemainingMintable
-  }, [noCap, noSupply, auctionData.noRemainingMintable])
+  }, [noRemOverride, noCap, noSupply, auctionData.noRemainingMintable])
 
   const yesRemainingPercent = useMemo(() => {
     if (typeof yesCap === "bigint" && yesCap > 0n) return Number((yesRemaining * 100n) / yesCap)
     return Number((yesRemaining * 100n) / (auctionData.yesRemainingMintable + auctionData.yesTotalBids))
   }, [yesCap, yesRemaining, auctionData.yesRemainingMintable, auctionData.yesTotalBids])
+
   const noRemainingPercent = useMemo(() => {
     if (typeof noCap === "bigint" && noCap > 0n) return Number((noRemaining * 100n) / noCap)
     return Number((noRemaining * 100n) / (auctionData.noRemainingMintable + auctionData.noTotalBids))
@@ -125,6 +154,87 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
     isCurrent: true,
   }
   const chartDataWithCurrent = [...chartData, currentPoint]
+
+  // Manual refetch to update instantly after tx and every 10s
+  const refetchNow = useCallback(async () => {
+    try {
+      if (!publicClient) return
+      // Prices
+      if (yesAuctionAddr) {
+        const p: bigint = await publicClient.readContract({ address: yesAuctionAddr as any, abi: dutchAuction_abi, functionName: "priceNow" })
+        setYesPriceNow(Number(p) / 1_000_000)
+      }
+      if (noAuctionAddr) {
+        const p: bigint = await publicClient.readContract({ address: noAuctionAddr as any, abi: dutchAuction_abi, functionName: "priceNow" })
+        setNoPriceNow(Number(p) / 1_000_000)
+      }
+      // Remaining caps
+      if (yesTokenAddr) {
+        const [capNow, tsNow] = await Promise.all([
+          publicClient.readContract({ address: yesTokenAddr as any, abi: marketToken_abi, functionName: "cap" }) as Promise<bigint>,
+          publicClient.readContract({ address: yesTokenAddr as any, abi: marketToken_abi, functionName: "totalSupply" }) as Promise<bigint>,
+        ])
+        setYesRemOverride((capNow ?? 0n) - (tsNow ?? 0n))
+      }
+      if (noTokenAddr) {
+        const [capNow, tsNow] = await Promise.all([
+          publicClient.readContract({ address: noTokenAddr as any, abi: marketToken_abi, functionName: "cap" }) as Promise<bigint>,
+          publicClient.readContract({ address: noTokenAddr as any, abi: marketToken_abi, functionName: "totalSupply" }) as Promise<bigint>,
+        ])
+        setNoRemOverride((capNow ?? 0n) - (tsNow ?? 0n))
+      }
+      // User balances
+      if (address && yesTokenAddr) {
+        const bal: bigint = await publicClient.readContract({ address: yesTokenAddr as any, abi: marketToken_abi, functionName: "balanceOf", args: [address] })
+        setYesBalOverride(bal ?? 0n)
+      }
+      if (address && noTokenAddr) {
+        const bal: bigint = await publicClient.readContract({ address: noTokenAddr as any, abi: marketToken_abi, functionName: "balanceOf", args: [address] })
+        setNoBalOverride(bal ?? 0n)
+      }
+      // Treasury raised (PyUSD 6d)
+      if (treasuryAddr) {
+        const [py, pn] = await Promise.all([
+          publicClient.readContract({ address: treasuryAddr as any, abi: treasury_abi, functionName: "potYes" }) as Promise<bigint>,
+          publicClient.readContract({ address: treasuryAddr as any, abi: treasury_abi, functionName: "potNo" }) as Promise<bigint>,
+        ])
+        setRaisedOverride((py ?? 0n) + (pn ?? 0n))
+      }
+    } catch {
+      // silent
+    }
+  }, [publicClient, yesAuctionAddr, noAuctionAddr, yesTokenAddr, noTokenAddr, address, treasuryAddr])
+
+  useEffect(() => {
+    const onTx = () => { void refetchNow() }
+    window.addEventListener("auction:tx", onTx)
+    const id = setInterval(() => { void refetchNow() }, 10_000)
+    return () => {
+      window.removeEventListener("auction:tx", onTx)
+      clearInterval(id)
+    }
+  }, [refetchNow])
+
+  // Keep overrides in sync with baseline reads if they were not set yet
+  useEffect(() => { if (yesBalOverride === undefined && typeof yesUserBal === "bigint") setYesBalOverride(yesUserBal) }, [yesBalOverride, yesUserBal])
+  useEffect(() => { if (noBalOverride === undefined && typeof noUserBal === "bigint") setNoBalOverride(noUserBal) }, [noBalOverride, noUserBal])
+
+  // Compute total raised (PyUSD 6d) preferring on-chain Treasury values
+  const totalRaised = useMemo(() => {
+    if (typeof raisedOverride === "bigint") return raisedOverride
+    if (typeof potYes === "bigint" || typeof potNo === "bigint") return ((potYes as bigint) ?? 0n) + ((potNo as bigint) ?? 0n)
+    // fallback to provided auctionData sums if present (assumed 6d)
+    return (auctionData.yesTotalBids ?? 0n) + (auctionData.noTotalBids ?? 0n)
+  }, [raisedOverride, potYes, potNo, auctionData.yesTotalBids, auctionData.noTotalBids])
+  const isSuccessful = totalRaised >= minimumRequired
+
+  // Percent progress toward minimum required (total raised vs minimum)
+  const minProgressPercent = useMemo(() => {
+    if ((minimumRequired ?? 0n) <= 0n) return 100
+    const pctTimes10 = (totalRaised * 1000n) / minimumRequired // one decimal precision
+    const pct = Number(pctTimes10) / 10
+    return pct > 100 ? 100 : pct
+  }, [totalRaised, minimumRequired])
 
   return (
     <div className="space-y-6">
@@ -206,7 +316,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
           <CardContent className="space-y-4">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Current Price</p>
-              <p className="text-3xl font-bold text-primary">${auctionData.yesCurrentPrice.toFixed(4)}</p>
+              <p className="text-3xl font-bold text-primary">${yesPriceNow.toFixed(4)}</p>
             </div>
 
             <div className="space-y-2">
@@ -218,9 +328,19 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
               <p className="text-xs text-muted-foreground text-right">{yesRemainingPercent.toFixed(1)}% remaining</p>
             </div>
 
+            {/* Progress to Minimum */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">To Minimum</span>
+                <span className="font-mono text-foreground">{minProgressPercent.toFixed(1)}%</span>
+              </div>
+              <Progress value={minProgressPercent} className="h-2 bg-primary/20" />
+              <p className="text-xs text-muted-foreground text-right">{minProgressPercent.toFixed(1)}% of minimum</p>
+            </div>
+
             <div className="pt-2 border-t border-primary/20">
               <p className="text-xs text-muted-foreground mb-1">Your Balance</p>
-              <p className="font-mono text-lg text-foreground">{formatUnits((yesUserBal as bigint) ?? userBalance.yesTokens, (yesDecimals as number) ?? 18)}</p>
+              <p className="font-mono text-lg text-foreground">{(Number((yesBalOverride ?? yesUserBal) ?? 0n) / 1e6).toFixed(6)}</p>
             </div>
           </CardContent>
         </Card>
@@ -233,7 +353,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
           <CardContent className="space-y-4">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Current Price</p>
-              <p className="text-3xl font-bold text-destructive">${auctionData.noCurrentPrice.toFixed(4)}</p>
+              <p className="text-3xl font-bold text-destructive">${noPriceNow.toFixed(4)}</p>
             </div>
 
             <div className="space-y-2">
@@ -245,9 +365,19 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
               <p className="text-xs text-muted-foreground text-right">{noRemainingPercent.toFixed(1)}% remaining</p>
             </div>
 
+            {/* Progress to Minimum */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">To Minimum</span>
+                <span className="font-mono text-foreground">{minProgressPercent.toFixed(1)}%</span>
+              </div>
+              <Progress value={minProgressPercent} className="h-2 bg-destructive/20 [&>div]:bg-destructive" />
+              <p className="text-xs text-muted-foreground text-right">{minProgressPercent.toFixed(1)}% of minimum</p>
+            </div>
+
             <div className="pt-2 border-t border-destructive/20">
               <p className="text-xs text-muted-foreground mb-1">Your Balance</p>
-              <p className="font-mono text-lg text-foreground">{formatUnits((noUserBal as bigint) ?? userBalance.noTokens, (noDecimals as number) ?? 18)}</p>
+              <p className="font-mono text-lg text-foreground">{(Number((noBalOverride ?? noUserBal) ?? 0n) / 1e6).toFixed(6)}</p>
             </div>
           </CardContent>
         </Card>

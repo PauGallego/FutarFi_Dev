@@ -193,6 +193,7 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
           throw new Error(err)
         }
         setIsApproving(false)
+        try { window.dispatchEvent(new Event('auction:tx')) } catch {}
       }
     } catch (e: any) {
       setIsApproving(false)
@@ -214,6 +215,7 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
       }
       // Refresh balances immediately after success
       await refetchOnchain()
+      try { window.dispatchEvent(new Event('auction:tx')) } catch {}
     } catch (e: any) {
       const msg = e?.shortMessage || e?.message || "Buy failed"
       setError(msg)
