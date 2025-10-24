@@ -14,8 +14,8 @@ export type WalletAuth = {
 
 const STORAGE_KEY = "futarfi:walletAuth"
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"
-// Reverification TTL set to 1 hour
-const AUTH_TTL_MS = 60 * 60 * 1000
+// Reverification TTL set to 59 minutes
+const AUTH_TTL_MS = 59 * 60 * 1000
 
 // Deduplicate concurrent ensureAuth calls across the whole app
 let globalEnsureAuthPromise: Promise<WalletAuth | null> | null = null
@@ -56,6 +56,9 @@ export function useWalletAuth() {
   const currentAddr = (address || "").toLowerCase()
   const authAddr = (auth?.address || "").toLowerCase()
 
+  // Track if the session had a real connection to avoid clearing on initial hydration
+  const hadConnectedRef = useRef(false)
+
   const clearAuth = useCallback(() => {
     writeStoredAuth(null)
     setAuth(null)
@@ -80,7 +83,8 @@ export function useWalletAuth() {
     }
   }, [])
 
-  const ensureAuth = useCallback(async () => {
+  // When forceResign is true, we will always request a fresh message and signature
+  const ensureAuth = useCallback(async (forceResign: boolean = false) => {
     if (!isConnected || !address) return null
 
     const addrLc = (address || "").toLowerCase()
@@ -97,8 +101,8 @@ export function useWalletAuth() {
       }
     }
 
-    // Small debounce to avoid rapid back-to-back prompts
-    if (Date.now() - lastEnsureAt < ENSURE_DEBOUNCE_MS) {
+    // Small debounce to avoid rapid back-to-back prompts (skip when forced)
+    if (!forceResign && Date.now() - lastEnsureAt < ENSURE_DEBOUNCE_MS) {
       const stored = readStoredAuth()
       if (stored && (stored.address || "").toLowerCase() === currentAddr) {
         setAuth(stored)
@@ -112,10 +116,9 @@ export function useWalletAuth() {
     globalEnsureAuthForAddr = addrLc
     globalEnsureAuthPromise = (async () => {
       try {
-        // 1) If we have stored auth for the same address, verify or trust within TTL
+        // 1) Prefer reusing stored auth even on address change if still valid
         const stored = readStoredAuth()
-        if (stored && (stored.address || "").toLowerCase() === currentAddr) {
-          // Trust cached auth if verified within the last hour
+        if (!forceResign && stored && (stored.address || "").toLowerCase() === currentAddr) {
           if (stored.verified && stored.verifiedAt && Date.now() - stored.verifiedAt < AUTH_TTL_MS) {
             setAuth(stored)
             return stored
@@ -127,7 +130,7 @@ export function useWalletAuth() {
             setAuth(updated)
             return updated
           }
-          // stale/invalid -> clear and recreate
+          // Only clear when server says invalid
           writeStoredAuth(null)
         }
 
@@ -151,7 +154,7 @@ export function useWalletAuth() {
           signature,
         }
 
-        // 4) Verify with backend (optional but recommended)
+        // 4) Verify with backend
         const verified = await verifyAuthWithServer(candidate)
         const final: WalletAuth = {
           ...candidate,
@@ -180,14 +183,12 @@ export function useWalletAuth() {
     }
   }, [isConnected, address, currentAddr, signMessageAsync, verifyAuthWithServer])
 
-  // Keep in sync with account changes (do NOT clear on disconnect; only clear if connected and address changes)
+  // Do not proactively clear on disconnect or address change; persistence across F5/sessions
   useEffect(() => {
     if (isConnected && address) {
-      if (auth && authAddr && authAddr !== currentAddr) {
-        clearAuth()
-      }
+      hadConnectedRef.current = true
     }
-  }, [isConnected, address, currentAddr, auth, authAddr, clearAuth])
+  }, [isConnected, address])
 
   return {
     auth,
