@@ -9,6 +9,15 @@ import {Treasury} from "../core/Treasury.sol";
 interface IProposal {
     enum State { Auction, Live, Resolved, Cancelled }
 
+    struct Trade {
+        address seller;
+        address buyer;
+        address outcomeToken;    // address of outcome token being traded (tYes or tNo)
+        uint256 tokenAmount;     // amount of outcome tokens to be traded
+        uint256 pyUsdAmount;     // total cost in PyUSD for the amount of outcome tokens 
+        uint256 twapPrice;       // time-weighted average price of the outcome token
+    }
+
     function initialize(
         uint256 _id,
         address _admin,
@@ -22,12 +31,13 @@ interface IProposal {
         uint256 _maxCap,
         address _target,
         bytes memory _data,
-        address _pythAddr,
-        bytes32 _pythId
+        address _pythContract,
+        bytes32 _priceFeedId,
+        address _attestor
     ) external;
 
     function settleAuctions() external;
-    function resolve() external;
+    function applyBatch(Trade[] calldata) external;
 
     // -------- Views --------
     function state() external view returns (State);
@@ -48,5 +58,10 @@ interface IProposal {
     function noAuction() external view returns (DutchAuction);
     function yesToken() external view returns (MarketToken);
     function noToken() external view returns (MarketToken);
+    function target() external view returns (address);
+    function data() external view returns (bytes memory);
     function treasury() external view returns (Treasury);
+    function twapPriceTokenYes() external view returns (uint256);
+    function twapPriceTokenNo() external view returns (uint256);
+
 }

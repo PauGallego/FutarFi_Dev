@@ -20,7 +20,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
     address       public immutable PYUSD;      
     MarketToken   public immutable MARKET_TOKEN;    // YES/NO token, in constructor we decide which one this auction is for
     address       public immutable TREASURY;
-    address public immutable ADMIN;
+    address public immutable ATTESTOR;
 
     uint256 public immutable START_TIME;           
     uint256 public immutable END_TIME;             
@@ -51,6 +51,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         uint256 tokensOut
     );
     event AuctionisFinalized();
+    event AuctionisValid();
     event AuctionisCanceled();
 
     constructor(
@@ -60,7 +61,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         uint256 _duration,
         int64 _startPrice,
         uint256 _minToOpen,
-        address _admin
+        address _attestor
     ) Ownable(msg.sender) {
         require(_startPrice >= 0, "bad prices"); 
         PYUSD    = _pyUSD;
@@ -70,17 +71,16 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         END_TIME      = block.timestamp + _duration;
         START_PRICE   = _startPrice * 2;
         MIN_TO_OPEN    = _minToOpen;
-        ADMIN = _admin;
+        ATTESTOR = _attestor;
     }
 
-    modifier onlyAdmin() {
-        _onlyAdmin();
+    modifier onlyAttestor() {
+        _onlyAttestor();
         _;
     }
 
-    function _onlyAdmin() internal view {
-        require(msg.sender == ADMIN, "Not admin");
-        
+    function _onlyAttestor() internal view {
+        require(msg.sender == ATTESTOR, "Not attestor");
     }
 
     // ---------------- Helpers ----------------
@@ -122,6 +122,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         uint256 price = actualPrice;
         uint256 tokensOut = (_payAmount * 1e18) / price;
 
+        if (MARKET_TOKEN.totalSupply() + tokensOut > MARKET_TOKEN.cap()) revert OverCap();
         // future permit implementation
         // pyUSD.permit(
         //     msg.sender,
@@ -138,25 +139,50 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         MARKET_TOKEN.mint(msg.sender, tokensOut);
         emit LiquidityAdded(msg.sender, address(MARKET_TOKEN), _payAmount, actualPrice, tokensOut);
 
-        if (MARKET_TOKEN.totalSupply() == MARKET_TOKEN.cap()) _finalize();
-        
+        if (MARKET_TOKEN.totalSupply() == MARKET_TOKEN.cap()){
+            isValid = true;
+            isFinalized = true;
+            emit AuctionisValid();
+            _finalize();
+        } 
+        // if(!_isLive()){
+        //     if (MARKET_TOKEN.totalSupply() >= MIN_TO_OPEN){
+        //         isValid = true;
+        //         isFinalized = true;
+        //         _finalize();
+        //         emit AuctionisValid();
+        //     }
+        //     else{
+        //         isCanceled = true;
+        //         isFinalized = true;
+        //         emit AuctionisCanceled();
+        //     }
+        // }
+
     }
 
 
-    function finalize() external onlyAdmin {
+    function finalize() external onlyAttestor() {
         if (isFinalized) revert AlreadyFinalized();
-        console.log("wtf");
         if (block.timestamp >= END_TIME) {
-            if (MARKET_TOKEN.totalSupply() >= MIN_TO_OPEN) _finalize();
-            else {
-            console.log("fsdfasfds");
+            if (MARKET_TOKEN.totalSupply() >= MIN_TO_OPEN) {
+                isValid = true;
+                isFinalized = true;
+                emit AuctionisValid();
+                _finalize();
+            } else {
                 isCanceled = true;
                 isFinalized = true;
                 emit AuctionisCanceled();
+                _finalize();
             }
-        }else{
-            if (MARKET_TOKEN.totalSupply() == MARKET_TOKEN.cap()) _finalize();
-            else revert NotReadyToFinalize();
+        } else {
+            if (MARKET_TOKEN.totalSupply() == MARKET_TOKEN.cap()){
+                isValid = true;
+                isFinalized = true;
+                emit AuctionisValid();
+                _finalize();
+            } else revert NotReadyToFinalize();
         }
     }
 
@@ -168,9 +194,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
 
     /// @notice Close the auction. 
     function _finalize() private {
-        isValid = true;
-        isFinalized = true;
         IProposal(owner()).settleAuctions();
-        emit AuctionisFinalized();
+        // emit AuctionisFinalized();
     }
 }

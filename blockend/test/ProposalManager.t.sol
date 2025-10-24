@@ -3,7 +3,8 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import "../src/core/ProposalManager.sol";
-import "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
 
 /// @notice Simple mock ERC20 used as PYUSD collateral in tests
 contract MockERC20 is ERC20 {
@@ -15,16 +16,20 @@ contract MockERC20 is ERC20 {
 contract ProposalManagerBasicTest is Test {
     ProposalManager public pm;
     MockERC20 public pyusd;
-    Proposal public proposal;
+    Proposal public proposalImpl;
 
     address public bob = makeAddr("bob");
     address public alice = makeAddr("alice");
+    address public attestor = makeAddr("attestor");
+
+    address constant PYTH_CONTRACT = 0x4305FB66699C3B2702D4d05CF36551390A4c69C6;
+    bytes32 constant PYTH_ID = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
 
     function setUp() public {
         pyusd = new MockERC20();
+        proposalImpl = new Proposal();
         vm.label(address(pyusd), "pyUSD");
-        proposal = new Proposal();
-        pm = new ProposalManager(address(pyusd), address(proposal));
+        pm = new ProposalManager(address(pyusd), address(proposalImpl), attestor);
         vm.label(address(pm), "ProposalManager");
     }
 
@@ -36,16 +41,15 @@ contract ProposalManagerBasicTest is Test {
             "Description",
             100,            // auctionDuration
             200,            // liveDuration
-            "Subject Token",     // subjectToken (non-zero placeholder)
+            "Subject Token",     // subjectToken
             1,              // minToOpen
             1000e18,        // maxCap
             address(0),     // target
             "",            // data
-            address(0),     // pythAddr
-            bytes32(0)      // pythId
+            PYTH_CONTRACT,     // pythAddr
+            PYTH_ID      // pythId
         );
 
-        // basic indexing assertions
         assertEq(id, 1);
         assertEq(pm.nextId(), 1);
 
@@ -70,11 +74,10 @@ contract ProposalManagerBasicTest is Test {
             1000e18,        
             address(0),     
             "",            
-            address(0),    
-            bytes32(0)     
+            PYTH_CONTRACT,    
+            PYTH_ID     
         );
 
-        // basic indexing assertions
         assertEq(id2, 2);
         assertEq(pm.nextId(), 2);
 

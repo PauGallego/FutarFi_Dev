@@ -12,11 +12,16 @@ import {Treasury} from "./Treasury.sol";
 import {console} from "forge-std/console.sol";
 import "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
 import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
- 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 
 contract Proposal is Ownable, IProposal {
+    using SafeERC20 for IERC20;
 
     State public state;
+
+    Trade public trade;
 
     // core identifiers / metadata
     uint256 public id;
@@ -49,6 +54,9 @@ contract Proposal is Ownable, IProposal {
     address public pythAddr;
     bytes32 public priceFeedId;
 
+    address public attestor;
+    uint256 public twapPriceTokenYes;
+    uint256 public twapPriceTokenNo;
 
     bool private _initialized;
 
@@ -56,6 +64,17 @@ contract Proposal is Ownable, IProposal {
     event ProposalResolved(uint256 indexed id, uint256 when);
     event ProposalCancelled(uint256 when);
     event ProposalLive(uint256 liveEnd);
+    event BatchApplied(uint256 ops);
+
+    modifier onlyAttestor() {
+        require(msg.sender == attestor, "Proposal: not attestor");
+        _;
+    }
+
+    modifier onlyAuction(){
+        require(msg.sender == address(yesAuction) || msg.sender == address(noAuction), "Proposal: not auction");
+        _;
+    }
 
     constructor() Ownable(msg.sender) {}
 
@@ -73,14 +92,15 @@ contract Proposal is Ownable, IProposal {
         address _target,
         bytes memory _data,
         address _pythContract,
-        bytes32 _priceFeedId
+        bytes32 _priceFeedId,
+        address _attestor
     ) external {
         require(!_initialized, "Already initialized");
         require(_admin != address(0), "Invalid admin");
         require(_pyUSD != address(0), "Invalid pyUSD");
         require(_pythContract != address(0), "Invalid Pyth address");
 
-        require(_minToOpen < _maxCap, "Invalid min/max");
+        require(_minToOpen <= _maxCap, "Invalid min/max");
         require(_auctionDuration > 0 && _auctionDuration <= 7 days, "Invalid auction duration");
         require(_liveDuration > 0 && _liveDuration <= 30 days, "Invalid live duration");
 
@@ -102,6 +122,7 @@ contract Proposal is Ownable, IProposal {
         data = _data;
         pyth = IPyth(_pythContract);
         priceFeedId = _priceFeedId;
+        attestor = _attestor;
 
         treasury= new Treasury(pyUSD);
 
@@ -122,7 +143,7 @@ contract Proposal is Ownable, IProposal {
         );
 
         int64 initialPrice = getPythPriceFeed(priceFeedId);
-        console.log("Initial price: ", initialPrice);
+        console.log("Initial Pyth price feed:", initialPrice);
 
         // Deploy Dutch auctions for YES and NO (require token addresses in constructor)
         yesAuction = new DutchAuction(
@@ -132,7 +153,7 @@ contract Proposal is Ownable, IProposal {
             _auctionDuration,
             initialPrice, // pyth: initial token price
             minToOpen,
-            admin
+            attestor
         );
 
         noAuction = new DutchAuction(
@@ -142,7 +163,7 @@ contract Proposal is Ownable, IProposal {
             _auctionDuration,
             initialPrice,   // pyth: initial token price
             minToOpen,
-            admin
+            attestor
         );
 
         // Update minters on tokens to point at the newly created auctions
@@ -160,12 +181,24 @@ contract Proposal is Ownable, IProposal {
 
         PythStructs.Price memory price = pyth.getPriceUnsafe(_priceFeedId);
         return price.price;
+        // int32 expo = price.expo;
+        // Adjust price to have 6 decimals
+        // int64 adjustedPrice;
+        // if (expo < -6) {
+        //     adjustedPrice = int64(price.price / int64(10**uint32(-6 - expo)));
+        // } else if (expo > -6) {
+        //     adjustedPrice = int64(price.price * int64(10**uint32(expo + 6)));
+        // } else {
+        //     adjustedPrice = int64(price.price);
+        // }
+        // return adjustedPrice;
+
     }
-    
+
 
     // Settle the auctions and handles cancellation or activation
-    function settleAuctions() external { // TODO:maybe onlyAuction if not called by front/back
-        require(state == State.Auction, "Bad state");
+    function settleAuctions() external onlyAuction(){
+        require(state == State.Auction, "Bad state (not auction)");
 
         bool yesAuctionCanceled = yesAuction.isCanceled();
         bool noAuctionCanceled  = noAuction.isCanceled();
@@ -196,13 +229,74 @@ contract Proposal is Ownable, IProposal {
     }
 
 
-    // ---- Resolve only after Live ends ----
-    function resolve() external override {
-        require(state == State.Live, "Proposal: bad state");
-        require(block.timestamp >= liveEnd, "Proposal: Live not finished");
+    /// @notice Apply a batch of trades. Requires allowances set by both sides.
+    function applyBatch(Trade[] calldata ops) external onlyAttestor {
+        for (uint256 i = 0; i < ops.length; ++i) {
+            Trade calldata t = ops[i];
+            require(t.seller != address(0) && t.buyer != address(0), "Verifier:zero addr");
+            require(t.outcomeToken == address(yesToken) || t.outcomeToken == address(noToken), "Verifier:bad outcome");
+            require(t.tokenAmount > 0, "Verifier:bad amounts");
 
+
+            // Transfer PyUSD from buyer to seller
+            IERC20(pyUSD).safeTransferFrom(t.buyer, t.seller, t.pyUsdAmount);
+
+            // Transfer outcome token from seller to buyer (must have allowance on outcome token)
+            IERC20(t.outcomeToken).safeTransferFrom(t.seller, t.buyer, t.tokenAmount);
+
+            // update TWAP prices
+            if (t.outcomeToken == address(yesToken)) {
+                // Update TWAP price for YES token if its different
+                twapPriceTokenYes = twapPriceTokenYes == t.twapPrice ? twapPriceTokenYes : t.twapPrice;
+            } else {
+                // Update TWAP price for NO token if its different
+                twapPriceTokenNo = twapPriceTokenNo == t.twapPrice ? twapPriceTokenNo : t.twapPrice;
+            }
+
+            // call resolve if live period is over
+            if (state == State.Live && block.timestamp >= liveEnd) {
+                _resolve();
+            }
+
+            emit BatchApplied(ops.length);
+        }
+    }
+
+
+    // ---- Resolve only after Live ends ----
+    function _resolve() private {
         state = State.Resolved;
+
+        // compare TWAP prices to determine outcome
+        if (twapPriceTokenYes > twapPriceTokenNo) {
+            // YES wins
+            // yesToken.finalizeAsWinner(address(treasury));
+            noToken.finalizeAsLoser(address(treasury));
+            state = State.Resolved;
+            _executeTargetCalldata();
+        } else if (twapPriceTokenNo > twapPriceTokenYes) {
+            // NO wins
+            // noToken.finalizeAsWinner(address(treasury));
+            yesToken.finalizeAsLoser(address(treasury));
+            state = State.Resolved;
+        } else {
+            // Tie - both lose
+            state = State.Resolved;
+            yesToken.finalizeAsLoser(address(treasury));
+            noToken.finalizeAsLoser(address(treasury));
+        }
+
         emit ProposalResolved(id, block.timestamp);
+    }
+
+
+    function _executeTargetCalldata() private onlyOwner {
+        require(state == State.Resolved, "Bad state (not resolved)");
+        require(target != address(0), "Proposal:no-target");
+        require(data.length > 0, "Proposal:no-data");
+
+        (bool success, ) = target.call(data);
+        require(success, "Proposal:target-call-failed");
     }
 
 

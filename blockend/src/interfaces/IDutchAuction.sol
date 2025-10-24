@@ -11,7 +11,7 @@ interface IDutchAuction {
 
     // --- Views ---
     function priceNow() external view returns (uint256);
-    function ADMIN() external view returns (address);
+    function ATTESTOR() external view returns (address);
     function TREASURY() external view returns (address);
     function MARKET_TOKEN() external view returns (MarketToken);
     function PYUSD() external view returns (address);

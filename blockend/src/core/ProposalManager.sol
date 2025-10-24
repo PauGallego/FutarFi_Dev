@@ -13,7 +13,7 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract ProposalManager is Ownable, IProposalManager {
     address public immutable PYUSD;       // Collateral/stable used by auctions/treasury
-
+    address public immutable ATTESTOR; 
     address public proposalImpl;
 
     // --- Indexing ---
@@ -24,10 +24,11 @@ contract ProposalManager is Ownable, IProposalManager {
     // --- Events ---
     event ProposalCreated(uint256 indexed id, address indexed admin, address proposal, string title);
 
-    constructor(address _pyusd, address _proposalImpl) Ownable(msg.sender) {
+    constructor(address _pyusd, address _proposalImpl, address _attestor) Ownable(msg.sender) {
         require(_pyusd != address(0), "PM:PYUSD=0");
         PYUSD = _pyusd;
         proposalImpl = _proposalImpl;
+        ATTESTOR = _attestor;
     }
 
     /// @param _title Proposal title
@@ -75,7 +76,8 @@ contract ProposalManager is Ownable, IProposalManager {
             _target,
             _data,
             _pythAddr,
-            _pythId
+            _pythId,
+            ATTESTOR
         );
       
 

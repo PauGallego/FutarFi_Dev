@@ -11,6 +11,7 @@
     PyUSD public pyusd;
     ProposalManager public proposalManager;
     Proposal public proposal;
+    address public constant ATTESTOR = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266; // hardcoded for deployment
 
     function run() external {
         vm.startBroadcast();
@@ -21,7 +22,7 @@
 
         proposal = new Proposal();
         // Deploy ProposalManager with PYUSD address
-        proposalManager = new ProposalManager(address(pyusd), address(proposal));
+        proposalManager = new ProposalManager(address(pyusd), address(proposal), ATTESTOR);
 
         // Basic checks
         require(proposalManager.PYUSD() == address(pyusd), "PM: wrong PYUSD");
