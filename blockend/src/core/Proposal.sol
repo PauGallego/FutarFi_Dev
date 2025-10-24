@@ -176,23 +176,32 @@ contract Proposal is Ownable, IProposal {
     }
 
 
-    // Get the initial Pyth price feed info for the proposal's subject asset
+    // Compute 10^n safely for small n
+    function pow10(uint32 n) internal pure returns (uint256) {
+        uint256 r = 1;
+        for (uint32 i = 0; i < n; i++) r *= 10;
+        return r;
+    }
+
+    // Get the initial Pyth price feed and scale to 6 decimals (PYUSD 6d per token)
     function getPythPriceFeed(bytes32 _priceFeedId) private view returns (int64) {
-
         PythStructs.Price memory price = pyth.getPriceUnsafe(_priceFeedId);
-        return price.price;
-        // int32 expo = price.expo;
-        // Adjust price to have 6 decimals
-        // int64 adjustedPrice;
-        // if (expo < -6) {
-        //     adjustedPrice = int64(price.price / int64(10**uint32(-6 - expo)));
-        // } else if (expo > -6) {
-        //     adjustedPrice = int64(price.price * int64(10**uint32(expo + 6)));
-        // } else {
-        //     adjustedPrice = int64(price.price);
-        // }
-        // return adjustedPrice;
-
+        require(price.price > 0, "Bad Pyth price");
+        int32 expo = price.expo; // usually negative
+        int256 raw = int256(price.price);
+        int256 scaled;
+        if (expo < -6) {
+            uint32 diff = uint32(uint32(-6 - expo)); // divide by 10^(|expo+6|)
+            uint256 d = pow10(diff);
+            scaled = raw / int256(d);
+        } else {
+            uint32 diff = uint32(uint32(expo + 6)); // multiply by 10^(expo+6)
+            uint256 m = pow10(diff);
+            scaled = raw * int256(m);
+        }
+        // Compare in signed space to avoid invalid casts
+        require(scaled > 0 && scaled <= int256(type(int64).max), "Pyth scale overflow");
+        return int64(scaled);
     }
 
 
