@@ -159,11 +159,13 @@ async function syncProposalFromChain({ address, abi }) {
     admin: await tryRead(['admin', 'getAdmin', 'owner']),
     title: await tryRead(['title', 'name', 'getTitle']),
     description: await tryRead(['description', 'getDescription']),
-    startTime: await tryRead(['startTime', 'getStartTime']),
-    endTime: await tryRead(['endTime', 'getEndTime']),
-    duration: await tryRead(['duration', 'getDuration']),
-    collateralToken: await tryRead(['collateralToken', 'collateral', 'getCollateralToken']),
-    maxSupply: await tryRead(['maxSupply', 'cap', 'getMaxSupply']),
+    startTime: await tryRead(['startTime', 'getStartTime', 'auctionStartTime']),
+    endTime: await tryRead(['endTime', 'getEndTime', 'liveEnd', 'auctionEndTime']),
+    duration: await tryRead(['duration', 'getDuration', 'liveDuration']),
+    // subjectToken is the new name; keep old aliases just in case
+    subjectToken: await tryRead(['subjectToken', 'getSubjectToken', 'collateralToken', 'getCollateralToken']),
+    // maxSupply on older code; on-chain exposed as maxCap in new ABI
+    maxSupply: await tryRead(['maxSupply', 'cap', 'getMaxSupply', 'maxCap']),
     target: await tryRead(['target', 'getTarget']),
     data: await tryRead(['data', 'getData']),
     marketAddress: await tryRead(['market', 'marketAddress', 'getMarket']),
@@ -198,7 +200,7 @@ async function syncProposalFromChain({ address, abi }) {
     startTime: asNum(raw.startTime),
     endTime: asNum(raw.endTime),
     duration: asNum(raw.duration),
-    collateralToken: asAddr(raw.collateralToken),
+    subjectToken: asAddr(raw.subjectToken),
     maxSupply: raw.maxSupply !== undefined ? asStr(raw.maxSupply) : undefined,
     target: asAddr(raw.target),
     data: raw.data !== undefined ? asStr(raw.data) : undefined,
@@ -219,7 +221,7 @@ async function syncProposalFromChain({ address, abi }) {
 
   if (!existing) {
     // Require minimum fields to create
-    const required = ['admin', 'startTime', 'endTime', 'duration', 'collateralToken', 'maxSupply', 'target'];
+    const required = ['admin', 'startTime', 'endTime', 'duration', 'subjectToken', 'maxSupply', 'target'];
     const missing = required.filter(k => onchain[k] === undefined);
     if (missing.length) {
       return { action: 'skipped', reason: `missing fields: ${missing.join(', ')}` };
@@ -235,7 +237,7 @@ async function syncProposalFromChain({ address, abi }) {
   for (const k of updatableKeys) {
     const newVal = onchain[k];
     const oldVal = existing[k];
-    const isAddrField = ['admin','collateralToken','target','marketAddress','proposalAddress'].includes(k);
+    const isAddrField = ['admin','subjectToken','target','marketAddress','proposalAddress'].includes(k);
     const eq = isAddrField ? (String(oldVal || '').toLowerCase() === String(newVal || '').toLowerCase()) : (String(oldVal ?? '') === String(newVal ?? ''));
     if (!eq) toSet[k] = newVal;
   }
@@ -257,12 +259,19 @@ const ABI_TOKEN_MIN = TOKEN_MIN_ABI;
 
 const toStr = (v) => (typeof v === 'bigint' ? v.toString() : String(v));
 const toNum = (v) => (typeof v === 'bigint' ? Number(v) : Number(v));
-const toAddr = (v) => (v ? String(v).toLowerCase() : v);
+const toAddr = (v) => {
+  if (!v && v !== 0) return v;
+  const s = String(v).toLowerCase();
+  if (s.startsWith('0x')) return s;
+  // add 0x prefix for plain hex addresses/bytes32
+  if (/^[0-9a-f]{40}$/i.test(s) || /^[0-9a-f]{64}$/i.test(s)) return `0x${s}`;
+  return s;
+};
 
 async function readProposalSnapshot(proposalAddr) {
   const c = getContract(proposalAddr, PROPOSAL_ABI, false);
   const [id, admin, st, aStart, aEnd, lStart, lEnd, lDur, subjectToken, pyusd, minToOpen, maxCap, yesAuction, noAuction, yesToken, noToken, treasury] = await Promise.all([
-    c.id(), c.admin(), c.state(), c.auctionStartTime(), c.auctionEndTime(), c.liveStart(), c.liveEnd(), c.liveDuration(), c.subjectToken(), c.pyUSD(), c.minToOpen(), c.maxCap(), c.yesAuction(), c.noAuction(), c.yesToken(), c.noToken(), c.treasury()
+    c.id(), c.admin(), c.state(), c.auctionStartTime(), c.auctionEndTime(), c.liveStart(), c.liveEnd(), c.liveDuration(), c.subjectToken(), c.pyUSD(), c.minToOpen(), c.maxCap(), c.yesAuction(), c.noAuction(), c.yesToken().catch(() => '0x0000000000000000000000000000000000000000'), c.noToken().catch(() => '0x0000000000000000000000000000000000000000'), c.treasury()
   ]);
 
   // Optional metadata (older deployments may not have these; ignore errors)
@@ -276,85 +285,110 @@ async function readProposalSnapshot(proposalAddr) {
   const duration = endTime && startTime ? (endTime - startTime) : toNum(lDur);
   const stateEnum = ['auction','live','resolved','cancelled'][toNum(st)] ?? 'auction';
 
-  // YES auction snapshot
-  const yes = await readAuctionSnapshot(yesAuction);
-  const no = await readAuctionSnapshot(noAuction);
+  // YES/NO auction snapshots (resilient)
+  let yes = null;
+  let no = null;
+  try {
+    if (yesAuction && String(yesAuction).toLowerCase() !== '0x0000000000000000000000000000000000000000') {
+      yes = await readAuctionSnapshot(yesAuction);
+    }
+  } catch (_) { yes = null; }
+  try {
+    if (noAuction && String(noAuction).toLowerCase() !== '0x0000000000000000000000000000000000000000') {
+      no = await readAuctionSnapshot(noAuction);
+    }
+  } catch (_) { no = null; }
 
-  // Tokens extra
-  const yesTokenC = getContract(yes.marketToken, TOKEN_MIN_ABI, false);
-  const noTokenC  = getContract(no.marketToken, TOKEN_MIN_ABI, false);
-  const [yesSupply, yesCap, noSupply, noCap] = await Promise.all([
-    yesTokenC.totalSupply(), yesTokenC.cap(), noTokenC.totalSupply(), noTokenC.cap()
-  ]);
+  // Token caps/supply only if market tokens exist
+  try {
+    if (yes && yes.marketToken && yes.marketToken !== '0x0000000000000000000000000000000000000000') {
+      const yesTokenC = getContract(yes.marketToken, TOKEN_MIN_ABI, false);
+      const [yesSupply, yesCap] = await Promise.all([
+        yesTokenC.totalSupply().catch(() => 0n), yesTokenC.cap().catch(() => 0n)
+      ]);
+      yes.tokensSold = toStr(yesSupply);
+      yes.maxTokenCap = toStr(yesCap);
+      yes.minTokenCap = toStr(yes.minToOpen);
+    }
+  } catch (_) {}
+  try {
+    if (no && no.marketToken && no.marketToken !== '0x0000000000000000000000000000000000000000') {
+      const noTokenC  = getContract(no.marketToken, TOKEN_MIN_ABI, false);
+      const [noSupply, noCap] = await Promise.all([
+        noTokenC.totalSupply().catch(() => 0n), noTokenC.cap().catch(() => 0n)
+      ]);
+      no.tokensSold = toStr(noSupply);
+      no.maxTokenCap = toStr(noCap);
+      no.minTokenCap = toStr(no.minToOpen);
+    }
+  } catch (_) {}
 
-  yes.tokensSold = toStr(yesSupply);
-  yes.maxTokenCap = toStr(yesCap);
-  yes.minTokenCap = toStr(yes.minToOpen);
+  // Fallback minimal auctions to ensure tokens are populated
+  const yesAuctionAddr = toAddr(yesAuction);
+  const noAuctionAddr = toAddr(noAuction);
+  const yesTokenAddr = toAddr(yesToken);
+  const noTokenAddr = toAddr(noToken);
 
-  no.tokensSold = toStr(noSupply);
-  no.maxTokenCap = toStr(noCap);
-  no.minTokenCap = toStr(no.minToOpen);
+  if (!yes && (yesAuctionAddr || yesTokenAddr)) {
+    yes = {
+      auctionAddress: yesAuctionAddr || null,
+      marketToken: yesTokenAddr || '0x0000000000000000000000000000000000000000',
+      pyusd: toAddr(pyusd),
+      treasury: toAddr(treasury),
+      admin: toAddr(admin),
+      startTime: startTime,
+      endTime: toNum(aEnd),
+      priceStart: '0',
+      minToOpen: toStr(minToOpen),
+      cap: toStr(maxCap),
+      currentPrice: '0',
+      tokensSold: '0',
+      maxTokenCap: '0',
+      minTokenCap: toStr(minToOpen),
+      finalized: false,
+      isValid: true,
+      isCanceled: false
+    };
+  }
 
+  if (!no && (noAuctionAddr || noTokenAddr)) {
+    no = {
+      auctionAddress: noAuctionAddr || null,
+      marketToken: noTokenAddr || '0x0000000000000000000000000000000000000000',
+      pyusd: toAddr(pyusd),
+      treasury: toAddr(treasury),
+      admin: toAddr(admin),
+      startTime: startTime,
+      endTime: toNum(aEnd),
+      priceStart: '0',
+      minToOpen: toStr(minToOpen),
+      cap: toStr(maxCap),
+      currentPrice: '0',
+      tokensSold: '0',
+      maxTokenCap: '0',
+      minTokenCap: toStr(minToOpen),
+      finalized: false,
+      isValid: true,
+      isCanceled: false
+    };
+  }
 
   return {
-    // Proposal DB core
-    // Internal id is assigned by DB; not taken from chain here
-    proposalAddress: toAddr(proposalAddr),
-    proposalContractId: toStr(id),
     admin: toAddr(admin),
     state: stateEnum,
-    // Use on-chain metadata when available
     title: metaTitle ? String(metaTitle) : undefined,
     description: metaDescription ? String(metaDescription) : undefined,
     startTime,
     endTime,
     duration,
-    collateralToken: toAddr(subjectToken),
+    subjectToken: toAddr(subjectToken),
     maxSupply: toStr(maxCap),
-    target: toAddr('0x0000000000000000000000000000000000000000'), // not exposed in interface currently
+    target: toAddr('0x0000000000000000000000000000000000000000'),
     data: '0x',
     marketAddress: undefined,
-    // Auctions inline snapshot (strings as in schema)
-    auctions: {
-      yes: {
-        auctionAddress: toAddr(yes.auctionAddress),
-        marketToken: toAddr(yes.marketToken),
-        pyusd: toAddr(pyusd),
-        treasury: toAddr(treasury),
-        admin: toAddr(admin),
-        startTime: toNum(yes.startTime),
-        endTime: toNum(yes.endTime),
-        priceStart: toStr(yes.priceStart),
-        minToOpen: toStr(yes.minToOpen),
-        cap: toStr(maxCap),
-        currentPrice: toStr(yes.currentPrice),
-        tokensSold: yes.tokensSold,
-        maxTokenCap: yes.maxTokenCap,
-        minTokenCap: yes.minTokenCap,
-        finalized: !!yes.finalized,
-        isValid: !!yes.isValid,
-        isCanceled: !!yes.isCanceled
-      },
-      no: {
-        auctionAddress: toAddr(no.auctionAddress),
-        marketToken: toAddr(no.marketToken),
-        pyusd: toAddr(pyusd),
-        treasury: toAddr(treasury),
-        admin: toAddr(admin),
-        startTime: toNum(no.startTime),
-        endTime: toNum(no.endTime),
-        priceStart: toStr(no.priceStart),
-        minToOpen: toStr(no.minToOpen),
-        cap: toStr(maxCap),
-        currentPrice: toStr(no.currentPrice),
-        tokensSold: no.tokensSold,
-        maxTokenCap: no.maxTokenCap,
-        minTokenCap: no.minTokenCap,
-        finalized: !!no.finalized,
-        isValid: !!no.isValid,
-        isCanceled: !!no.isCanceled
-      }
-    }
+    proposalAddress: toAddr(proposalAddr),
+    proposalContractId: toStr(id),
+    auctions: (yes || no) ? { yes: yes || null, no: no || null } : null
   };
 }
 
@@ -397,6 +431,16 @@ async function upsertProposalAndAuctions(snapshot) {
     : (snapshot.proposalContractId ? { proposalContractId: snapshot.proposalContractId } : null);
   let doc = query ? await Proposal.findOne(query) : null;
 
+  // Preserve existing auctions if snapshot didn't provide them
+  const auctionsFinal = {
+    yes: (snapshot.auctions && snapshot.auctions.yes !== undefined)
+      ? (snapshot.auctions.yes || null)
+      : (doc ? (doc.auctions?.yes ?? null) : null),
+    no: (snapshot.auctions && snapshot.auctions.no !== undefined)
+      ? (snapshot.auctions.no || null)
+      : (doc ? (doc.auctions?.no ?? null) : null)
+  };
+
   const baseFields = {
     proposalAddress: snapshot.proposalAddress,
     proposalContractId: snapshot.proposalContractId,
@@ -407,12 +451,12 @@ async function upsertProposalAndAuctions(snapshot) {
     startTime: snapshot.startTime,
     endTime: snapshot.endTime,
     duration: snapshot.duration,
-    collateralToken: snapshot.collateralToken,
+    subjectToken: snapshot.subjectToken,
     maxSupply: snapshot.maxSupply,
     target: snapshot.target ?? '0x0000000000000000000000000000000000000000',
     data: snapshot.data ?? '0x',
     marketAddress: snapshot.marketAddress,
-    auctions: auctionsSnapshot
+    auctions: auctionsFinal
   };
 
   if (!doc) {
@@ -426,7 +470,7 @@ async function upsertProposalAndAuctions(snapshot) {
     for (const k of Object.keys(baseFields)) {
       const oldVal = doc[k];
       const newVal = baseFields[k];
-      const isAddr = ['proposalAddress','admin','collateralToken','target','marketAddress'].includes(k);
+      const isAddr = ['proposalAddress','admin','subjectToken','target','marketAddress'].includes(k);
       const isObj = k === 'auctions';
       const eq = isObj
         ? JSON.stringify(oldVal || null) === JSON.stringify(newVal || null)
@@ -473,8 +517,8 @@ async function upsertProposalAndAuctions(snapshot) {
   };
 
   await Promise.all([
-    upsertAuction('yes', snapshot.auctions?.yes),
-    upsertAuction('no', snapshot.auctions?.no)
+    upsertAuction('yes', auctionsFinal.yes),
+    upsertAuction('no', auctionsFinal.no)
   ]);
 
   return doc;
@@ -626,13 +670,17 @@ async function handleProposalCreatedLog(io, log) {
           startTime: now,
           endTime: now + 86400,
           duration: 86400,
-          collateralToken: '0x0000000000000000000000000000000000000000',
+          subjectToken: '0x0000000000000000000000000000000000000000',
           maxSupply: '0',
           target: '0x0000000000000000000000000000000000000000',
           data: '0x',
           state: 'auction',
           auctions: null
         });
+        // Schedule a best-effort background sync retry to clear Pending sync
+        setTimeout(() => {
+          module.exports.syncProposalByAddress(proposalAddr).catch(() => {});
+        }, 3000);
       }
     } catch (e2) {
       console.error('fallback minimal upsert failed:', e2.message);

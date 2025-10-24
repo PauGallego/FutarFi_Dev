@@ -13,7 +13,7 @@ const proposalSchema = new mongoose.Schema({
   startTime: { type: Number, required: true },
   endTime: { type: Number, required: true },
   duration: { type: Number, required: true },
-  collateralToken: { type: String, required: true },
+  subjectToken: { type: String, required: true },
   maxSupply: { type: String, required: true },
   target: { type: String, required: true },
   data: { type: String, required: true },

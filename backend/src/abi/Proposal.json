@@ -67,6 +67,84 @@
     },
     {
       "type": "function",
+      "name": "initialize",
+      "inputs": [
+        {
+          "name": "_id",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "_admin",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_title",
+          "type": "string",
+          "internalType": "string"
+        },
+        {
+          "name": "_description",
+          "type": "string",
+          "internalType": "string"
+        },
+        {
+          "name": "_auctionDuration",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "_liveDuration",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "_subjectToken",
+          "type": "string",
+          "internalType": "string"
+        },
+        {
+          "name": "_pyUSD",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_minToOpen",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "_maxCap",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "_target",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_data",
+          "type": "bytes",
+          "internalType": "bytes"
+        },
+        {
+          "name": "_pythAddr",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "_pythId",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
       "name": "liveDuration",
       "inputs": [],
       "outputs": [
@@ -203,8 +281,8 @@
       "outputs": [
         {
           "name": "",
-          "type": "address",
-          "internalType": "address"
+          "type": "string",
+          "internalType": "string"
         }
       ],
       "stateMutability": "view"
