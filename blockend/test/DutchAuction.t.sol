@@ -11,8 +11,9 @@ import {ProposalManager} from "../src/core/ProposalManager.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("MockUSD", "MUSD") {
-        _mint(msg.sender, 1_000_000e18);
+        _mint(msg.sender, 1_000_000_000_000e18);
     }
+    function decimals() public pure override returns (uint8) { return 6; }
 }
 
 contract DutchAuctionTest is Test {
@@ -32,7 +33,7 @@ contract DutchAuctionTest is Test {
     address constant PYTH_CONTRACT = 0x4305FB66699C3B2702D4d05CF36551390A4c69C6;
     bytes32 constant PYTH_ID = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
 
-    uint256 constant CAP = 1_000_000e18;
+    uint256 constant CAP = 500_000e18;
 
     function setUp() public {
         proposal = new Proposal();
@@ -66,8 +67,7 @@ contract DutchAuctionTest is Test {
 
         // vm.stopPrank();
 
-        // Distribute pyusd to buyer and approve treasury
-        pyusd.transfer(buyer, 1_000e18);
+        pyusd.transfer(buyer, 1_000_000_000_000e18);
         
     }
 
@@ -81,12 +81,11 @@ contract DutchAuctionTest is Test {
         yesAuction.buyLiquidity(payAmount);
         vm.stopPrank();
 
-        // tokens minted to buyer: tokensOut = (payAmount * 1e18) / price
-        uint256 expectedTokens = (payAmount * 1e18) / price;
+        uint256 expectedTokens = (payAmount * 1e6) / price;
         assertEq(yesToken.balanceOf(buyer), expectedTokens, "buyer token balance");
 
-        assertEq(treasury.balances(buyer), payAmount);
-        assertEq(treasury.potYes(), payAmount);
+        assertEq(treasury.balances(buyer), payAmount, "treasury recorded balance");
+        assertEq(treasury.potYes(), payAmount, "treasury potYes updated");
     }
 
     function test_PriceNow_decreasesOverTime() public {
@@ -108,7 +107,7 @@ contract DutchAuctionTest is Test {
     function test_BuyLiquidity_upToCapAndFinalize() public {
         uint256 price = yesAuction.priceNow();
         uint256 tokensToBuy = CAP - yesToken.totalSupply(); // buy up to cap
-        uint256 payAmount = (tokensToBuy * price) / 1e18;
+        uint256 payAmount = (tokensToBuy * price) / 1e6;
 
         // buyer buys
         vm.startPrank(buyer);
@@ -117,9 +116,9 @@ contract DutchAuctionTest is Test {
         vm.stopPrank();
 
         // auction should be finalized
-        assertEq(yesToken.totalSupply(), CAP);
+        assertEq(yesToken.totalSupply(), CAP, "Yes token total supply should equal cap");
         assertTrue(yesAuction.isFinalized(), "Auction should be finalized");
-        assertEq(yesToken.balanceOf(buyer), tokensToBuy);
+        assertEq(yesToken.balanceOf(buyer), tokensToBuy, "Buyer should have all tokens up to cap");
     }
 
 

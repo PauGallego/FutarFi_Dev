@@ -242,7 +242,7 @@ contract ProposalBasicTest is Test {
 
         assertEq(noToken.balanceOf(takerNo), 0, "after claiming, takerNo should have 0 noTokens");
         assertGt(pyusd.balanceOf(takerNo), balanceTakerNoPyUsdBefore, "after claiming, takerNo should have more pyUSD");
-        assertEq(noToken.balanceOf(treasury), balanceTreasuryTokenNoBefore + balanceTakerNoTokenNoBefore, "a");
-        assertLt(pyusd.balanceOf(treasury), balanceTreasuryNoPyUsdBefore, "b");
+        assertEq(noToken.balanceOf(treasury), balanceTreasuryTokenNoBefore + balanceTakerNoTokenNoBefore, "after claiming, treasury should have more noTokens");
+        assertLt(pyusd.balanceOf(treasury), balanceTreasuryNoPyUsdBefore, "after claiming, treasury should have less pyUSD");
     }
 }

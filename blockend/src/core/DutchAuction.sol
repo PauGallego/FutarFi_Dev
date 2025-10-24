@@ -144,19 +144,6 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
             emit AuctionisValid();
             _finalize();
         } 
-        // if(!_isLive()){
-        //     if (MARKET_TOKEN.totalSupply() >= MIN_TO_OPEN){
-        //         isValid = true;
-        //         isFinalized = true;
-        //         _finalize();
-        //         emit AuctionisValid();
-        //     }
-        //     else{
-        //         isCanceled = true;
-        //         isFinalized = true;
-        //         emit AuctionisCanceled();
-        //     }
-        // }
 
     }
 
