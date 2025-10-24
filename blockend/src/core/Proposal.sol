@@ -14,6 +14,8 @@ import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+
+
 contract Proposal is Ownable, IProposal {
     using SafeERC20 for IERC20;
 
@@ -58,6 +60,28 @@ contract Proposal is Ownable, IProposal {
 
     bool private _initialized;
 
+    error NotAttestor();
+    error NotAuction();
+    error AlreadyInitialized();
+    error InvalidAdmin();
+    error InvalidPyUSD();
+    error InvalidPythAddress();
+    error InvalidMinMax(uint256 minToOpen, uint256 maxCap);
+    error InvalidAuctionDuration(uint256 auctionDuration);
+    error InvalidLiveDuration(uint256 liveDuration);
+    error PriceNotPositive(int64 price);
+    error PythScaleOverflow(int256 scaled);
+    error BadState(Proposal.State expected, Proposal.State current);
+    error ZeroAddress();
+    error InvalidOutcomeToken(address outcomeToken);
+    error InvalidAmounts();
+    error LivePeriodNotEnded(uint256 nowTs, uint256 liveEnd);
+    error NoTarget();
+    error NoData();
+    error TargetCallFailed();
+    error NoTreasury();
+    error InvalidTokenToClaim(address token);
+
     event ProposalActivated(uint256 indexed id, uint256 liveStart, uint256 liveEnd);
     event ProposalResolved(uint256 indexed id, uint256 when);
     event ProposalCancelled(uint256 when);
@@ -66,12 +90,12 @@ contract Proposal is Ownable, IProposal {
     event TokenClaimed(uint256 amout, address token);
 
     modifier onlyAttestor() {
-        require(msg.sender == attestor, "Proposal: not attestor");
+        if (msg.sender != attestor) revert NotAttestor();
         _;
     }
 
     modifier onlyAuction(){
-        require(msg.sender == address(yesAuction) || msg.sender == address(noAuction), "Proposal: not auction");
+        if (msg.sender != address(yesAuction) && msg.sender != address(noAuction)) revert NotAuction();
         _;
     }
 
@@ -94,14 +118,14 @@ contract Proposal is Ownable, IProposal {
         bytes32 _priceFeedId,
         address _attestor
     ) external {
-        require(!_initialized, "Already initialized");
-        require(_admin != address(0), "Invalid admin");
-        require(_pyUSD != address(0), "Invalid pyUSD");
-        require(_pythContract != address(0), "Invalid Pyth address");
+        if (_initialized) revert AlreadyInitialized();
+        if (_admin == address(0)) revert InvalidAdmin();
+        if (_pyUSD == address(0)) revert InvalidPyUSD();
+        if (_pythContract == address(0)) revert InvalidPythAddress();
 
-        require(_minToOpen <= _maxCap, "Invalid min/max");
-        require(_auctionDuration > 0 && _auctionDuration <= 7 days, "Invalid auction duration");
-        require(_liveDuration > 0 && _liveDuration <= 30 days, "Invalid live duration");
+        if (_minToOpen > _maxCap) revert InvalidMinMax(_minToOpen, _maxCap);
+        if (!(_auctionDuration > 0 && _auctionDuration <= 7 days)) revert InvalidAuctionDuration(_auctionDuration);
+        if (!(_liveDuration > 0 && _liveDuration <= 30 days)) revert InvalidLiveDuration(_liveDuration);
 
         _initialized = true;
 
@@ -184,7 +208,7 @@ contract Proposal is Ownable, IProposal {
     // Get the initial Pyth price feed and scale to 6 decimals (PYUSD 6d per token)
     function getPythPriceFeed(bytes32 _priceFeedId) private view returns (int64) {
         PythStructs.Price memory price = pyth.getPriceUnsafe(_priceFeedId);
-        require(price.price > 0, "Bad Pyth price");
+        if (price.price <= 0) revert PriceNotPositive(price.price);
         int32 expo = price.expo; // usually negative
         int256 raw = int256(price.price);
         int256 scaled;
@@ -198,14 +222,14 @@ contract Proposal is Ownable, IProposal {
             scaled = raw * int256(m);
         }
         // Compare in signed space to avoid invalid casts
-        require(scaled > 0 && scaled <= int256(type(int64).max), "Pyth scale overflow");
+        if (!(scaled > 0 && scaled <= int256(type(int64).max))) revert PythScaleOverflow(scaled);
         return int64(scaled);
     }
 
 
     // Settle the auctions and handles cancellation or activation
     function settleAuctions() external onlyAuction(){
-        require(state == State.Auction, "Bad state (not auction)");
+        if (state != State.Auction) revert BadState(State.Auction, state);
 
         bool yesAuctionCanceled = yesAuction.isCanceled();
         bool noAuctionCanceled  = noAuction.isCanceled();
@@ -239,12 +263,12 @@ contract Proposal is Ownable, IProposal {
 
     /// @notice Apply a batch of trades. Requires allowances set by both sides.
     function applyBatch(Trade[] calldata ops) external onlyAttestor {
-        require(state == State.Live, "Bad state (not live), can't apply batches");
+        if (state != State.Live) revert BadState(State.Live, state);
         for (uint256 i = 0; i < ops.length; ++i) {
             Trade calldata t = ops[i];
-            require(t.seller != address(0) && t.buyer != address(0), "Verifier:zero addr");
-            require(t.outcomeToken == address(yesToken) || t.outcomeToken == address(noToken), "Verifier:bad outcome");
-            require(t.tokenAmount > 0, "Verifier:bad amounts");
+            if (t.seller == address(0) || t.buyer == address(0)) revert ZeroAddress();
+            if (t.outcomeToken != address(yesToken) && t.outcomeToken != address(noToken)) revert InvalidOutcomeToken(t.outcomeToken);
+            if (t.tokenAmount == 0) revert InvalidAmounts();
 
 
             // Transfer PyUSD from buyer to seller
@@ -270,8 +294,8 @@ contract Proposal is Ownable, IProposal {
 
 
     function resolve() public {
-        require(state == State.Live, "Bad state (not live)");
-        require(block.timestamp >= liveEnd, "Live period not ended");
+        if (state != State.Live) revert BadState(State.Live, state);
+        if (block.timestamp < liveEnd) revert LivePeriodNotEnded(block.timestamp, liveEnd);
         _resolve();
     }
 
@@ -307,19 +331,19 @@ contract Proposal is Ownable, IProposal {
 
 
     function _executeTargetCalldata() private {
-        require(state == State.Resolved, "Bad state (not resolved)");
-        require(target != address(0), "Proposal:no-target");
-        require(data.length > 0, "Proposal:no-data");
+        if (state != State.Resolved) revert BadState(State.Resolved, state);
+        if (target == address(0)) revert NoTarget();
+        if (data.length == 0) revert NoData();
 
         (bool success, ) = target.call(data);
-        require(success, "Proposal:target-call-failed");
+        if (!success) revert TargetCallFailed();
     }
 
 
     function claimTokens(address _tokenToClaim) external{
-        require(state == State.Resolved, "Bad state (not resolved)");
-        require(address(treasury) != address(0), "Proposal:no-treasury");
-        require(_tokenToClaim == address(MarketToken(yesToken)) || _tokenToClaim == address(MarketToken(noToken)), "Proposal: invalid token to claim");
+        if (state != State.Resolved) revert BadState(State.Resolved, state);
+        if (address(treasury) == address(0)) revert NoTreasury();
+        if (_tokenToClaim != address(MarketToken(yesToken)) && _tokenToClaim != address(MarketToken(noToken))) revert InvalidTokenToClaim(_tokenToClaim);
 
         uint256 amount = MarketToken(_tokenToClaim).balanceOf(msg.sender);
         Treasury(treasury).refundTo(msg.sender, _tokenToClaim, amount);
