@@ -23,7 +23,7 @@ export interface Proposal {
   liveDuration: number;
 
   // Token / treasury / auctions
-  subjectToken: `0x${string}`;
+  subjectToken: string;
   pyUSD: `0x${string}`;
   minToOpen: string; // uint256 kept as string to avoid precision loss in JS
   maxCap: string;    // uint256 kept as string
@@ -62,12 +62,10 @@ export interface AuctionPricePoint {
 }
 
 export interface MarketData {
-  yesMarket: Address
-  noMarket: Address
   yesOrderBook: OrderBookEntry[]
   noOrderBook: OrderBookEntry[]
   twapHistory: TWAPPoint[]
-  volumeDistribution: VolumePoint[]
+  // volumeDistribution: VolumePoint[]
 }
 
 export interface OrderBookEntry {
@@ -75,6 +73,10 @@ export interface OrderBookEntry {
   amount: number
   total: number
   side: "buy" | "sell"
+  // Optional fill metadata for UI shading
+  filled?: number
+  remaining?: number
+  fillPct?: number // 0..1
 }
 
 export interface TWAPPoint {

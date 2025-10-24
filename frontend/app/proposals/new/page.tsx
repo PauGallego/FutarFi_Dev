@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { isAddress,  Hex } from "viem"
+import { ethers } from "ethers"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,22 +17,16 @@ import { useToast } from "@/hooks/use-toast"
 
 import { getSupportedCollaterals, type Collateral } from "@/lib/collaterals"
 import { 
-  type BaseError,
-  useWaitForTransactionReceipt, 
-  useWriteContract,
   useChainId,
   useAccount
 } from "wagmi"
-import { usePublicClient } from "wagmi"
 import { proposalManager_abi } from "@/contracts/proposalManager-abi"
 import { getContractAddress } from "@/contracts/constants"
-import { form } from "viem/chains"
 
 export default function NewProposalPage() {
 
   const chainId = useChainId()
   const { address: account, isConnected } = useAccount()
-  const publicClient = usePublicClient()
   const contractAddress = getContractAddress(chainId, "PROPOSAL_MANAGER")
 
   const tokenOptions: Collateral[] = React.useMemo(
@@ -65,29 +60,20 @@ export default function NewProposalPage() {
 
   const [useTarget, setUseTarget] = useState<"YES" | "NO">("NO")
 
-  // useEffect(() => {
-  //   if (!formData.subjectToken || !tokenOptions.some(t => t.address.toLowerCase() === formData.subjectToken.toLowerCase())) {
-  //     setFormData((prev) => ({ ...prev, subjectToken: tokenOptions[0]?.address ?? "" }))
-  //   }
-  // // eslint-disable-next-line react-hooks/exhaustive-deps
-  // }, [chainId])
+  // Local tx state (ethers based)
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [isPending, setIsPending] = useState(false)
+  const [isConfirming, setIsConfirming] = useState(false)
+  const [isConfirmed, setIsConfirmed] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
 
-  const { 
-    data: hash,
-    error,
-    isPending,
-    writeContract 
-  } = useWriteContract() 
-
-
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt({
-      hash,
-  })
   const handleSubmit = async (e: React.FormEvent)=>{
     e.preventDefault()
 
-    const fail = (desc: string) => toast({ title: "Validation Error", description: desc, variant: "destructive" })
+    const fail = (desc: string) => {
+      toast({ title: "Validation Error", description: desc, variant: "destructive" })
+      return false
+    }
 
     toast({ title: "Submitting", description: "Validating inputs and preparing transaction..." })
 
@@ -125,47 +111,69 @@ export default function NewProposalPage() {
       ? (formData.targetAddress as `0x${string}`)
       : "0x0000000000000000000000000000000000000000"
 
-   
-    // Let wallet/provider handle nonce to avoid races
-    console.log("Creating proposal with data:", {
-      ...formData,
-      targetAddressArg
-    })
-
+    // Ethers setup
     try {
-      await writeContract?.({
-        address: contractAddress as `0x${string}`,
-        abi: proposalManager_abi,
-        functionName: "createProposal",
-        args: [
-          formData.title,
-          formData.description,
-          BigInt(formData.auctionDuration) * BigInt(86400),
-          BigInt(formData.liveDuration) * BigInt(86400),
-          formData.subjectToken,
-          BigInt(formData.minToOpen),
-          BigInt(formData.maxCap),
-          targetAddressArg,
-          formData.calldata ? (formData.calldata as `0x${string}`) : "0x",
-          formData.pythAddress as `0x${string}`,
-          `0x${formData.pythId}`
-        ],
-      })
+      setError(null)
+      setIsPending(true)
+
+      const anyWindow = window as any
+      if (!anyWindow?.ethereum) {
+        setIsPending(false)
+        return fail("No wallet found. Please open MetaMask or a compatible wallet.")
+      }
+
+      const provider = new ethers.BrowserProvider(anyWindow.ethereum)
+      const signer = await provider.getSigner()
+
+      const contract = new ethers.Contract(
+        contractAddress as `0x${string}`,
+        proposalManager_abi,
+        signer
+      )
+
+      const tx = await contract.createProposal(
+        formData.title,
+        formData.description,
+        BigInt(formData.auctionDuration) * BigInt(86400),
+        BigInt(formData.liveDuration) * BigInt(86400),
+        formData.subjectToken,
+        BigInt(formData.minToOpen),
+        BigInt(formData.maxCap),
+        targetAddressArg,
+        formData.calldata ? (formData.calldata as `0x${string}`) : "0x",
+        formData.pythAddress as `0x${string}`,
+        `0x${formData.pythId}`
+      )
+
+      setTxHash(tx.hash)
+      setIsPending(false)
+      setIsConfirming(true)
+
+      const receipt = await tx.wait()
+      const status = (receipt as any)?.status
+      if (status === 1 || status === "1" || status === true) {
+        setIsConfirmed(true)
+        toast({
+          title: "Proposal Created",
+          description: "Your proposal has been submitted successfully.",
+        })
+        router.push("/proposals")
+      } else {
+        setError(new Error("Transaction failed"))
+        toast({ title: "Transaction failed", description: "The transaction was mined but failed.", variant: "destructive" })
+      }
     } catch (err: any) {
+      setError(err)
       toast({ title: "Transaction Error", description: err?.message || String(err), variant: "destructive" })
+    } finally {
+      setIsPending(false)
+      setIsConfirming(false)
     }
   }
 
-  // Move hook to top-level: react hooks cannot be called conditionally or inside handlers
   useEffect(() => {
-    if (isConfirmed) {
-      toast({
-        title: "Proposal Created",
-        description: "Your proposal has been submitted successfully.",
-      })
-      router.push("/proposals")
-    }
-  }, [isConfirmed, toast, router])
+    // no-op here; navigation handled after receipt above
+  }, [])
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
@@ -373,10 +381,10 @@ export default function NewProposalPage() {
             </div>
 
             {/* Transaction feedback */}
-            {hash && <div>Transaction Hash: {hash}</div>}
+            {txHash && <div>Transaction Hash: {txHash}</div>}
             {isConfirming && <div>Waiting for confirmation...</div>}
             {isConfirmed && <div>Transaction confirmed.</div>}
-            {error && <div>Error: {(error as BaseError).shortMessage || error.message}</div>}
+            {error && <div>Error: {error.message}</div>}
           </form>
         </CardContent>
       </Card>

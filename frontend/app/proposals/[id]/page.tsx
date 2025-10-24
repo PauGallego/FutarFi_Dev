@@ -14,6 +14,10 @@ import { MarketTradePanel } from "@/components/market-trade-panel"
 import { useChainId } from "wagmi"
 import type { Proposal, UserOrder, MarketOption, UserBalance } from "@/lib/types"
 import { useGetProposalById } from "@/hooks/use-get-proposalById"
+import { useGetUserOrders } from "@/hooks/use-get-user-orders"
+import { useCancelOrder } from "@/hooks/use-cancel-order"
+import { toast } from "sonner"
+import { useGetOrderbookOrders } from "@/hooks/use-get-orderbook-orders"
 
 interface PageProps {
   params: {id: string}
@@ -47,24 +51,6 @@ function generateProposalData(id: string, hookProposal: any): Proposal {
     buyVolume: 50 + Math.random() * 200,
     sellVolume: 50 + Math.random() * 200,
   }))
-
-  const generateOrderBook = () => {
-    const buyOrders = Array.from({ length: 15 }, (_, i) => ({
-      price: 0.5 - i * 0.01,
-      amount: 100 + Math.random() * 500,
-      total: 0,
-      side: "buy" as const,
-    }))
-    const sellOrders = Array.from({ length: 15 }, (_, i) => ({
-      price: 0.51 + i * 0.01,
-      amount: 100 + Math.random() * 500,
-      total: 0,
-      side: "sell" as const,
-    }))
-    buyOrders.forEach((o) => (o.total = o.price * o.amount))
-    sellOrders.forEach((o) => (o.total = o.price * o.amount))
-    return [...buyOrders, ...sellOrders]
-  }
 
   return {
       id: hookProposal.id,
@@ -102,42 +88,34 @@ function generateProposalData(id: string, hookProposal: any): Proposal {
       marketData:
       hookProposal.state === "Live" || hookProposal.state === "Resolved" || hookProposal.state === "Auction"
         ? {
-            yesMarket: "0x1234567890123456789012345678901234567890",
-            noMarket: "0x0987654321098765432109876543210987654321",
-            yesOrderBook: generateOrderBook(),
-            noOrderBook: generateOrderBook(),
+            yesOrderBook: [],
+            noOrderBook: [],
             twapHistory,
-            volumeDistribution,
+            // volumeDistribution,
           }
         : undefined,
   }
 }
 
-function generateMockOrders(): UserOrder[] {
-  return [
-    {
-      id: "1",
-      market: "YES",
-      type: "limit",
-      side: "BUY",
-      price: 0.52,
-      amount: 100,
-      filled: 50,
-      status: "pending",
-      timestamp: Date.now() - 3600000,
-    },
-    {
-      id: "2",
-      market: "YES",
-      type: "market",
-      side: "SELL",
-      price: 0.55,
-      amount: 50,
-      filled: 50,
-      status: "filled",
-      timestamp: Date.now() - 7200000,
-    },
-  ]
+// Map backend order document -> frontend UserOrder
+function mapBackendOrderToUserOrder(o: any): UserOrder {
+  const statusMap: Record<string, UserOrder["status"]> = {
+    open: "pending",
+    partial: "pending",
+    filled: "filled",
+    cancelled: "cancelled",
+  }
+  return {
+    id: String(o._id ?? o.id ?? ""),
+    market: (o.side === "approve" ? "YES" : "NO"),
+    type: (o.orderExecution === "market" ? "market" : "limit"),
+    side: (o.orderType === "sell" ? "SELL" : "BUY"),
+    price: typeof o.price === "number" ? o.price : Number(o.price ?? o.executedPrice ?? 0),
+    amount: typeof o.amount === "number" ? o.amount : Number(o.amount ?? 0),
+    filled: typeof o.filledAmount === "number" ? o.filledAmount : Number(o.filledAmount ?? 0),
+    status: statusMap[o.status] ?? "pending",
+    timestamp: o.createdAt ? new Date(o.createdAt).getTime() : Date.now(),
+  }
 }
 
 function generateMockUserBalance(): UserBalance {
@@ -162,8 +140,15 @@ export default function ProposalDetailPage({ params }: PageProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  // Fetch authenticated user orders for this proposal (if user has authenticated)
+  const { orders: rawUserOrders, error: userOrdersError, isLoading: userOrdersLoading, refetch: refetchUserOrders } = useGetUserOrders({ proposalId: id })
 
+  const { cancelOrder, isLoading: cancellingOrder } = useCancelOrder()
+
+  // Live public orderbook for selected market
+  const { orders: liveOrderbook, refetch: refetchOrderbook } = useGetOrderbookOrders({ proposalId: id, market: selectedMarket, auto: true })
+
+  useEffect(() => {
     if (!hookProposal) {
       setProposal(null)
       setError(hookError ? String(hookError) : null)
@@ -178,13 +163,35 @@ export default function ProposalDetailPage({ params }: PageProps) {
     setError(null)
     setIsLoading(hookLoading)
 
-    setUserOrders(generateMockOrders())
+    // user orders now come from hook below
     setUserBalance(generateMockUserBalance())
 
   }, [hookProposal, hookLoading, hookError])
 
-  const handleCancelOrder = (orderId: string) => {
-    setUserOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "cancelled" as const } : o)))
+  // Map hook orders -> UI orders
+  useEffect(() => {
+    if (!rawUserOrders || !Array.isArray(rawUserOrders)) {
+      setUserOrders([])
+      return
+    }
+    setUserOrders(rawUserOrders.map(mapBackendOrderToUserOrder))
+  }, [rawUserOrders])
+
+  const handleCancelOrder = async (orderId: string) => {
+    const res = await cancelOrder(orderId)
+    if (!res) {
+      toast.error("Cancel failed")
+      return
+    }
+    if (res.ok) {
+      toast.success("Order cancelled")
+      // optimistic local update
+      setUserOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "cancelled" as const } : o)))
+      // refetch from backend for accuracy
+      void refetchUserOrders()
+    } else {
+      toast.error("Cancel failed", { description: res.data?.error || `Status ${res.status}` })
+    }
   }
 
   if (isLoading) {
@@ -236,6 +243,8 @@ export default function ProposalDetailPage({ params }: PageProps) {
                 selectedMarket={selectedMarket}
                 onMarketChange={setSelectedMarket}
                 onCancelOrder={handleCancelOrder}
+                userOrdersError={userOrdersError}
+                orderBookEntries={liveOrderbook}
               />
             )
           )}
@@ -246,7 +255,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
           {(((proposal as any).status === "Auction" || (proposal as any).status === "Canceled") && (proposal as any).auctionData) ? (
             <AuctionTradePanel auctionData={(proposal as any).auctionData} isFailed={(proposal as any).status === "Canceled"} />
           ) : (
-            <MarketTradePanel />
+            <MarketTradePanel selectedMarket={selectedMarket} onMarketChange={setSelectedMarket} proposalId={proposal.id} onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }} />
           )}
         </div>
       </div>
