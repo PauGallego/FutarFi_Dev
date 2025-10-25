@@ -68,7 +68,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
   const isDark = resolvedTheme === "dark"
   const lineColor = isDark ? "#22c55e" : "#000000" // green in dark, black in light
   const textColor = lineColor
-  const timeLeft = useCountdown(auctionData.auctionEndTime)
+  // Removed countdown here; will compute after fetching END_TIME
   const totalBids = auctionData.yesTotalBids + auctionData.noTotalBids
 
   // Onchain token addresses
@@ -111,9 +111,26 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
   const [yesPriceNow, setYesPriceNow] = useState<number>(auctionData.yesCurrentPrice)
   const [noPriceNow, setNoPriceNow] = useState<number>(auctionData.noCurrentPrice)
   const [raisedOverride, setRaisedOverride] = useState<bigint | undefined>(undefined)
+  const [blockTimestamp, setBlockTimestamp] = useState<number | undefined>(undefined)
 
   useEffect(() => { if (typeof yesPrice6d === "bigint") setYesPriceNow(Number(yesPrice6d) / 1_000_000) }, [yesPrice6d])
   useEffect(() => { if (typeof noPrice6d === "bigint") setNoPriceNow(Number(noPrice6d) / 1_000_000) }, [noPrice6d])
+
+  // Fetch on-chain curve params from YES auction
+  const { data: startPrice6d } = useReadContract({ address: yesAuctionAddr as `0x${string}` | undefined, abi: dutchAuction_abi, functionName: "START_PRICE" })
+  const { data: startTimeSec } = useReadContract({ address: yesAuctionAddr as `0x${string}` | undefined, abi: dutchAuction_abi, functionName: "START_TIME" })
+  const { data: endTimeSec } = useReadContract({ address: yesAuctionAddr as `0x${string}` | undefined, abi: dutchAuction_abi, functionName: "END_TIME" })
+
+  const [startPrice, setStartPrice] = useState<number | undefined>(undefined)
+  const [startTime, setStartTime] = useState<number | undefined>(undefined)
+  const [endTime, setEndTime] = useState<number | undefined>(undefined)
+  useEffect(() => { if (typeof startPrice6d === "bigint") setStartPrice(Number(startPrice6d) / 1_000_000) }, [startPrice6d])
+  useEffect(() => { if (typeof startTimeSec === "bigint") setStartTime(Number(startTimeSec)) }, [startTimeSec])
+  useEffect(() => { if (typeof endTimeSec === "bigint") setEndTime(Number(endTimeSec)) }, [endTimeSec])
+
+  // Use on-chain END_TIME for countdown when available
+  const effectiveEndTime = (typeof endTimeSec === "bigint" ? endTimeSec : auctionData.auctionEndTime)
+  const timeLeft = useCountdown(effectiveEndTime)
 
   // Compute remaining using overrides first, then on-chain read, then fallback to provided auctionData
   const yesRemaining = useMemo(() => {
@@ -138,30 +155,36 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
     return Number((noRemaining * 100n) / (auctionData.noRemainingMintable + auctionData.noTotalBids))
   }, [noCap, noRemaining, auctionData.noRemainingMintable, auctionData.noTotalBids])
 
-  const startPrice = 1.0
-  const endPrice = 0.0
-  const chartData = auctionData.priceHistory.map((point, index) => {
-    const progress = index / (auctionData.priceHistory.length - 1)
-    return {
-      time: new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      price: startPrice - progress * (startPrice - endPrice),
-      isCurrent: false,
+  // Build on-chain linear function points from START->END, price goes to 0 at END_TIME
+  const chartData = useMemo(() => {
+    if (!startPrice || !startTime || !endTime || endTime <= startTime) return [] as Array<{ time: number; price: number; isCurrent: boolean }>
+    const SAMPLES = 100
+    const duration = endTime - startTime
+    const pts = Array.from({ length: SAMPLES + 1 }, (_, i) => {
+      const t = startTime + Math.round((i * duration) / SAMPLES)
+      const price = Math.max(startPrice * ((endTime - t) / duration), 0)
+      return { time: t, price, isCurrent: false }
+    })
+    const now = (typeof blockTimestamp === 'number' ? blockTimestamp : Math.floor(Date.now() / 1000))
+    if (now >= startTime && now <= endTime) {
+      const priceAtNow = yesPriceNow
+      pts.push({ time: now, price: priceAtNow, isCurrent: true })
+      pts.sort((a, b) => a.time - b.time)
     }
-  })
-
-  // Add current price point with flashing dot
-  const currentProgress = chartData.length / (chartData.length + 1)
-  const currentPoint = {
-    time: "Now",
-    price: startPrice - currentProgress * (startPrice - endPrice),
-    isCurrent: true,
-  }
-  const chartDataWithCurrent = [...chartData, currentPoint]
+    return pts
+  }, [startPrice, startTime, endTime, yesPriceNow, blockTimestamp])
 
   // Manual refetch to update instantly after tx and every 10s
   const refetchNow = useCallback(async () => {
     try {
       if (!publicClient) return
+      // Latest block timestamp for accurate X axis and current-dot position
+      try {
+        const latest = await publicClient.getBlock()
+        const ts: any = (latest as any)?.timestamp
+        if (typeof ts === 'bigint') setBlockTimestamp(Number(ts))
+        else if (typeof ts === 'number') setBlockTimestamp(ts)
+      } catch {}
       // Prices
       if (yesAuctionAddr) {
         const p: bigint = await publicClient.readContract({ address: yesAuctionAddr as any, abi: dutchAuction_abi, functionName: "priceNow" })
@@ -272,6 +295,14 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
     return pct > 100 ? 100 : pct
   }, [noSupplyForMin, noMinToOpen])
 
+  // Precompute X-axis ticks to avoid odd concatenated labels and control density
+  const xTicks = useMemo(() => {
+    if (!startTime || !endTime || endTime <= startTime) return [] as number[]
+    const count = 6 // show up to 6 ticks including ends
+    const duration = endTime - startTime
+    return Array.from({ length: count }, (_, i) => Math.round(startTime + (i * duration) / (count - 1)))
+  }, [startTime, endTime])
+
   return (
     <div className="space-y-6">
       <Card className="border-primary/20">
@@ -300,19 +331,27 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
         <CardContent>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartDataWithCurrent} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                 <XAxis
                   dataKey="time"
+                  type="number"
+                  scale="linear"
+                  domain={startTime && endTime ? [startTime, endTime] : ["auto", "auto"] as any}
+                  ticks={xTicks}
+                  tickFormatter={(t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                   stroke={textColor}
                   fontSize={12}
                   tick={{ fill: textColor }}
+                  minTickGap={48}
+                  label={{ value: "Time", position: "insideBottom", offset: -5, fill: textColor }}
                 />
                 <YAxis
                   stroke={textColor}
                   fontSize={12}
-                  domain={[0, 1]}
+                  domain={[0, startPrice ?? 1]}
                   tick={{ fill: textColor }}
+                  tickFormatter={(v: number) => v.toFixed(2)}
                   label={{ value: "Price", angle: -90, position: "insideLeft", fill: textColor }}
                 />
                 <Tooltip
@@ -322,7 +361,8 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
                     borderRadius: "8px",
                     color: textColor,
                   }}
-                  formatter={(value: any) => [`$${value.toFixed(4)}`, "Price"]}
+                  formatter={(value: any) => [`$${Number(value).toFixed(2)}`, "Price"]}
+                  labelFormatter={(label: any) => new Date(Number(label) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 />
                 <Line
                   type="linear"
@@ -331,7 +371,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
                   strokeWidth={2}
                   dot={(dotProps: any) => {
                     if (dotProps.payload.isCurrent) {
-                      return <AnimatedDot {...dotProps} color={lineColor} key={`animated-${dotProps.index}`} />
+                      return <AnimatedDot {...dotProps} color="#22c55e" key={`animated-${dotProps.index}`} />
                     }
                     return <Dot {...dotProps} r={0} key={`dot-${dotProps.index}`} />
                   }}
@@ -352,7 +392,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
           <CardContent className="space-y-4">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Current Price</p>
-              <p className="text-3xl font-bold text-primary">${yesPriceNow.toFixed(4)}</p>
+              <p className="text-3xl font-bold text-primary">${yesPriceNow.toFixed(2)}</p>
             </div>
 
             <div className="space-y-2">
@@ -389,7 +429,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
           <CardContent className="space-y-4">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Current Price</p>
-              <p className="text-3xl font-bold text-destructive">${noPriceNow.toFixed(4)}</p>
+              <p className="text-3xl font-bold text-destructive">${noPriceNow.toFixed(2)}</p>
             </div>
 
             <div className="space-y-2">

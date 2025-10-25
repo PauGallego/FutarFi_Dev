@@ -8,6 +8,27 @@ export const dutchAuction_abi = [
   },
   {
     type: "function",
+    name: "START_PRICE",
+    inputs: [],
+    outputs: [{ name: "", type: "int64", internalType: "int64" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "START_TIME",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "END_TIME",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "MIN_TO_OPEN",
     inputs: [],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
