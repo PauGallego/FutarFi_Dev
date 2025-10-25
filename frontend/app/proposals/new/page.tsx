@@ -58,6 +58,10 @@ export default function NewProposalPage() {
     pythId: "",
   })
 
+  // Limits
+  const MAX_TITLE = 80
+  const MAX_DESC = 600
+
   const [useTarget, setUseTarget] = useState<"YES" | "NO">("NO")
 
   // Local tx state (ethers based)
@@ -86,8 +90,10 @@ export default function NewProposalPage() {
       return fail("Wrong network. Please switch your wallet to Anvil (31337).")
     }
 
-    if (!formData.title.trim()) return fail("Please provide a proposal title.")
-    if (!formData.description.trim()) return fail("Please provide a proposal description.")
+  if (!formData.title.trim()) return fail("Please provide a proposal title.")
+  if (formData.title.length > MAX_TITLE) return fail(`Title is too long (max ${MAX_TITLE} characters).`)
+  if (!formData.description.trim()) return fail("Please provide a proposal description.")
+  if (formData.description.length > MAX_DESC) return fail(`Description is too long (max ${MAX_DESC} characters).`)
     if (!formData.auctionDuration || Number(formData.auctionDuration) <= 0 || !isUint(formData.auctionDuration)) return fail("Auction duration must be a positive whole number of days.")
     if (Number(formData.auctionDuration) > 30) return fail("Auction duration cannot exceed 30 days.")
     if (!formData.liveDuration || Number(formData.liveDuration) <= 0 || !isUint(formData.liveDuration)) return fail("Live duration must be a positive whole number of days.")
@@ -204,10 +210,12 @@ export default function NewProposalPage() {
                 id="title"
                 placeholder="e.g., Increase Treasury Allocation for Development"
                 value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value.slice(0, MAX_TITLE) })}
                 className="text-base"
                 required
+                maxLength={MAX_TITLE}
               />
+              <div className="text-xs text-muted-foreground text-right">{formData.title.length}/{MAX_TITLE}</div>
             </div>
 
             {/* Description */}
@@ -217,10 +225,12 @@ export default function NewProposalPage() {
                 id="description"
                 placeholder="Provide a detailed description..."
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value.slice(0, MAX_DESC) })}
                 className="min-h-[150px] text-base"
                 required
+                maxLength={MAX_DESC}
               />
+              <div className="text-xs text-muted-foreground text-right">{formData.description.length}/{MAX_DESC}</div>
             </div>
 
             {/* Auction + Live durations */}

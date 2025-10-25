@@ -61,7 +61,7 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
         </div>
 
         <div className="prose prose-invert max-w-none">
-          <p className="text-muted-foreground leading-relaxed">{proposal.description}</p>
+          <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">{proposal.description}</p>
         </div>
       </div>
     </div>
