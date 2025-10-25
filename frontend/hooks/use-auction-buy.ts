@@ -152,15 +152,15 @@ export function useAuctionBuy({ proposalAddress, side }: { proposalAddress: `0x$
         setError(err)
         throw new Error(err)
       }
-      const remainingNow = capNow - tsNow // token 18d
+      // const remainingNow = capNow - tsNow // token 18d
       // Max PyUSD you can spend to not exceed remaining tokens at current price: remaining * price (6d) / 1e18
-      const maxPay = (remainingNow * priceLatest) / (10n ** 18n)
+      // const maxPay = (remainingNow * priceLatest) / (10n ** 18n)
       // 1% buffer to avoid overflow if price drops before mine
-      const buffer = maxPay / 100n > 0n ? maxPay / 100n : 1n
-      const maxPayWithBuffer = maxPay > buffer ? maxPay - buffer : 0n
-      if (payAmount > maxPayWithBuffer) {
-        payAmount = maxPayWithBuffer
-      }
+      // const buffer = maxPay / 100n > 0n ? maxPay / 100n : 1n
+      // const maxPayWithBuffer = maxPay > buffer ? maxPay - buffer : 0n
+      // if (payAmount > maxPayWithBuffer) {
+        // payAmount = maxPayWithBuffer
+      // }
       if (payAmount <= 0n) {
         const err = 'Amount too high for remaining capacity'
         setError(err)
