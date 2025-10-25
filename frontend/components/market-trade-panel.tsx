@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Slider } from "@/components/ui/slider"
 import { useAccount } from "wagmi"
 import { usePublicClient } from "wagmi"
 import { toast } from "sonner"
@@ -33,7 +32,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   const [tradeAction, setTradeAction] = useState<TradeAction>("BUY")
   const [amount, setAmount] = useState("")
   const [limitPrice, setLimitPrice] = useState("")
-  const [slippage, setSlippage] = useState([0.5])
+  // Removed slippage control per request
 
   // Fetch proposal addresses so we can read balances and spender (proposal address)
   const { proposal } = useGetProposalById(proposalId)
@@ -169,19 +168,17 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   const estimatedPrice = orderType === "market" ? 0.52 : Number.parseFloat(limitPrice) || 0
   const estimatedAmount = amount ? Number.parseFloat(amount) : 0
   const estimatedTotal = estimatedPrice * estimatedAmount
-  const estimatedSlippage = orderType === "market" ? (estimatedTotal * slippage[0]) / 100 : 0
-  const finalTotal = estimatedTotal + estimatedSlippage
+  // Slippage removed; totals are straightforward estimates now
 
   // What the user receives (tokens for BUY, PyUSD for SELL)
   const receiveLabel = tradeAction === "BUY" ? `t${selectedMarket}` : "PyUSD"
   const estimatedReceive = useMemo(() => {
     if (estimatedPrice <= 0 || estimatedAmount <= 0) return 0
-    const worstCase = orderType === "market" ? (1 - slippage[0] / 100) : 1
     if (tradeAction === "BUY") {
-      return (estimatedAmount / estimatedPrice) * worstCase
+      return (estimatedAmount / estimatedPrice)
     }
-    return (estimatedAmount * estimatedPrice) * worstCase
-  }, [tradeAction, orderType, slippage, estimatedAmount, estimatedPrice])
+    return (estimatedAmount * estimatedPrice)
+  }, [tradeAction, orderType, estimatedAmount, estimatedPrice])
 
   const handleCreateOrder = async () => {
     if (!amount) return
@@ -345,45 +342,15 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
             </div>
           )}
 
-          {orderType === "market" && (
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <Label htmlFor="slippage">Slippage Tolerance</Label>
-                <span className="text-sm text-muted-foreground">{slippage[0]}%</span>
-              </div>
-              <Slider
-                id="slippage"
-                min={0.1}
-                max={5}
-                step={0.1}
-                value={slippage}
-                onValueChange={setSlippage}
-                disabled={!isConnected || creating}
-              />
-            </div>
-          )}
+          {/* Slippage controls removed */}
 
           <div className="rounded-lg border bg-muted/50 p-4 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Order Type:</span>
-              <span className="font-mono capitalize">{orderType}</span>
-            </div>
+            
             <div className="flex justify-between">
               <span className="text-muted-foreground">Est. Price:</span>
               <span className="font-mono">${estimatedPrice.toFixed(4)}</span>
             </div>
-            {orderType === "market" && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Slippage:</span>
-                  <span className="font-mono text-yellow-500">${estimatedSlippage.toFixed(4)}</span>
-                </div>
-                <div className="flex justify-between font-semibold pt-2 border-t">
-                  <span>You {tradeAction === "BUY" ? "Pay" : "Receive"}:</span>
-                  <span className="font-mono">${finalTotal.toFixed(4)}</span>
-                </div>
-              </>
-            )}
+            {/* Removed slippage line and 'You Pay' summary per request */}
             <div className="flex justify-between font-semibold pt-2">
               <span>You Receive:</span>
               <span className="font-mono">{estimatedReceive.toLocaleString(undefined, { maximumFractionDigits: 6 })} {receiveLabel}</span>

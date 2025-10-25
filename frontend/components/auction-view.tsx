@@ -367,7 +367,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
             {/* Progress to Minimum (token supply vs minToOpen) */}
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Reach min supply</span>
+                <span className="text-muted-foreground">Quorum</span>
                 <span className="font-mono text-foreground">{yesMinProgressPercent.toFixed(1)}%</span>
               </div>
               <Progress value={yesMinProgressPercent} className="h-2 bg-primary/20" />
@@ -404,7 +404,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
             {/* Progress to Minimum (token supply vs minToOpen) */}
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Reach min supply</span>
+                <span className="text-muted-foreground">Quorum</span>
                 <span className="font-mono text-foreground">{noMinProgressPercent.toFixed(1)}%</span>
               </div>
               <Progress value={noMinProgressPercent} className="h-2 bg-destructive/20 [&>div]:bg-destructive" />

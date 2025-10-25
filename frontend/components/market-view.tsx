@@ -78,7 +78,7 @@ export function MarketView({ marketData, userOrders, selectedMarket, onMarketCha
 
       <Card>
         <CardHeader>
-          <CardTitle>Order Volume Distribution</CardTitle>
+          <CardTitle>Liquidity</CardTitle>
           <CardDescription>Buy and sell order volumes at different price levels</CardDescription>
         </CardHeader>
         {/* <CardContent>
