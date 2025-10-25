@@ -20,6 +20,7 @@ import { useGetUserOrders } from "@/hooks/use-get-user-orders"
 import { useCancelOrder } from "@/hooks/use-cancel-order"
 import { toast } from "sonner"
 import { useGetOrderbookOrders } from "@/hooks/use-get-orderbook-orders"
+import { AuctionResolvedOnChain } from "@/components/resolution-view"
 
 interface PageProps {
   params: {id: string}
@@ -203,16 +204,16 @@ export default function ProposalDetailPage({ params }: PageProps) {
     }
     if (res.ok) {
       toast.success("Order cancelled")
-      // optimistic local update
       setUserOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, state: "cancelled" as const } : o)))
-      // refetch from backend for accuracy
       void refetchUserOrders()
-      // refresh orderbook immediately
       void refetchOrderbook()
     } else {
       toast.error("Cancel failed", { description: res.data?.error || `state ${res.status}` })
     }
   }
+
+  const isResolvedView = (proposal as any)?.state === "Resolved"
+  // On-chain reads for resolved UI are handled inside AuctionResolvedOnChain
 
   if (isLoading) {
     return (
@@ -250,41 +251,47 @@ export default function ProposalDetailPage({ params }: PageProps) {
     <div className="container mx-auto px-4 py-12">
       <div className="grid lg:grid-cols-3 gap-8">
         {/* Left/Main Content */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className={`${isResolvedView ? "lg:col-span-3" : "lg:col-span-2"} space-y-6`}>
           <ProposalHeader proposal={proposal} chainId={chainId} />
 
-          {(((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") ) ? (
-            <AuctionView proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} userBalance={(userBalance as any)} />
+          {isResolvedView ? (
+            <AuctionResolvedOnChain proposalAddress={(proposal as any).address} />
           ) : (
-            (proposal as any).marketData && (
-              <MarketView
-                marketData={(proposal as any).marketData}
-                userOrders={userOrders}
-                selectedMarket={selectedMarket}
-                onMarketChange={setSelectedMarket}
-                onCancelOrder={handleCancelOrder}
-                userOrdersError={userOrdersError}
-                orderBookEntries={liveOrderbook}
-              />
+            ((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") ? (
+              <AuctionView proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} userBalance={(userBalance as any)} />
+            ) : (
+              (proposal as any).marketData && (
+                <MarketView
+                  marketData={(proposal as any).marketData}
+                  userOrders={userOrders}
+                  selectedMarket={selectedMarket}
+                  onMarketChange={setSelectedMarket}
+                  onCancelOrder={handleCancelOrder}
+                  userOrdersError={userOrdersError}
+                  orderBookEntries={liveOrderbook}
+                />
+              )
             )
           )}
         </div>
 
         {/* Right Sidebar */}
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          {(((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") && (proposal as any).auctionData) ? (
-            <AuctionTradePanel proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} isFailed={(proposal as any).state === "Cancelled"} />
-          ) : (
-            <>
-              {/* Current prices for YES/NO shown above trade panel */}
-              <MarketPriceHeader proposalId={proposal.id} />
-              <MarketTradePanel selectedMarket={selectedMarket} onMarketChange={setSelectedMarket} proposalId={proposal.id} onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }} />
-              <div className="mt-4">
-                <MarketBalancesPanel proposalId={proposal.id} />
-              </div>
-            </>
-          )}
-        </div>
+        {!isResolvedView && (
+          <div className="lg:sticky lg:top-4 lg:self-start">
+            {((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") && (proposal as any).auctionData ? (
+              <AuctionTradePanel proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} isFailed={(proposal as any).state === "Cancelled"} />
+            ) : (
+              <>
+                {/* Current prices for YES/NO shown above trade panel */}
+                <MarketPriceHeader proposalId={proposal.id} />
+                <MarketTradePanel selectedMarket={selectedMarket} onMarketChange={setSelectedMarket} proposalId={proposal.id} onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }} />
+                <div className="mt-4">
+                  <MarketBalancesPanel proposalId={proposal.id} />
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
