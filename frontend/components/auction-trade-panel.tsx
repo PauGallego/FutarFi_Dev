@@ -9,6 +9,7 @@ import { useAccount } from "wagmi"
 import { toast } from "sonner"
 import type { MarketOption, AuctionData } from "@/lib/types"
 import { useAuctionBuy } from "@/hooks/use-auction-buy"
+import { formatUnits } from "viem"
 import { parseUnits } from "viem"
 
 interface AuctionTradePanelProps {
@@ -119,11 +120,11 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 disabled={!isConnected || isApproving || isBuying}
-                className="pr-14"
+                className="pr-14 no-spin"
               />
               <button
                 type="button"
-                onClick={() => setAmount((Number(pyusdBalance) / 1e6).toString())}
+                onClick={() => setAmount(formatUnits(pyusdBalance as bigint, 6))}
                 className="absolute inset-y-0 right-2 my-auto px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
                 disabled={!isConnected || isApproving || isBuying}
               >

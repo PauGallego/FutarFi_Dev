@@ -1,16 +1,19 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Slider } from "@/components/ui/slider"
-import { useAccount } from "wagmi"
+import { useAccount, useReadContract } from "wagmi"
 import { toast } from "sonner"
 import type { OrderType, TradeAction, MarketOption } from "@/lib/types"
 import { useCreateOrder } from "@/hooks/use-create-order"
+import { useGetProposalById } from "@/hooks/use-get-proposalById"
+import { marketToken_abi } from "@/contracts/marketToken-abi"
+import { parseUnits, formatUnits } from "viem"
 
 type MarketTradePanelProps = {
   selectedMarket: MarketOption
@@ -20,7 +23,7 @@ type MarketTradePanelProps = {
 }
 
 export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, onOrderPlaced }: MarketTradePanelProps) {
-  const { isConnected } = useAccount()
+  const { isConnected, address } = useAccount()
   const { createOrder, isLoading: creating, error: createError } = useCreateOrder()
 
   const [orderType, setOrderType] = useState<OrderType>("market")
@@ -28,6 +31,41 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   const [amount, setAmount] = useState("")
   const [limitPrice, setLimitPrice] = useState("")
   const [slippage, setSlippage] = useState([0.5])
+
+  // Fetch proposal addresses so we can read balances
+  const { proposal } = useGetProposalById(proposalId)
+  const pyusdAddr = proposal?.pyUSD as `0x${string}` | undefined
+  const marketTokenAddr = (selectedMarket === "YES" ? proposal?.yesToken : proposal?.noToken) as `0x${string}` | undefined
+
+  // Read user balances
+  const { data: pyusdBalance } = useReadContract({
+    address: pyusdAddr,
+    abi: marketToken_abi,
+    functionName: "balanceOf",
+    args: [address ?? "0x0000000000000000000000000000000000000000"],
+  })
+  const { data: userTokenBalance } = useReadContract({
+    address: marketTokenAddr,
+    abi: marketToken_abi,
+    functionName: "balanceOf",
+    args: [address ?? "0x0000000000000000000000000000000000000000"],
+  })
+  const displayBalance = useMemo(() => {
+    if (tradeAction === "BUY") return (Number((pyusdBalance as bigint) ?? 0n) / 1e6)
+    return (Number((userTokenBalance as bigint) ?? 0n) / 1e18)
+  }, [tradeAction, pyusdBalance, userTokenBalance])
+  const balanceLabel = tradeAction === "BUY" ? "PyUSD" : `t${selectedMarket}`
+
+  // Amount should not exceed available balance (PyUSD for BUY, MarketToken for SELL)
+  const amountParsed = useMemo(() => {
+    try {
+      return parseUnits(amount || "0", tradeAction === "BUY" ? 6 : 18)
+    } catch {
+      return 0n
+    }
+  }, [amount, tradeAction])
+  const maxBalance = (tradeAction === "BUY" ? (pyusdBalance as bigint) : (userTokenBalance as bigint)) || 0n
+  const insufficientBalance = amountParsed > maxBalance
 
   // Mock calculations
   const estimatedPrice = orderType === "market" ? 0.52 : Number.parseFloat(limitPrice) || 0
@@ -140,15 +178,38 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
           </Tabs>
 
           <div className="space-y-2">
-            <Label htmlFor="amount">Amount</Label>
-            <Input
-              id="amount"
-              type="number"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              disabled={!isConnected || creating}
-            />
+            <div className="flex items-center justify-between">
+              <Label htmlFor="amount">Amount ({balanceLabel})</Label>
+              <span className="text-xs text-muted-foreground">
+                Balance: {displayBalance.toLocaleString(undefined, { maximumFractionDigits: 6 })} {balanceLabel}
+              </span>
+            </div>
+            <div className="relative">
+              <Input
+                id="amount"
+                type="number"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                disabled={!isConnected || creating}
+                className="pr-14 no-spin"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const decimals = tradeAction === "BUY" ? 6 : 18
+                  const amtStr = formatUnits(maxBalance, decimals)
+                  setAmount(amtStr)
+                }}
+                className="absolute inset-y-0 right-2 my-auto px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                disabled={!isConnected || creating}
+              >
+                MAX
+              </button>
+            </div>
+            {insufficientBalance && (
+              <div className="text-xs text-destructive">Insufficient {balanceLabel} balance for this amount.</div>
+            )}
           </div>
 
           {orderType === "limit" && (
@@ -161,6 +222,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                 value={limitPrice}
                 onChange={(e) => setLimitPrice(e.target.value)}
                 disabled={!isConnected || creating}
+                className="no-spin"
               />
             </div>
           )}
@@ -209,7 +271,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
           <Button
             className="w-full"
             onClick={handleCreateOrder}
-            disabled={!isConnected || creating || !amount || (orderType === "limit" && !limitPrice)}
+            disabled={!isConnected || creating || !amount || (orderType === "limit" && !limitPrice) || insufficientBalance}
           >
             {creating ? "Creating..." : `${tradeAction} ${orderType === "market" ? "at Market" : "with Limit"}`}
           </Button>
