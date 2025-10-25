@@ -959,6 +959,92 @@ async function monitorAuctionsToFinalize({ limit = 20 } = {}) {
   return { tried, finalized: finalizedCount };
 }
 
+// Resolve helpers for proposals that finished Live period
+async function attemptResolveProposal(proposalAddress) {
+  if (!proposalAddress) throw new Error('proposalAddress required');
+  try {
+    const { hash, receipt } = await sendTx({
+      address: proposalAddress,
+      abi: ABI_PROPOSAL,
+      method: 'resolve',
+      args: []
+    });
+    return { ok: true, hash, blockNumber: Number(receipt?.blockNumber || 0) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function canResolveProposal(proposalAddress) {
+  try {
+    const c = getContract(proposalAddress, ABI_PROPOSAL, false);
+    const [stateBn, liveEndBn] = await Promise.all([
+      c.state(),
+      c.liveEnd()
+    ]);
+    const stateNum = Number(stateBn);
+    if (stateNum !== 1) return { can: false, reason: 'not-live' }; // 1 = Live
+
+    // Chain time with fallback
+    let nowTs;
+    try {
+      const block = await getProvider().getBlock('latest');
+      nowTs = Number(block?.timestamp || 0);
+    } catch (_) {
+      nowTs = Math.floor(Date.now() / 1000);
+    }
+    const liveEnd = Number(liveEndBn);
+    if (nowTs < liveEnd) return { can: false, reason: 'live-not-ended' };
+    return { can: true, reason: 'ended' };
+  } catch (e) {
+    return { can: false, reason: `read-error:${e.message}` };
+  }
+}
+
+// Scan DB for proposals in 'live' state and try resolve when liveEnd passed
+async function monitorProposalsToResolve({ limit = 20 } = {}) {
+  const signer = getSigner();
+  if (!signer) return { tried: 0, resolved: 0 };
+  const Proposal = require('../models/Proposal');
+  const candidates = await Proposal.find({ state: 'live' }).sort({ updatedAt: 1 }).limit(limit);
+  console.log(`[resolve-proposals] scan: candidates=${candidates?.length || 0}`);
+  if (!candidates || !candidates.length) return { tried: 0, resolved: 0 };
+
+  let resolved = 0;
+  let tried = 0;
+
+  for (const p of candidates) {
+    const addr = p?.proposalAddress;
+    if (!addr) continue;
+
+    const readiness = await canResolveProposal(addr);
+    if (!readiness.can) {
+      if (readiness.reason && readiness.reason !== 'live-not-ended') {
+        console.log(`[resolve-proposals] skip: id=${p.id} addr=${addr} reason=${readiness.reason}`);
+      }
+      continue;
+    }
+
+    tried++;
+    const start = Date.now();
+    try {
+      const res = await attemptResolveProposal(addr);
+      const elapsed = Date.now() - start;
+      if (res.ok) {
+        resolved++;
+        console.log(`[resolve-proposals] success: id=${p.id} addr=${addr} tx=${res.hash} block=${res.blockNumber} elapsed=${elapsed}ms`);
+      } else {
+        console.warn(`[resolve-proposals] fail: id=${p.id} addr=${addr} error=${res.error} elapsed=${elapsed}ms`);
+      }
+    } catch (e) {
+      const elapsed = Date.now() - start;
+      console.error(`[resolve-proposals] exception: id=${p.id} addr=${addr} error=${e?.message || e} elapsed=${elapsed}ms`);
+    }
+  }
+
+  return { tried, resolved };
+}
+
 module.exports = {
   // Core contract helpers
   getContract,
@@ -985,6 +1071,11 @@ module.exports = {
   monitorAuctionsToFinalize,
   attemptFinalizeAuction,
   canFinalizeAuction,
+
+  // Proposal resolve monitor + helpers
+  monitorProposalsToResolve,
+  attemptResolveProposal,
+  canResolveProposal,
 
   // For testing
   _getProvider: getProvider,

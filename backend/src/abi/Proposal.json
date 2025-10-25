@@ -319,6 +319,13 @@
     },
     {
       "type": "function",
+      "name": "resolve",
+      "inputs": [],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
       "name": "state",
       "inputs": [],
       "outputs": [

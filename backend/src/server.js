@@ -302,6 +302,21 @@ server.listen(PORT, () => {
       }
     }, Number(process.env.AUCTION_FINALIZE_MS || 30000));
   }
+
+  // Periodically try to resolve proposals whose Live ended
+  if (String(process.env.PROPOSAL_RESOLVE_ENABLED || 'true').toLowerCase() === 'true') {
+    const { monitorProposalsToResolve } = require('./services/chainService');
+    startPoll('proposals-resolve', async () => {
+      try {
+        const res = await monitorProposalsToResolve();
+        if (res.tried || res.resolved) {
+          console.log(`proposals-resolve: tried=${res.tried} resolved=${res.resolved}`);
+        }
+      } catch (e) {
+        console.error('proposals-resolve error:', e.message);
+      }
+    }, Number(process.env.PROPOSAL_RESOLVE_MS || 30000));
+  }
 });
 
 module.exports = { app, io };
