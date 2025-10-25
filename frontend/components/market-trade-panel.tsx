@@ -66,11 +66,14 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   }, [publicClient, address, pyusdAddr, marketTokenAddr])
 
   useEffect(() => { void refetchBalances() }, [refetchBalances])
+  // Poll balances every 3s to reflect live changes
+  useEffect(() => {
+    const id = setInterval(() => { void refetchBalances() }, 3000)
+    return () => clearInterval(id)
+  }, [refetchBalances])
 
-  const displayBalance = useMemo(() => {
-    if (tradeAction === "BUY") return Number(pyusdBalance ?? 0n) / 1e6
-    return Number(userTokenBalance ?? 0n) / 1e18
-  }, [tradeAction, pyusdBalance, userTokenBalance])
+  const pyusdDisplay = useMemo(() => Number(pyusdBalance ?? 0n) / 1e6, [pyusdBalance])
+  const tokenDisplay = useMemo(() => Number(userTokenBalance ?? 0n) / 1e18, [userTokenBalance])
   const balanceLabel = tradeAction === "BUY" ? "PyUSD" : `t${selectedMarket}`
 
   // Amount should not exceed available balance (PyUSD for BUY, MarketToken for SELL)
@@ -169,6 +172,17 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   const estimatedSlippage = orderType === "market" ? (estimatedTotal * slippage[0]) / 100 : 0
   const finalTotal = estimatedTotal + estimatedSlippage
 
+  // What the user receives (tokens for BUY, PyUSD for SELL)
+  const receiveLabel = tradeAction === "BUY" ? `t${selectedMarket}` : "PyUSD"
+  const estimatedReceive = useMemo(() => {
+    if (estimatedPrice <= 0 || estimatedAmount <= 0) return 0
+    const worstCase = orderType === "market" ? (1 - slippage[0] / 100) : 1
+    if (tradeAction === "BUY") {
+      return (estimatedAmount / estimatedPrice) * worstCase
+    }
+    return (estimatedAmount * estimatedPrice) * worstCase
+  }, [tradeAction, orderType, slippage, estimatedAmount, estimatedPrice])
+
   const handleCreateOrder = async () => {
     if (!amount) return
 
@@ -198,6 +212,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
       toast.success("Order created!", { description: `${tradeAction} ${amount}${orderType === "limit" ? ` @ $${limitPrice}` : " at market"}` })
       setAmount("")
       setLimitPrice("")
+      await refetchBalances()
       onOrderPlaced?.()
     } else {
       toast.error("Order failed", { description: out.data?.error || `Status ${out.status}` })
@@ -282,8 +297,9 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="amount">Amount ({balanceLabel})</Label>
-              <span className="text-xs text-muted-foreground">
-                Balance: {displayBalance.toLocaleString(undefined, { maximumFractionDigits: 6 })} {balanceLabel}
+              <span className="text-xs text-muted-foreground text-right">
+                <div>PyUSD: {pyusdDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })}</div>
+                <div>{`t${selectedMarket}`}: {tokenDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })}</div>
               </span>
             </div>
             <div className="relative">
@@ -368,6 +384,10 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                 </div>
               </>
             )}
+            <div className="flex justify-between font-semibold pt-2">
+              <span>You Receive:</span>
+              <span className="font-mono">{estimatedReceive.toLocaleString(undefined, { maximumFractionDigits: 6 })} {receiveLabel}</span>
+            </div>
           </div>
 
           <Button

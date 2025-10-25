@@ -12,8 +12,6 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
   const buyOrders = orderBook.filter((o) => o.side === "buy").slice(0, 10)
   const sellOrders = orderBook.filter((o) => o.side === "sell").slice(0, 10)
 
-  const accentColor = market === "YES" ? "primary" : "destructive"
-
   const Row = ({ order, align }: { order: OrderBookEntry; align: "left" | "right" }) => {
     const filled = typeof order.filled === 'number' ? order.filled : 0
     const amount = typeof order.amount === 'number' ? order.amount : 0
@@ -30,7 +28,7 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
           style={{ width }}
         />
         {/* foreground content */}
-        <span className={`relative z-10 ${align === 'left' ? `text-${accentColor}` : 'text-destructive'} text-left`}>${order.price.toFixed(4)}</span>
+        <span className={`relative z-10 ${align === 'left' ? 'text-primary' : 'text-destructive'} text-left`}>${order.price.toFixed(4)}</span>
         <span className="relative z-10 text-center">{order.amount.toFixed(2)}</span>
   <span className="relative z-10 text-center text-muted-foreground">{pctNum.toFixed(0)}%</span>
         <span className="relative z-10 text-right text-muted-foreground">${order.total.toFixed(2)}</span>
