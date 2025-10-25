@@ -612,7 +612,9 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
     if (!order || !order._id) {
       return res.status(500).json({ error: 'Failed to create order' });
     }
+    
 
+    
     // NEW: notify this user that their orders changed
     try { if (io) notifyUserOrdersUpdate(io, userAddress, { reason: 'order-created', changedOrderId: order._id.toString() }); } catch (e) {}
 
@@ -634,11 +636,11 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
         side: order.side,
         orderType: order.orderType === 'buy' ? 'sell' : 'buy', // Opposite type
         status: 'open',
+        userAddress: { $ne: order.userAddress }, // Exclude same user
         _id: { $ne: order._id } // Exclude the order we just created
       }).sort({ createdAt: 1 }); // Oldest first
       
-      console.log(`Found ${existingOrders.length} existing orders to re-check for matching`);
-      
+      console.log(`Found ${existingOrders.length} existing orders to re-check for matching`); 
       for (const existingOrder of existingOrders) {
         try {
           await executeOrder(existingOrder, io);
@@ -2001,9 +2003,13 @@ async function executeOrder(order, io) {
         ? { $expr: { $lte: [{ $toDouble: '$price' }, parseFloat(order.price) ] } }
         : { $expr: { $gte: [{ $toDouble: '$price' }, parseFloat(order.price) ] } };
     }
+    
 
     // Find matching orders
     const matchingOrders = await Order.find({
+
+     
+     
       proposalId: order.proposalId,
       side: order.side,
       orderType: oppositeOrderType,

@@ -1,19 +1,12 @@
 "use client"
 import React, { useEffect, useMemo, useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  BarChart,
-  Bar,
-  Cell,
-} from "recharts"
+import dynamic from "next/dynamic"
 import { MarketDepthAndOrders } from "@/components/market-depth-orders"
 import type { MarketData, MarketOption, OrderBookEntry, UserOrder } from "@/lib/types"
+
+// Lazy-load ApexCharts on client only
+const ApexChart = dynamic(() => import("react-apexcharts"), { ssr: false }) as any
 
 interface MarketViewProps {
   marketData: MarketData
@@ -169,6 +162,42 @@ export function MarketView({
   // Force chart remount when data set changes to avoid stale layout after hard refresh
   const chartKey = useMemo(() => `${proposalId ?? ''}-${selectedMarket}-${candles.length}-${candles[candles.length - 1]?.timestamp ?? ''}`, [proposalId, selectedMarket, candles])
 
+  // Build ApexCharts series
+  const candleSeries = useMemo(() => {
+    // Map to last NUM_BARS, align to right similar to previous
+    const start = Math.max(0, candles.length - NUM_BARS)
+    const slice = candles.slice(start)
+    const data = slice.map((c) => ({ x: new Date(c.timestamp), y: [Number(c.open), Number(c.high), Number(c.low), Number(c.close)] }))
+    return [{ name: "Price", data }]
+  }, [candles])
+
+  const volumeSeries = useMemo(() => {
+    const start = Math.max(0, candles.length - NUM_BARS)
+    const slice = candles.slice(start)
+    const data = slice.map((c) => ({ x: new Date(c.timestamp), y: Number(c.volume) }))
+    return [{ name: "Volume", data }]
+  }, [candles])
+
+  const candleOptions = useMemo(() => ({
+    chart: { type: "candlestick", toolbar: { show: false }, animations: { enabled: false } },
+    xaxis: { type: "datetime", labels: { style: { colors: "#16a34a" } } },
+    yaxis: { tooltip: { enabled: true }, labels: { style: { colors: "#16a34a" } } },
+    plotOptions: { candlestick: { colors: { upward: "#16a34a", downward: "#16a34a" } } },
+    grid: { borderColor: "#16a34a", strokeDashArray: 3 },
+    tooltip: { theme: "dark" },
+    theme: { mode: "dark" },
+  }), [])
+
+  const volumeOptions = useMemo(() => ({
+    chart: { type: "bar", toolbar: { show: false }, animations: { enabled: false } },
+    xaxis: { type: "datetime", labels: { style: { colors: "#16a34a" } } },
+    yaxis: { labels: { style: { colors: "#16a34a" } } },
+    grid: { borderColor: "#16a34a", strokeDashArray: 3 },
+    colors: ["#16a34a"],
+    tooltip: { theme: "dark" },
+    theme: { mode: "dark" },
+  }), [])
+
   return (
     <div className="space-y-6">
       {/* Candlestick */}
@@ -179,39 +208,7 @@ export function MarketView({
         </CardHeader>
         <CardContent>
           <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart key={`c-${chartKey}`} data={fixedCandleChartData} barCategoryGap={2}>
-                <CartesianGrid strokeDasharray="3 3" stroke={GREEN} />
-                <XAxis dataKey="time" stroke={GREEN} tick={{ fill: GREEN, fontSize: 12 }} interval={0} />
-                <YAxis stroke={GREEN} tick={{ fill: GREEN, fontSize: 12 }} domain={["auto", "auto"]} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--background))",
-                    border: `1px solid ${GREEN}`,
-                    borderRadius: "8px",
-                  }}
-                  formatter={(value: any, name: any, props: any) => {
-                    const p = props?.payload
-                    if (p) {
-                      return [
-                        `O:${p.open.toFixed(4)} H:${p.high.toFixed(4)} L:${p.low.toFixed(4)} C:${p.close.toFixed(4)}`,
-                        "OHLC",
-                      ]
-                    }
-                    return [value, name]
-                  }}
-                />
-                <Legend wrapperStyle={{ color: GREEN }} />
-                <Bar dataKey="low" stackId="wick" fill="transparent" />
-                <Bar dataKey="rangeHL" stackId="wick" fill={GREEN} barSize={2} />
-                <Bar dataKey="bodyBase" stackId="body" fill="transparent" />
-                <Bar dataKey="body" stackId="body" barSize={16}>
-                  {fixedCandleChartData.map((_, i) => (
-                    <Cell key={`c-${i}`} fill={GREEN} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <ApexChart type="candlestick" options={candleOptions} series={candleSeries} height={320} />
           </div>
         </CardContent>
       </Card>
@@ -224,22 +221,7 @@ export function MarketView({
         </CardHeader>
         <CardContent>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart key={`v-${chartKey}`} data={fixedVolumeChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={GREEN} />
-                <XAxis dataKey="time" stroke={GREEN} tick={{ fill: GREEN, fontSize: 12 }} interval={0} />
-                <YAxis stroke={GREEN} tick={{ fill: GREEN, fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--background))",
-                    border: `1px solid ${GREEN}`,
-                    borderRadius: "8px",
-                  }}
-                />
-                <Legend wrapperStyle={{ color: GREEN }} />
-                <Bar dataKey="volume" fill={GREEN} barSize={16} isAnimationActive={false} />
-              </BarChart>
-            </ResponsiveContainer>
+            <ApexChart type="bar" options={volumeOptions} series={volumeSeries} height={240} />
           </div>
         </CardContent>
       </Card>
