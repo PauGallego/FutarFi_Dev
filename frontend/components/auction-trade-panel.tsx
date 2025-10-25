@@ -9,6 +9,7 @@ import { useAccount } from "wagmi"
 import { toast } from "sonner"
 import type { MarketOption, AuctionData } from "@/lib/types"
 import { useAuctionBuy } from "@/hooks/use-auction-buy"
+import { parseUnits } from "viem"
 
 interface AuctionTradePanelProps {
   auctionData: AuctionData
@@ -29,7 +30,13 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
   }, [onchainPrice, selectedMarket, auctionData])
   const estimatedTokens = amount ? (Number.parseFloat(amount) / currentPrice).toFixed(2) : "0.00"
 
-  const canBuy = isConnected && !!amount && !isApproving && !isBuying && !!proposalAddress
+  // Guard: entered PyUSD amount (6d) must not exceed user's PyUSD balance
+  const amount6d = useMemo(() => {
+    try { return parseUnits(amount || "0", 6) } catch { return 0n }
+  }, [amount])
+  const insufficientBalance = amount6d > (pyusdBalance ?? 0n)
+
+  const canBuy = isConnected && !!amount && !isApproving && !isBuying && !!proposalAddress && !insufficientBalance
   const handleBid = async () => {
     if (!canBuy) return
     try {
@@ -143,6 +150,10 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
               <span className="font-mono">{(Number(remaining) / 1e18).toFixed(6)}</span>
             </div>
           </div>
+
+          {insufficientBalance && (
+            <div className="text-xs text-destructive">Insufficient PyUSD balance for this amount.</div>
+          )}
 
           <Button className="w-full" onClick={handleBid} disabled={!canBuy}>
             {isApproving ? "Approving..." : isBuying ? "Buying..." : "Buy Liquidity"}
