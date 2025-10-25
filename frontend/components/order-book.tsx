@@ -36,7 +36,7 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
         />
         {/* foreground content */}
         <span className={`relative z-10 ${align === 'left' ? 'text-primary' : 'text-destructive'} text-left`}>${order.price.toFixed(4)}</span>
-        <span className="relative z-10 text-center">{order.amount.toFixed(2)}</span>
+  <span className="relative z-10 text-center">{order.amount.toFixed(3)}</span>
   <span className="relative z-10 text-center text-muted-foreground">{pctNum.toFixed(0)}%</span>
         <span className="relative z-10 text-right text-muted-foreground">${order.total.toFixed(2)}</span>
       </div>

@@ -167,7 +167,7 @@ export function AuctionResolved({
                 size="lg"
               >
                 <Coins className="mr-2 h-4 w-4" />
-                Claim Losing Market Tokens
+                Claim remaining PYUSD Tokens
               </Button>
             </div>
           )}

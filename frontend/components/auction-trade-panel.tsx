@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/stateful-button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAccount } from "wagmi"
@@ -11,6 +11,8 @@ import type { MarketOption, AuctionData } from "@/lib/types"
 import { useAuctionBuy } from "@/hooks/use-auction-buy"
 import { formatUnits } from "viem"
 import { parseUnits } from "viem"
+import { cn } from "@/lib/utils"
+import { useRef } from "react"
 
 interface AuctionTradePanelProps {
   auctionData: AuctionData
@@ -23,6 +25,8 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
   const [selectedMarket, setSelectedMarket] = useState<MarketOption>("YES")
   const { amount, setAmount, approveAndBuy, isApproving, isBuying, error, remaining, userTokenBalance, onchainPrice, pyusdBalance } =
     useAuctionBuy({ proposalAddress, side: selectedMarket })
+  const amountInputRef = useRef<HTMLInputElement | null>(null)
+  const [amountError, setAmountError] = useState<string | null>(null)
 
   // Oracle price is scaled to 6 decimals (PyUSD, 6d)
   const currentPrice = useMemo(() => {
@@ -36,16 +40,19 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
     try { return parseUnits(amount || "0", 6) } catch { return 0n }
   }, [amount])
   const insufficientBalance = amount6d > (pyusdBalance ?? 0n)
+  const invalidAmount = amount6d <= 0n
 
-  const canBuy = isConnected && !!amount && !isApproving && !isBuying && !!proposalAddress && !insufficientBalance
-  const handleBid = async () => {
-    if (!canBuy) return
+  const isDisabled = !isConnected || !amount || invalidAmount || isApproving || isBuying || !proposalAddress || insufficientBalance
+  const handleBid = async (): Promise<boolean> => {
+    if (isDisabled) return false
     try {
       await approveAndBuy()
       toast.success("Liquidity added!", { description: `${amount} PyUSD for ${estimatedTokens} ${selectedMarket} tokens` })
       setAmount("")
+      return true
     } catch (e: any) {
       toast.error("Liquidity failed", { description: error || e?.message })
+      return false
     }
   }
 
@@ -61,7 +68,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
           <CardDescription>Minimum bid requirement not met</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button className="w-full" onClick={handleClaim} disabled={!isConnected}>
+          <Button className="w-full" onClick={async ()=>{ handleClaim() ; return true }} aria-disabled={!isConnected}>
             Claim Collateral
           </Button>
         </CardContent>
@@ -118,10 +125,14 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
                 type="number"
                 placeholder="0.00"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => { setAmount(e.target.value); if (amountError) setAmountError(null) }}
                 disabled={!isConnected || isApproving || isBuying}
                 className="pr-14 no-spin"
+                ref={amountInputRef}
               />
+              {amountError && (
+                <div className="mt-1 text-xs text-amber-600 dark:text-amber-400">{amountError}</div>
+              )}
               <button
                 type="button"
                 onClick={() => setAmount(formatUnits(pyusdBalance as bigint, 6))}
@@ -156,9 +167,32 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
             <div className="text-xs text-destructive">Insufficient PyUSD balance for this amount.</div>
           )}
 
-          <Button className="w-full" onClick={handleBid} disabled={!canBuy}>
-            {isApproving ? "Approving..." : isBuying ? "Buying..." : "Buy Liquidity"}
-          </Button>
+          {(() => {
+            const variantEnabled = selectedMarket === "YES"
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "bg-destructive text-destructive-foreground hover:bg-destructive/90";
+            const variantDisabled = "bg-muted text-muted-foreground border border-border";
+            return (
+              <Button
+                onClick={handleBid}
+                aria-disabled={isDisabled}
+                onDisabledClick={() => {
+                  if (!amount || invalidAmount) {
+                    amountInputRef.current?.focus()
+                    setAmountError("Please enter a valid amount.")
+                  }
+                }}
+                className={cn(
+                  "w-full inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 h-10 px-4 py-2",
+                  isDisabled
+                    ? cn(variantDisabled, "opacity-60 cursor-not-allowed hover:ring-0 focus-visible:ring-0")
+                    : cn(variantEnabled, selectedMarket === "YES" ? "hover:ring-green-500" : "hover:ring-red-500"),
+                )}
+              >
+                {isApproving ? "Approving..." : isBuying ? "Buying..." : "Buy Liquidity"}
+              </Button>
+            )
+          })()}
         </CardContent>
       </Card>
     </div>
