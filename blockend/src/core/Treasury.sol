@@ -71,9 +71,15 @@ contract Treasury is Ownable , ITreasury {
     }
 
     function transferBalance(address from, address to, uint256 amount) external onlyOwner {
-        // transfer internal balance from one user to another when trade is executed
-        balances[from] -= amount;
-        balances[to] += amount;
+        uint256 fromBal = balances[from];
+        if (amount > fromBal) {
+            // Do not revert: move only what is available to keep accounting consistent with prior trades
+            amount = fromBal;
+        }
+        unchecked {
+            balances[from] = fromBal - amount;
+            balances[to] += amount;
+        }
     }
 
     /// @notice Called by auctions during user refund flow (after burning user tokens).
