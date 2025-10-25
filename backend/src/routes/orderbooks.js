@@ -1858,6 +1858,89 @@ router.get('/:proposalId/:side/orders', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/orderbooks/{proposalId}/{side}/top:
+ *   get:
+ *     summary: Get top-of-book (best bid and best ask)
+ *     description: Returns the highest buyer (best bid) and cheapest seller (best ask) for quick market buy/sell interaction.
+ *     tags: [Orderbooks]
+ *     parameters:
+ *       - in: path
+ *         name: proposalId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: side
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [approve, reject]
+ *     responses:
+ *       200:
+ *         description: Top of book
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 proposalId:
+ *                   type: string
+ *                 side:
+ *                   type: string
+ *                 bestBid:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     price:
+ *                       type: string
+ *                     amount:
+ *                       type: string
+ *                     orderCount:
+ *                       type: integer
+ *                 bestAsk:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     price:
+ *                       type: string
+ *                     amount:
+ *                       type: string
+ *                     orderCount:
+ *                       type: integer
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
+
+router.get('/:proposalId/:side/top', async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+    let { side } = req.params;
+    side = normalizeSide(side);
+    if (!isValidSide(side)) return sendError(res, 400, 'Invalid side. Must be approve or reject');
+
+    let ob = await OrderBook.findOne({ proposalId, side }).lean();
+    if (!ob || ((!ob.bids || ob.bids.length === 0) && (!ob.asks || ob.asks.length === 0))) {
+      try { ob = await updateOrderBook(proposalId, side); } catch (_) {}
+    }
+
+    const bestBid = ob?.bids?.[0] || null; // highest buyer
+    const bestAsk = ob?.asks?.[0] || null; // cheapest seller
+
+    return res.json({
+      proposalId,
+      side,
+      bestBid,  // { price, amount, orderCount } | null
+      bestAsk,  // { price, amount, orderCount } | null
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return sendError(res, 500, error.message);
+  }
+});
+
 
 async function executeOrder(order, io) {
   try {
