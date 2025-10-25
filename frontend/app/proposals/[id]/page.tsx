@@ -162,7 +162,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
   const { cancelOrder, isLoading: cancellingOrder } = useCancelOrder()
 
   // Live public orderbook for selected market
-  const { orders: liveOrderbook, refetch: refetchOrderbook } = useGetOrderbookOrders({ proposalId: id, market: selectedMarket, auto: true })
+  const { orders: liveOrderbook, refetch: refetchOrderbook } = useGetOrderbookOrders({ proposalId: id, market: selectedMarket, auto: true, pollMs: 3000 })
 
   useEffect(() => {
     if (!hookProposal) {
@@ -205,6 +205,8 @@ export default function ProposalDetailPage({ params }: PageProps) {
       setUserOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, state: "cancelled" as const } : o)))
       // refetch from backend for accuracy
       void refetchUserOrders()
+      // refresh orderbook immediately
+      void refetchOrderbook()
     } else {
       toast.error("Cancel failed", { description: res.data?.error || `state ${res.status}` })
     }
