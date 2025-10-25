@@ -1,9 +1,10 @@
 "use client"
 
-import { useMemo, useState, useEffect, useCallback } from "react"
+import { useMemo, useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+// import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAccount } from "wagmi"
@@ -16,6 +17,8 @@ import { useGetProposalById } from "@/hooks/use-get-proposalById"
 import { marketToken_abi } from "@/contracts/marketToken-abi"
 import { parseUnits, formatUnits } from "viem"
 import { ethers } from "ethers"
+import React from "react";
+import { Button } from "@/components/ui/stateful-button";
 
 type MarketTradePanelProps = {
   selectedMarket: MarketOption
@@ -23,6 +26,8 @@ type MarketTradePanelProps = {
   proposalId: string
   onOrderPlaced?: () => void
 }
+
+// Removed demo button component after integrating the stateful button into the trade form
 
 export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, onOrderPlaced }: MarketTradePanelProps) {
   const { isConnected, address } = useAccount()
@@ -33,6 +38,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   const [tradeAction, setTradeAction] = useState<TradeAction>("BUY")
   const [amount, setAmount] = useState("")
   const [limitPrice, setLimitPrice] = useState("")
+  const [amountError, setAmountError] = useState<string | null>(null)
   // Removed slippage control per request
 
   // Fetch proposal addresses so we can read balances and spender (proposal address)
@@ -86,6 +92,8 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   }, [amount, tradeAction])
   const maxBalance = (tradeAction === "BUY" ? pyusdBalance : userTokenBalance) || 0n
   const insufficientBalance = amountParsed > maxBalance
+  const invalidAmount = amountParsed <= 0n
+  const amountInputRef = useRef<HTMLInputElement | null>(null)
 
   // ----- Allowance & Approvals (spender = Proposal contract) -----
   const tokenToApprove = tradeAction === "BUY" ? pyusdAddr : marketTokenAddr
@@ -187,13 +195,13 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
     return (estimatedAmount * estimatedPrice)
   }, [tradeAction, orderType, estimatedAmount, estimatedPrice])
 
-  const handleCreateOrder = async () => {
-    if (!amount) return
+  const handleCreateOrder = async (): Promise<boolean> => {
+    if (!amount) return false
 
     // Auto-approve if needed before placing the order
     if (needsApproval) {
       const ok = await handleApprove()
-      if (!ok) return
+      if (!ok) return false
     }
 
     const side: 'approve' | 'reject' = selectedMarket === "YES" ? 'approve' : 'reject'
@@ -209,7 +217,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
     const out = await createOrder(payload)
     if (!out) {
       if (createError) toast.error("Order failed", { description: createError })
-      return
+      return false
     }
 
     if (out.ok) {
@@ -218,8 +226,10 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
       setLimitPrice("")
       await refetchBalances()
       onOrderPlaced?.()
+      return true
     } else {
       toast.error("Order failed", { description: out.data?.error || `Status ${out.status}` })
+      return false
     }
   }
 
@@ -312,9 +322,13 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                 type="number"
                 placeholder="0.00"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmount(e.target.value)
+                  if (amountError) setAmountError(null)
+                }}
                 disabled={!isConnected || creating}
                 className="pr-14 no-spin"
+                ref={amountInputRef}
               />
               <button
                 type="button"
@@ -329,6 +343,9 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                 MAX
               </button>
             </div>
+            {amountError && (
+              <div className="text-xs text-amber-600 dark:text-amber-400">{amountError}</div>
+            )}
             {insufficientBalance && (
               <div className="text-xs text-destructive">Insufficient {balanceLabel} balance for this amount.</div>
             )}
@@ -365,14 +382,38 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
             </div>
           </div>
 
-          <Button
-            className="w-full"
-            onClick={handleCreateOrder}
-            // allow click to auto-approve, so do not disable when needsApproval is true
-            disabled={!isConnected || creating || !amount || (orderType === "limit" && !limitPrice) || insufficientBalance}
-          >
-            {creating ? (isApproving ? "Approving..." : "Creating...") : `${tradeAction} ${orderType === "market" ? "at Market" : "with Limit"}`}
-          </Button>
+          {(() => {
+            const variantEnabled =
+              tradeAction === "BUY"
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "bg-destructive text-destructive-foreground hover:bg-destructive/90";
+            // Disabled: use same gray as other labels (muted) with subtle border, no hover
+            const variantDisabled = "bg-muted text-muted-foreground border border-border";
+            const invalidLimit = orderType === "limit" && (!limitPrice || Number(limitPrice) <= 0);
+            const isDisabled = !isConnected || creating || !amount || invalidAmount || invalidLimit || insufficientBalance;
+            return (
+              <Button
+                onClick={handleCreateOrder}
+                aria-disabled={isDisabled}
+                onDisabledClick={() => {
+                  if (!amount || invalidAmount) {
+                    amountInputRef.current?.focus()
+                    setAmountError("Please enter a valid amount.")
+                  }
+                }}
+                className={cn(
+                  // Base button aesthetics (shadcn-like)
+                  "w-full inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2",
+                  // Color variant or muted when disabled (also affects loader/check via text-current)
+                  isDisabled
+                    ? cn(variantDisabled, "opacity-60 cursor-not-allowed hover:ring-0 focus-visible:ring-0")
+                    : cn(variantEnabled, tradeAction === "BUY" ? "hover:ring-green-500" : "hover:ring-red-500"),
+                )}
+              >
+                {creating ? (isApproving ? "Approving..." : "Creating...") : `${tradeAction} ${orderType === "market" ? "at Market" : "with Limit"}`}
+              </Button>
+            )
+          })()}
         </CardContent>
       </Card>
     </div>

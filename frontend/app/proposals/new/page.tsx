@@ -7,6 +7,7 @@ import { ArrowLeft } from "lucide-react"
 import { isAddress,  Hex } from "viem"
 import { ethers } from "ethers"
 
+import { Button as StatefulButton } from "@/components/ui/stateful-button"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -58,11 +59,92 @@ export default function NewProposalPage() {
     pythId: "",
   })
 
+  // Validation state (declared after limits and toggles)
+
   // Limits
   const MAX_TITLE = 80
   const MAX_DESC = 600
 
   const [useTarget, setUseTarget] = useState<"YES" | "NO">("NO")
+
+  // Validation state and helpers
+  type Errors = Partial<Record<
+    | "title"
+    | "description"
+    | "auctionDuration"
+    | "liveDuration"
+    | "subjectToken"
+    | "minToOpen"
+    | "maxCap"
+    | "targetAddress",
+    string
+  >>
+  const [errors, setErrors] = useState<Errors>({})
+  const [showErrors, setShowErrors] = useState(false)
+
+  const validate = React.useCallback((): Errors => {
+    const next: Errors = {}
+
+    if (!formData.title.trim()) next.title = "Please provide a proposal title."
+    else if (formData.title.length > MAX_TITLE) next.title = `Title is too long (max ${MAX_TITLE} characters).`
+
+    if (!formData.description.trim()) next.description = "Please provide a proposal description."
+    else if (formData.description.length > MAX_DESC) next.description = `Description is too long (max ${MAX_DESC} characters).`
+
+    if (!formData.auctionDuration || Number(formData.auctionDuration) <= 0 || !isUint(formData.auctionDuration)) {
+      next.auctionDuration = "Auction duration must be a positive whole number of days."
+    } else if (Number(formData.auctionDuration) > 7) {
+      next.auctionDuration = "Auction duration cannot exceed 7 days."
+    }
+
+    if (!formData.liveDuration || Number(formData.liveDuration) <= 0 || !isUint(formData.liveDuration)) {
+      next.liveDuration = "Live duration must be a positive whole number of days."
+    } else if (Number(formData.liveDuration) > 30) {
+      next.liveDuration = "Live duration cannot exceed 30 days."
+    }
+
+    if (!formData.subjectToken) next.subjectToken = "Please select a token."
+
+    if (!formData.minToOpen || Number(formData.minToOpen) <= 0 || !isUint(formData.minToOpen)) {
+      next.minToOpen = "Min to open must be a positive integer greater than 0."
+    }
+
+    if (!formData.maxCap || Number(formData.maxCap) <= 0 || !isUint(formData.maxCap)) {
+      next.maxCap = "Max cap must be a positive integer."
+    }
+
+    if (
+      (!next.minToOpen && !next.maxCap) &&
+      formData.minToOpen && formData.maxCap &&
+      Number(formData.maxCap) < Number(formData.minToOpen)
+    ) {
+      next.maxCap = "Max cap must be greater than or equal to Min to open."
+    }
+
+    if (useTarget === "YES") {
+      if (!formData.targetAddress.trim()) next.targetAddress = "Please provide a target contract address."
+      else if (!isAddress(formData.targetAddress)) next.targetAddress = "Target address is not a valid address."
+    }
+
+    return next
+  }, [formData, useTarget])
+
+  const isFormValid = React.useMemo(() => {
+    const v = validate()
+    return Object.keys(v).length === 0
+  }, [validate])
+
+  // Restrict numeric inputs to digits only
+  const allowDigitKey = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    const allowed = ["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab", "Home", "End"]
+    if (allowed.includes(e.key)) return
+    if (!/^[0-9]$/.test(e.key)) e.preventDefault()
+  }, [])
+
+  const preventNonDigitPaste = React.useCallback((e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData?.getData("text") ?? ""
+    if (!/^\d+$/.test(text)) e.preventDefault()
+  }, [])
 
   // Local tx state (ethers based)
   const [txHash, setTxHash] = useState<string | null>(null)
@@ -71,12 +153,25 @@ export default function NewProposalPage() {
   const [isConfirmed, setIsConfirmed] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent)=>{
-    e.preventDefault()
+  const handleSubmit = async (e?: React.FormEvent): Promise<boolean>=>{
+    e?.preventDefault()
 
     const fail = (desc: string) => {
       toast({ title: "Validation Error", description: desc, variant: "destructive" })
       return false
+    }
+
+    // Guard: if invalid, show inline messages and focus first error
+    const currentErrors = validate()
+    if (Object.keys(currentErrors).length > 0) {
+      setErrors(currentErrors)
+      setShowErrors(true)
+      const firstKey = Object.keys(currentErrors)[0] as keyof Errors
+      if (firstKey) {
+        const el = document.getElementById(firstKey as string)
+        el?.focus()
+      }
+      return fail("Please complete the highlighted fields.")
     }
 
     toast({ title: "Submitting", description: "Validating inputs and preparing transaction..." })
@@ -89,19 +184,6 @@ export default function NewProposalPage() {
     if (chainId !== 31337) {
       return fail("Wrong network. Please switch your wallet to Anvil (31337).")
     }
-
-  if (!formData.title.trim()) return fail("Please provide a proposal title.")
-  if (formData.title.length > MAX_TITLE) return fail(`Title is too long (max ${MAX_TITLE} characters).`)
-  if (!formData.description.trim()) return fail("Please provide a proposal description.")
-  if (formData.description.length > MAX_DESC) return fail(`Description is too long (max ${MAX_DESC} characters).`)
-    if (!formData.auctionDuration || Number(formData.auctionDuration) <= 0 || !isUint(formData.auctionDuration)) return fail("Auction duration must be a positive whole number of days.")
-    if (Number(formData.auctionDuration) > 30) return fail("Auction duration cannot exceed 30 days.")
-    if (!formData.liveDuration || Number(formData.liveDuration) <= 0 || !isUint(formData.liveDuration)) return fail("Live duration must be a positive whole number of days.")
-    if (Number(formData.liveDuration) > 30) return fail("Live duration cannot exceed 30 days.")
-    if (!formData.subjectToken ) return fail("Please select a valid collateral token address.")
-    if (!formData.minToOpen || Number(formData.minToOpen) <= 0 || !isUint(formData.minToOpen)) return fail("Min to open must be a positive integer greater than 0.")
-    if (!formData.maxCap || Number(formData.maxCap) <= 0 || !isUint(formData.maxCap)) return fail("Max cap must be a positive integer.")
-    if (Number(formData.maxCap) <= Number(formData.minToOpen)) return fail("Max cap must be greater than Min to open.")
 
     if (useTarget === "YES") {
       if (!formData.targetAddress.trim() || !isAddress(formData.targetAddress)) {
@@ -120,12 +202,12 @@ export default function NewProposalPage() {
     // Ethers setup
     try {
       setError(null)
-      setIsPending(true)
+  setIsPending(true)
 
       const anyWindow = window as any
       if (!anyWindow?.ethereum) {
         setIsPending(false)
-        return fail("No wallet found. Please open MetaMask or a compatible wallet.")
+  return fail("No wallet found. Please open MetaMask or a compatible wallet.")
       }
 
       const provider = new ethers.BrowserProvider(anyWindow.ethereum)
@@ -166,13 +248,16 @@ export default function NewProposalPage() {
           description: "Your proposal will use the Pyth price at auction start.",
         })
         router.push("/proposals")
+        return true
       } else {
         setError(new Error("Transaction failed"))
         toast({ title: "Transaction failed", description: "The transaction was mined but failed.", variant: "destructive" })
+        return false
       }
     } catch (err: any) {
       setError(err)
       toast({ title: "Transaction Error", description: err?.message || String(err), variant: "destructive" })
+      return false
     } finally {
       setIsPending(false)
       setIsConfirming(false)
@@ -182,6 +267,8 @@ export default function NewProposalPage() {
   useEffect(() => {
     // no-op here; navigation handled after receipt above
   }, [])
+
+  const isDisabled = !isFormValid || isPending
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
@@ -201,7 +288,7 @@ export default function NewProposalPage() {
         </CardHeader>
 
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form noValidate onSubmit={handleSubmit} className="space-y-6">
 
             {/* Title */}
             <div className="space-y-2">
@@ -212,10 +299,14 @@ export default function NewProposalPage() {
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value.slice(0, MAX_TITLE) })}
                 className="text-base"
-                required
                 maxLength={MAX_TITLE}
               />
-              <div className="text-xs text-muted-foreground text-right">{formData.title.length}/{MAX_TITLE}</div>
+              <div className="mt-1 flex items-center justify-between">
+                {showErrors && errors.title ? (
+                  <p className="text-xs text-destructive">{errors.title}</p>
+                ) : <span />}
+                <div className="text-xs text-muted-foreground">{formData.title.length}/{MAX_TITLE}</div>
+              </div>
             </div>
 
             {/* Description */}
@@ -227,10 +318,14 @@ export default function NewProposalPage() {
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value.slice(0, MAX_DESC) })}
                 className="min-h-[150px] text-base"
-                required
                 maxLength={MAX_DESC}
               />
-              <div className="text-xs text-muted-foreground text-right">{formData.description.length}/{MAX_DESC}</div>
+              <div className="mt-1 flex items-center justify-between">
+                {showErrors && errors.description ? (
+                  <p className="text-xs text-destructive">{errors.description}</p>
+                ) : <span />}
+                <div className="text-xs text-muted-foreground">{formData.description.length}/{MAX_DESC}</div>
+              </div>
             </div>
 
             {/* Auction + Live durations */}
@@ -241,11 +336,19 @@ export default function NewProposalPage() {
                   id="auctionDuration"
                   type="number"
                   min="1"
+                  max="7"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  step="1"
+                  onKeyDown={allowDigitKey}
+                  onPaste={preventNonDigitPaste}
                   value={formData.auctionDuration}
                   onChange={(e) => setFormData({ ...formData, auctionDuration: e.target.value })}
                   className="text-base"
-                  required
                 />
+                {showErrors && errors.auctionDuration && (
+                  <p className="text-xs text-destructive">{errors.auctionDuration}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -254,11 +357,19 @@ export default function NewProposalPage() {
                   id="liveDuration"
                   type="number"
                   min="1"
+                  max="30"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  step="1"
+                  onKeyDown={allowDigitKey}
+                  onPaste={preventNonDigitPaste}
                   value={formData.liveDuration}
                   onChange={(e) => setFormData({ ...formData, liveDuration: e.target.value })}
                   className="text-base"
-                  required
                 />
+                {showErrors && errors.liveDuration && (
+                  <p className="text-xs text-destructive">{errors.liveDuration}</p>
+                )}
               </div>
             </div>
 
@@ -289,6 +400,9 @@ export default function NewProposalPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">Note: Initial auction price is read from the selected Pyth feed and scaled to 6 decimals (PyUSD).</p>
+              {showErrors && errors.subjectToken && (
+                <p className="text-xs text-destructive">{errors.subjectToken}</p>
+              )}
             </div>
 
             {/* MinToOpen + MaxCap */}
@@ -299,11 +413,18 @@ export default function NewProposalPage() {
                   id="minToOpen"
                   type="number"
                   min="1"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  step="1"
+                  onKeyDown={allowDigitKey}
+                  onPaste={preventNonDigitPaste}
                   value={formData.minToOpen}
                   onChange={(e) => setFormData({ ...formData, minToOpen: e.target.value })}
                   className="text-base"
-                  required
                 />
+                {showErrors && errors.minToOpen && (
+                  <p className="text-xs text-destructive">{errors.minToOpen}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -312,11 +433,18 @@ export default function NewProposalPage() {
                   id="maxCap"
                   type="number"
                   min="1"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  step="1"
+                  onKeyDown={allowDigitKey}
+                  onPaste={preventNonDigitPaste}
                   value={formData.maxCap}
                   onChange={(e) => setFormData({ ...formData, maxCap: e.target.value })}
                   className="text-base"
-                  required
                 />
+                {showErrors && errors.maxCap && (
+                  <p className="text-xs text-destructive">{errors.maxCap}</p>
+                )}
               </div>
             </div>
 
@@ -360,9 +488,11 @@ export default function NewProposalPage() {
                 value={formData.targetAddress}
                 onChange={(e) => setFormData({ ...formData, targetAddress: e.target.value })}
                 className="font-mono text-sm"
-                required={useTarget === "YES"}
                 disabled={useTarget === "NO"}
               />
+              {useTarget === "YES" && showErrors && errors.targetAddress && (
+                <p className="text-xs text-destructive">{errors.targetAddress}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -379,9 +509,29 @@ export default function NewProposalPage() {
 
             {/* Submit */}
             <div className="flex gap-4 pt-4">
-              <Button type="submit" size="lg" disabled={isPending} className="flex-1">
+              <StatefulButton
+                type="submit"
+                aria-disabled={isDisabled}
+                onClick={handleSubmit}
+                onDisabledClick={() => {
+                  const v = validate()
+                  setErrors(v)
+                  setShowErrors(true)
+                  const firstKey = Object.keys(v)[0] as keyof Errors
+                  if (firstKey) {
+                    const el = document.getElementById(firstKey as string)
+                    el?.focus()
+                  }
+                  toast({ title: "Incomplete form", description: "Please complete the highlighted fields to continue.", variant: "destructive" })
+                }}
+                className={
+                  isDisabled
+                    ? "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium h-10 px-4 py-2 bg-muted text-muted-foreground border border-border cursor-not-allowed hover:bg-muted hover:ring-0 focus-visible:ring-0"
+                    : "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 h-10 px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 hover:ring-green-500"
+                }
+              >
                 {isPending ? "Creating..." : "Create Proposal"}
-              </Button>
+              </StatefulButton>
               <Button
                 type="button"
                 variant="outline"

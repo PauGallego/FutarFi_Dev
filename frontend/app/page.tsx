@@ -32,13 +32,12 @@ export default function HomePage() {
 
   return (
     <div className="relative">
-      {/* Hero Section */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
         <div className="container relative mx-auto px-4 py-20 md:py-32">
           <div className="flex flex-col items-center  justify-center text-center space-y-8 max-w-4xl mx-auto">
 
-            <div className="w-full justify-items-center">
+            <div className="flex justify-center w-full justify-items-center">
               <TypewriterEffectSmooth
                 words={heroWords}
                 className="text-9xl md:text-7xl font-bold"
