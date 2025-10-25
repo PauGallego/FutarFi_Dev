@@ -813,17 +813,28 @@ async function monitorAuctionsToFinalize({ limit = 20 } = {}) {
 
     // Log attempt details (proposal is in auction state)
     let signerAddr = 'unknown';
-    try { signerAddr = await signer.getAddress(); } catch (_) {}
-    console.log(`[finalize-auction] attempting finalize: proposalId=${a.proposalId} proposal=${proposalAddr} auction=${addr} by=${signerAddr}`);
-
+    let nonce = 'unknown';
+    try {
+      signerAddr = await signer.getAddress();
+      nonce = await signer.getNonce();
+    } catch (_) {}
+    console.log(`[finalize-auction] attempting finalize: proposalId=${a.proposalId} proposal=${proposalAddr} auction=${addr} by=${signerAddr} nonce=${nonce}`);
+    const startTime = Date.now();
     tried++;
-    const res = await attemptFinalizeAuction(addr);
-    if (res.ok) {
-      finalizedCount++;
-      try { await Auction.updateOne({ _id: a._id }, { $set: { finalized: true } }); } catch (_) {}
-      console.log(`[finalize-auction] success: proposalId=${a.proposalId} auction=${addr} tx=${res.hash}`);
-    } else {
-      console.warn(`[finalize-auction] fail: proposalId=${a.proposalId} auction=${addr} error=${res.error}`);
+    let res;
+    try {
+      res = await attemptFinalizeAuction(addr);
+      const elapsed = Date.now() - startTime;
+      if (res.ok) {
+        finalizedCount++;
+        try { await Auction.updateOne({ _id: a._id }, { $set: { finalized: true } }); } catch (_) {}
+        console.log(`[finalize-auction] success: proposalId=${a.proposalId} auction=${addr} tx=${res.hash} block=${res.blockNumber} elapsed=${elapsed}ms`);
+      } else {
+        console.warn(`[finalize-auction] fail: proposalId=${a.proposalId} auction=${addr} error=${res.error} elapsed=${elapsed}ms`);
+      }
+    } catch (err) {
+      const elapsed = Date.now() - startTime;
+      console.error(`[finalize-auction] exception: proposalId=${a.proposalId} auction=${addr} error=${err?.message || err} elapsed=${elapsed}ms`);
     }
   }
 
