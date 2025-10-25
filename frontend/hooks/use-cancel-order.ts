@@ -12,68 +12,124 @@ export type CancelOrderResult = {
 
 export function useCancelOrder() {
   const { address, isConnected } = useAccount()
-  const { auth, ensureAuth, loading: authLoading } = useWalletAuth()
+  const { auth, ensureAuth, clearAuth, setAuth, loading: authLoading } = useWalletAuth()
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<CancelOrderResult | null>(null)
 
-  const cancelOrder = useCallback(async (orderId: string): Promise<CancelOrderResult | null> => {
-    setError(null)
-    setResult(null)
-
-    if (!isConnected || !address) {
-      setError('Wallet not connected')
-      return null
-    }
-
-    if (!auth?.signature) {
-      await ensureAuth()
-    }
-    if (!auth?.signature) {
-      setError('Missing authentication')
-      return null
-    }
-
-    setIsLoading(true)
-    try {
-      const res = await fetch(`${API_BASE}/orderbooks/orders/${orderId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          address,
-          signature: auth.signature,
-          message: auth.message,
-          timestamp: auth.timestamp,
-        }),
-      })
-
-      let data: any
-      let responseText = ''
+  const verifyWithServer = useCallback(
+    async (candidate: {
+      address: string
+      signature: string
+      message: string
+      timestamp: number
+    }) => {
       try {
-        responseText = await res.text()
-        data = responseText ? JSON.parse(responseText) : { error: 'Empty response from server' }
-      } catch (parseError) {
-        data = {
-          error: 'Invalid response format',
-          responseText,
-          status: res.status,
-          statusText: res.statusText,
-        }
+        const res = await fetch(`${API_BASE}/auth/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(candidate),
+        })
+        return res.ok
+      } catch {
+        return false
+      }
+    },
+    []
+  )
+
+  const cancelOrder = useCallback(
+    async (orderId: string): Promise<CancelOrderResult | null> => {
+      setError(null)
+      setResult(null)
+
+      if (!isConnected || !address) {
+        setError('Wallet not connected')
+        return null
       }
 
-      const out: CancelOrderResult = { ok: res.ok, status: res.status, data }
-      setResult(out)
-      if (!res.ok) setError(data?.error || `Request failed with status ${res.status}`)
-      return out
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setError(msg)
-      return null
-    } finally {
-      setIsLoading(false)
-    }
-  }, [address, isConnected, auth?.signature, auth?.message, auth?.timestamp, ensureAuth])
+      // Resolve auth
+      let authReady = auth
+      if (!authReady || !authReady.signature) {
+        authReady = await ensureAuth()
+      }
+      if (!authReady || !authReady.signature) {
+        setError('Missing authentication')
+        return null
+      }
+
+      // Verify with backend before sending
+      let isValid = await verifyWithServer({
+        address,
+        signature: authReady.signature,
+        message: authReady.message,
+        timestamp: authReady.timestamp,
+      })
+      if (isValid) {
+        setAuth({ ...authReady, verified: true, verifiedAt: Date.now() })
+      } else {
+        clearAuth()
+        const fresh = await ensureAuth(true)
+        if (!fresh || !fresh.signature) {
+          setError('Authentication failed')
+          return null
+        }
+        authReady = fresh
+        isValid = await verifyWithServer({
+          address,
+          signature: fresh.signature,
+          message: fresh.message,
+          timestamp: fresh.timestamp,
+        })
+        if (!isValid) {
+          setError('Authentication verification failed')
+          return null
+        }
+        setAuth({ ...fresh, verified: true, verifiedAt: Date.now() })
+      }
+
+      setIsLoading(true)
+      try {
+        const res = await fetch(`${API_BASE}/orderbooks/orders/${orderId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            address,
+            signature: authReady.signature,
+            message: authReady.message,
+            timestamp: authReady.timestamp,
+          }),
+        })
+
+        let data: any
+        let responseText = ''
+        try {
+          responseText = await res.text()
+          data = responseText ? JSON.parse(responseText) : { error: 'Empty response from server' }
+        } catch (parseError) {
+          data = {
+            error: 'Invalid response format',
+            responseText,
+            status: res.status,
+            statusText: res.statusText,
+          }
+        }
+
+        const out: CancelOrderResult = { ok: res.ok, status: res.status, data }
+        setResult(out)
+        if (!res.ok) setError(data?.error || `Request failed with status ${res.status}`)
+        return out
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(msg)
+        return null
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [address, isConnected, auth, ensureAuth, clearAuth, setAuth, verifyWithServer]
+  )
 
   return { cancelOrder, isLoading: isLoading || authLoading, error, result }
 }

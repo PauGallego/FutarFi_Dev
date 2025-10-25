@@ -1,5 +1,5 @@
 import { useAccount } from 'wagmi'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { UserOrder } from '@/lib/types'
 import { useWalletAuth } from '@/hooks/use-wallet-auth'
 
@@ -21,7 +21,7 @@ export interface UseGetUserOrdersOptions {
 export function useGetUserOrders(options: UseGetUserOrdersOptions = {}) {
   const { authData: overrideAuth = null, status, proposalId, autoFetch = true } = options
   const { address, isConnected } = useAccount()
-  const { auth, ensureAuth, loading: authLoading } = useWalletAuth()
+  const { auth, loading: authLoading } = useWalletAuth()
 
   const [orders, setOrders] = useState<UserOrder[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -37,8 +37,6 @@ export function useGetUserOrders(options: UseGetUserOrdersOptions = {}) {
     }
     return null
   }, [overrideAuth?.signature, overrideAuth?.message, overrideAuth?.timestamp, auth?.signature, auth?.message, auth?.timestamp])
-
-  const ensuringRef = useRef(false)
 
   const fetchOrders = useCallback(async () => {
     if (!address || !isConnected) {
@@ -90,22 +88,8 @@ export function useGetUserOrders(options: UseGetUserOrdersOptions = {}) {
     }
   }, [address, isConnected, resolvedAuth, status, proposalId])
 
-  // Auto ensure auth when connected and none available
-  useEffect(() => {
-    if (!autoFetch) return
-    if (!isConnected || !address) return
-    if (resolvedAuth?.signature) return
-    if (ensuringRef.current) return
-
-    ensuringRef.current = true
-    ;(async () => {
-      try {
-        await ensureAuth()
-      } finally {
-        ensuringRef.current = false
-      }
-    })()
-  }, [autoFetch, isConnected, address, resolvedAuth?.signature, ensureAuth])
+  // No automatic ensureAuth here to avoid prompting on page load.
+  // Consumers can trigger ensureAuth explicitly if needed.
 
   // Fetch whenever we have address + auth
   useEffect(() => {

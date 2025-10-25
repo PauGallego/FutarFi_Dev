@@ -21,11 +21,24 @@ export type CreateOrderResult = {
 
 export function useCreateOrder() {
   const { address, isConnected } = useAccount()
-  const { auth, ensureAuth, loading: authLoading } = useWalletAuth()
+  const { auth, ensureAuth, clearAuth, setAuth, loading: authLoading } = useWalletAuth()
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<CreateOrderResult | null>(null)
+
+  const verifyWithServer = useCallback(async (candidate: { address: string; signature: string; message: string; timestamp: number }) => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(candidate),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }, [])
 
   const createOrder = useCallback(async (input: CreateOrderInput): Promise<CreateOrderResult | null> => {
     setError(null)
@@ -36,35 +49,75 @@ export function useCreateOrder() {
       return null
     }
 
-    // Ensure we have auth
-    if (!auth?.signature) {
-      await ensureAuth()
+    // Resolve auth: use stored, else request
+    let authReady = auth
+    if (!authReady || !authReady.signature) {
+      authReady = await ensureAuth()
     }
-
-    if (!auth?.signature) {
+    if (!authReady || !authReady.signature) {
       setError('Missing authentication')
       return null
     }
 
-    setIsLoading(true)
-    try {
-      const body = {
-        address,
-        signature: auth.signature,
-        message: auth.message,
-        timestamp: auth.timestamp,
-        orderType: input.orderType,
-        orderExecution: input.orderExecution,
-        price: input.orderExecution === 'market' ? 0 : Number(input.price || 0),
-        amount: Number(input.amount || 0),
-      }
+    // Always verify with backend before placing the order
+    let isValid = await verifyWithServer({
+      address,
+      signature: authReady.signature,
+      message: authReady.message,
+      timestamp: authReady.timestamp,
+    })
 
+    if (isValid) {
+      setAuth({ ...authReady, verified: true, verifiedAt: Date.now() })
+    } else {
+      // purge stale local storage and try a forced re-auth once
+      clearAuth()
+      const fresh = await ensureAuth(true)
+      if (!fresh || !fresh.signature) {
+        setError('Authentication failed')
+        return null
+      }
+      authReady = fresh
+      isValid = await verifyWithServer({ address, signature: fresh.signature, message: fresh.message, timestamp: fresh.timestamp })
+      if (!isValid) {
+        setError('Authentication verification failed')
+        return null
+      }
+      setAuth({ ...fresh, verified: true, verifiedAt: Date.now() })
+    }
+
+    setIsLoading(true)
+    const buildBody = (a: typeof authReady) => ({
+      address,
+      signature: a!.signature,
+      message: a!.message,
+      timestamp: a!.timestamp,
+      orderType: input.orderType,
+      orderExecution: input.orderExecution,
+      price: input.orderExecution === 'market' ? 0 : Number(input.price || 0),
+      amount: Number(input.amount || 0),
+    })
+
+    const send = async (a: typeof authReady) => {
       const url = `${API_BASE}/orderbooks/${input.proposalId}/${input.side}/orders`
-      const res = await fetch(url, {
+      return fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(buildBody(a)),
       })
+    }
+
+    try {
+      let res = await send(authReady)
+
+      // If unauthorized, clear and re-auth once, then retry
+      if (res.status === 401 || res.status === 403) {
+        clearAuth()
+        const fresh = await ensureAuth(true)
+        if (!fresh || !fresh.signature) throw new Error('Re-auth failed')
+        setAuth({ ...fresh, verified: true, verifiedAt: Date.now() })
+        res = await send(fresh)
+      }
 
       // Robust parse like wallet-test
       let data: any
@@ -92,7 +145,7 @@ export function useCreateOrder() {
     } finally {
       setIsLoading(false)
     }
-  }, [address, isConnected, auth?.signature, auth?.message, auth?.timestamp, ensureAuth])
+  }, [address, isConnected, auth, ensureAuth, clearAuth, setAuth, verifyWithServer])
 
   return { createOrder, isLoading: isLoading || authLoading, error, result }
 }
