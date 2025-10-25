@@ -11,6 +11,7 @@ import { usePublicClient } from "wagmi"
 import { toast } from "sonner"
 import type { OrderType, TradeAction, MarketOption } from "@/lib/types"
 import { useCreateOrder } from "@/hooks/use-create-order"
+import { useGetTop } from "@/hooks/use-get-top"
 import { useGetProposalById } from "@/hooks/use-get-proposalById"
 import { marketToken_abi } from "@/contracts/marketToken-abi"
 import { parseUnits, formatUnits } from "viem"
@@ -164,8 +165,14 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
     }
   }, [address, tokenToApprove, proposalAddr, amountParsed, refetchAllowance])
 
-  // Mock calculations
-  const estimatedPrice = orderType === "market" ? 0.52 : Number.parseFloat(limitPrice) || 0
+  // Live market price sourced from backend /top endpoint (best ask for BUY, best bid for SELL)
+  const top = useGetTop({ proposalId, market: selectedMarket, auto: true, pollMs: 3000 })
+  const estimatedPrice = useMemo(() => {
+    if (orderType === "market") {
+      return tradeAction === "BUY" ? (top.bestAsk ?? 0) : (top.bestBid ?? 0)
+    }
+    return Number.parseFloat(limitPrice) || 0
+  }, [orderType, tradeAction, limitPrice, top.bestAsk, top.bestBid])
   const estimatedAmount = amount ? Number.parseFloat(amount) : 0
   const estimatedTotal = estimatedPrice * estimatedAmount
   // Slippage removed; totals are straightforward estimates now
@@ -344,12 +351,13 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
 
           {/* Slippage controls removed */}
 
-          <div className="rounded-lg border bg-muted/50 p-4 space-y-2 text-sm">
-            
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Est. Price:</span>
-              <span className="font-mono">${estimatedPrice.toFixed(4)}</span>
-            </div>
+          <div className="rounded-lg border bg-muted/50 p-2 space-y-1 text-sm">
+            {orderType === "market" && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Est. Price:</span>
+                <span className="font-mono">${estimatedPrice.toFixed(4)}</span>
+              </div>
+            )}
             {/* Removed slippage line and 'You Pay' summary per request */}
             <div className="flex justify-between font-semibold pt-2">
               <span>You Receive:</span>

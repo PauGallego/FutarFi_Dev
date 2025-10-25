@@ -30,9 +30,7 @@ export default function RootLayout({
             </Suspense>
           </div>
           <Suspense fallback={<div>Loading...</div>}>
-            {/* Shadcn toaster (used by use-toast) */}
             <Toaster />
-            {/* Sonner toaster (used by import { toast } from 'sonner') */}
             <SonnerToaster richColors position="top-center" />
           </Suspense>
         </Providers>

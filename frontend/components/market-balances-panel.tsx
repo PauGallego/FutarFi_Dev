@@ -59,17 +59,46 @@ export function MarketBalancesPanel({ proposalId }: { proposalId: string }) {
           <div className="text-sm text-muted-foreground">Connect your wallet to see balances.</div>
         ) : (
           <>
-            <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
-              <span className="text-sm text-muted-foreground">PyUSD</span>
-              <span className="font-mono text-base">{pyusdDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+            <div
+              className="flex items-center justify-between rounded-md border px-3 py-2"
+              style={{
+                // Use OKLab color-mix with the requested PyUSD blues for better theming support
+                backgroundColor: "color-mix(in oklab, #002991 12%, transparent)",
+                borderColor: "color-mix(in oklab, #61cdff 40%, transparent)",
+              }}
+            >
+              <span className="text-sm font-medium" style={{ color: "#61cdff" }}>PyUSD</span>
+              <span className="font-mono text-base" style={{ color: "#61cdff" }}>
+                {pyusdDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+              </span>
             </div>
-            <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
-              <span className="text-sm text-muted-foreground">tYES</span>
-              <span className="font-mono text-base">{yesDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+
+            {/* tYES balance with fixed green accents (same in light/dark) */}
+            <div
+              className="flex items-center justify-between rounded-md border px-3 py-2"
+              style={{
+                background: "color-mix(in oklab, #00ff85 8%, transparent)",
+                borderColor: "color-mix(in oklab, #00ff85 30%, transparent)",
+              }}
+            >
+              <span className="text-sm font-medium" style={{ color: "#00ff85" }}>tYES</span>
+              <span className="font-mono text-base" style={{ color: "#00ff85" }}>
+                {yesDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+              </span>
             </div>
-            <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
-              <span className="text-sm text-muted-foreground">tNO</span>
-              <span className="font-mono text-base">{noDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+
+            {/* tNO balance with fixed red accents (same in light/dark) */}
+            <div
+              className="flex items-center justify-between rounded-md border px-3 py-2"
+              style={{
+                background: "color-mix(in oklab, #ef4444 8%, transparent)",
+                borderColor: "color-mix(in oklab, #ef4444 30%, transparent)",
+              }}
+            >
+              <span className="text-sm font-medium" style={{ color: "#ef4444" }}>tNO</span>
+              <span className="font-mono text-base" style={{ color: "#ef4444" }}>
+                {noDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+              </span>
             </div>
           </>
         )}

@@ -163,7 +163,7 @@ export default function NewProposalPage() {
         setIsConfirmed(true)
         toast({
           title: "Proposal Created",
-          description: "Your proposal will use the Pyth price (scaled to 6 decimals) at auction start.",
+          description: "Your proposal will use the Pyth price at auction start.",
         })
         router.push("/proposals")
       } else {
@@ -262,9 +262,9 @@ export default function NewProposalPage() {
               </div>
             </div>
 
-            {/* Collateral token */}
+            {/* Subject Token */}
             <div className="space-y-2">
-              <Label htmlFor="subjectToken" className="text-base">Collateral Token *</Label>
+              <Label htmlFor="subjectToken" className="text-base">Subject Token *</Label>
               <Select
                 value={formData.subjectToken}
                 onValueChange={(value) =>{
