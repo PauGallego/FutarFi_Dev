@@ -1993,8 +1993,26 @@ async function executeOrder(order, io) {
             amount: fmt(tradeTokens, tokenDec)
           });
           console.log(`[applyBatch] tx sent: ${tx.hash}`);
-          try { matchingOrder.txHash = tx.hash; await matchingOrder.save(); } catch {}
+          try {
+            const execTime = new Date();
+            matchingOrder.txHash = tx.hash;
+            const mi = (matchingOrder.fills || []).length - 1;
+            if (mi >= 0) {
+              matchingOrder.fills[mi].txHash = tx.hash;
+              matchingOrder.fills[mi].timestampExecuted = execTime;
+              matchingOrder.fills[mi].isExecuted = true;
+            }
+            await matchingOrder.save();
+          } catch {}
           order.txHash = tx.hash;
+          try {
+            const oi = (order.fills || []).length - 1;
+            if (oi >= 0) {
+              order.fills[oi].txHash = tx.hash;
+              order.fills[oi].timestampExecuted = new Date();
+              order.fills[oi].isExecuted = true;
+            }
+          } catch {}
         } catch (e) { console.error('[applyBatch] send error:', e.message); }
       } else {
         // Our order is SELL, opposite is BUY with PyUSD budget
@@ -2047,8 +2065,26 @@ async function executeOrder(order, io) {
             amount: fmt(tradeTokens, tokenDec)
           });
           console.log(`[applyBatch] tx sent: ${tx.hash}`);
-          try { matchingOrder.txHash = tx.hash; await matchingOrder.save(); } catch {}
+          try {
+            const execTime = new Date();
+            matchingOrder.txHash = tx.hash;
+            const mi = (matchingOrder.fills || []).length - 1;
+            if (mi >= 0) {
+              matchingOrder.fills[mi].txHash = tx.hash;
+              matchingOrder.fills[mi].timestampExecuted = execTime;
+              matchingOrder.fills[mi].isExecuted = true;
+            }
+            await matchingOrder.save();
+          } catch {}
           order.txHash = tx.hash;
+          try {
+            const oi = (order.fills || []).length - 1;
+            if (oi >= 0) {
+              order.fills[oi].txHash = tx.hash;
+              order.fills[oi].timestampExecuted = new Date();
+              order.fills[oi].isExecuted = true;
+            }
+          } catch {}
         } catch (e) { console.error('[applyBatch] send error:', e.message); }
       }
     }

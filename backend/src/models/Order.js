@@ -47,8 +47,12 @@ const orderSchema = new mongoose.Schema({
     price: String,
     amount: String,
     timestamp: Date,
-    matchedOrderId: String
+    matchedOrderId: String,
+    txHash: String,
+    timestampExecuted: Date,
+    isExecuted: Boolean
   }],
+
   userAddress: {
     type: String,
     required: true
