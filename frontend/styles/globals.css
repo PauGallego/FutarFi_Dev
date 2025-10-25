@@ -5,8 +5,10 @@
 
 /* Updated light theme with electric green crypto palette */
 :root {
-  --background: #ffffff;
+  /* Soften light mode background to a gentle off-white */
+  --background: #fafafa;
   --foreground: #0f172a;
+  /* Keep cards slightly brighter for contrast against softer background */
   --card: #ffffff;
   --card-foreground: #0f172a;
   --popover: #ffffff;
@@ -166,7 +168,8 @@ input.no-spin[type=number] {
     background: radial-gradient(circle at 20% 20%, rgba(0, 255, 133, 0.08) 0%, transparent 50%),
       radial-gradient(circle at 80% 80%, rgba(124, 58, 237, 0.08) 0%, transparent 50%),
       radial-gradient(circle at 50% 50%, rgba(236, 72, 153, 0.05) 0%, transparent 50%);
-    background-color: #ffffff;
+    /* Match base to the softened light background */
+    background-color: var(--background);
   }
 
   /* Dark mode gradient - vibrant on pure black background */
