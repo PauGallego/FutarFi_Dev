@@ -11,6 +11,8 @@ import { AuctionView } from "@/components/auction-view"
 import { MarketView } from "@/components/market-view"
 import { AuctionTradePanel } from "@/components/auction-trade-panel"
 import { MarketTradePanel } from "@/components/market-trade-panel"
+import { MarketBalancesPanel } from "@/components/market-balances-panel"
+import { MarketPriceHeader } from "@/components/market-price-header"
 import { useChainId } from "wagmi"
 import type { Proposal, UserOrder, MarketOption, UserBalance } from "@/lib/types"
 import { useGetProposalById } from "@/hooks/use-get-proposalById"
@@ -273,7 +275,14 @@ export default function ProposalDetailPage({ params }: PageProps) {
           {(((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") && (proposal as any).auctionData) ? (
             <AuctionTradePanel proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} isFailed={(proposal as any).state === "Cancelled"} />
           ) : (
-            <MarketTradePanel selectedMarket={selectedMarket} onMarketChange={setSelectedMarket} proposalId={proposal.id} onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }} />
+            <>
+              {/* Current prices for YES/NO shown above trade panel */}
+              <MarketPriceHeader proposalId={proposal.id} />
+              <MarketTradePanel selectedMarket={selectedMarket} onMarketChange={setSelectedMarket} proposalId={proposal.id} onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }} />
+              <div className="mt-4">
+                <MarketBalancesPanel proposalId={proposal.id} />
+              </div>
+            </>
           )}
         </div>
       </div>

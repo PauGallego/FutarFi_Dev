@@ -9,6 +9,13 @@ interface OrderBookProps {
 }
 
 export function OrderBook({ orderBook, market }: OrderBookProps) {
+  // Compute live proportions using counts of total orders per side
+  const totalBuys = orderBook.filter(o => o.side === 'buy').length
+  const totalSells = orderBook.filter(o => o.side === 'sell').length
+  const totalOrders = totalBuys + totalSells
+  const bidPct = totalOrders > 0 ? (totalBuys / totalOrders) * 100 : 0
+  const askPct = totalOrders > 0 ? (totalSells / totalOrders) * 100 : 0
+
   const buyOrders = orderBook.filter((o) => o.side === "buy").slice(0, 10)
   const sellOrders = orderBook.filter((o) => o.side === "sell").slice(0, 10)
 
@@ -40,6 +47,11 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
     <Card>
       <CardHeader>
         <CardTitle>Order Book - t{market}</CardTitle>
+        {/* Proportional bar: left (bids, green) vs right (asks, red) by order counts */}
+        <div className="mt-2 h-2 w-full rounded bg-muted overflow-hidden flex">
+          <div className="h-full bg-primary" style={{ width: `${bidPct}%` }} />
+          <div className="h-full bg-destructive" style={{ width: `${askPct}%` }} />
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-4">

@@ -2,6 +2,7 @@ import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, ExternalLink, User, Clock } from "lucide-react"
+import { getSupportedCollaterals } from "@/lib/collaterals"
 import type { Proposal } from "@/lib/types"
 
 interface ProposalHeaderProps {
@@ -21,6 +22,12 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
   const creatorAddress = (proposal as any).admin || (proposal as any).address || ''
   const explorerUrl = getExplorerUrl(chainId, creatorAddress)
 
+  // Resolve subject token info strictly from collaterals: symbol and subjectTokenUrl
+  const collaterals = getSupportedCollaterals(chainId)
+  const subjectMeta = collaterals.find(c => c.pythID.toUpperCase() === (proposal.subjectToken || '').toUpperCase())
+  const subjectSymbol = subjectMeta?.symbol || ''
+  const subjectUrl = subjectMeta?.subjectTokenUrl
+
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" asChild>
@@ -38,26 +45,60 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
           </Badge>
         </div>
 
-        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4" />
-            <span>Creator:</span>
-            <a
-              href={explorerUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline inline-flex items-center gap-1"
-            >
-              {formatAddress(creatorAddress)}
-              <ExternalLink className="h-3 w-3" />
-            </a>
+        <div className="flex items-center justify-between flex-wrap gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4" />
+              <span>Creator:</span>
+              <a
+                href={explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline inline-flex items-center gap-1"
+              >
+                {formatAddress(creatorAddress)}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              <span>
+                {formatDate(proposal.auctionStartTime)} - {formatDate(proposal.auctionEndTime)}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4" />
-            <span>
-              {formatDate(proposal.auctionStartTime)} - {formatDate(proposal.auctionEndTime)}
-            </span>
-          </div>
+          {subjectSymbol && (
+            subjectUrl ? (
+              <a
+                href={subjectUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-2 py-1 rounded-md border hover:bg-muted"
+                title={`Open ${subjectSymbol} website`}
+              >
+                {subjectMeta?.logoURI ? (
+                  <img src={subjectMeta.logoURI} alt={`${subjectSymbol} logo`} className="h-5 w-5 rounded-sm" />
+                ) : (
+                  <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted-foreground/20 text-xs font-bold">
+                    {subjectSymbol.slice(0,1)}
+                  </span>
+                )}
+                <span className="font-medium">{subjectMeta?.symbol || subjectSymbol}</span>
+                <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+              </a>
+            ) : (
+              <span className="inline-flex items-center gap-2 px-2 py-1 rounded-md border" title={subjectSymbol}>
+                {subjectMeta?.logoURI ? (
+                  <img src={subjectMeta.logoURI} alt={`${subjectSymbol} logo`} className="h-5 w-5 rounded-sm" />
+                ) : (
+                  <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted-foreground/20 text-xs font-bold">
+                    {subjectSymbol.slice(0,1)}
+                  </span>
+                )}
+                <span className="font-medium">{subjectMeta?.symbol || subjectSymbol}</span>
+              </span>
+            )
+          )}
         </div>
 
         <div className="prose prose-invert max-w-none">

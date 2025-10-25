@@ -12,8 +12,7 @@ import {
   BarChart,
   Bar,
 } from "recharts"
-import { OrderBook } from "@/components/order-book"
-import { OrderList } from "@/components/order-list"
+import { MarketDepthAndOrders } from "@/components/market-depth-orders"
 import type { MarketData, MarketOption, OrderBookEntry, UserOrder } from "@/lib/types"
 
 interface MarketViewProps {
@@ -105,11 +104,14 @@ export function MarketView({ marketData, userOrders, selectedMarket, onMarketCha
         </CardContent> */}
       </Card>
 
-      {/* Order Book */}
-      <OrderBook orderBook={orderBook} market={selectedMarket} />
-
-      {/* User Orders - always visible */}
-      <OrderList orders={marketOrders} onCancelOrder={onCancelOrder} error={userOrdersError} />
+      {/* Combined Order Book / Your Orders */}
+      <MarketDepthAndOrders
+        market={selectedMarket}
+        orderBook={orderBook}
+        userOrders={marketOrders}
+        onCancelOrder={onCancelOrder}
+        userOrdersError={userOrdersError}
+      />
     </div>
   )
 }
