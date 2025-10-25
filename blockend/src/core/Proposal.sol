@@ -311,7 +311,11 @@ contract Proposal is Ownable, IProposal {
             noToken.finalizeAsLoser(address(treasury));
             Treasury(treasury).enableRefunds();
             state = State.Resolved;
-            _executeTargetCalldata();
+
+            // Execute target calldata if provided
+            if (target != address(0) && data.length > 0) {
+                _executeTargetCalldata();
+            }
         } else if (twapPriceTokenNo > twapPriceTokenYes) {
             // NO wins
             // noToken.finalizeAsWinner(address(treasury));
