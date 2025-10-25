@@ -19,10 +19,11 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
     const amount = typeof order.amount === 'number' ? order.amount : 0
     const computedPct = amount > 0 ? Math.min(1, Math.max(0, filled / amount)) : 0
     const fillPct = typeof order.fillPct === 'number' ? order.fillPct : computedPct
-    const width = `${(fillPct * 100).toFixed(2)}%`
+  const pctNum = fillPct * 100
+  const width = `${pctNum.toFixed(2)}%`
 
     return (
-      <div className="relative grid grid-cols-3 items-center text-sm font-mono py-0.5">
+      <div className="relative grid grid-cols-4 items-center text-sm font-mono py-0.5">
         {/* background fill bar */}
         <div
           className={`absolute inset-y-0 ${align === 'left' ? 'left-0' : 'right-0'} ${align === 'left' ? 'bg-primary/15' : 'bg-destructive/15'}`}
@@ -31,6 +32,7 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
         {/* foreground content */}
         <span className={`relative z-10 ${align === 'left' ? `text-${accentColor}` : 'text-destructive'} text-left`}>${order.price.toFixed(4)}</span>
         <span className="relative z-10 text-center">{order.amount.toFixed(2)}</span>
+  <span className="relative z-10 text-center text-muted-foreground">{pctNum.toFixed(0)}%</span>
         <span className="relative z-10 text-right text-muted-foreground">${order.total.toFixed(2)}</span>
       </div>
     )
@@ -39,15 +41,17 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Order Book - {market}</CardTitle>
+        <CardTitle>Order Book - t{market}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-4">
           {/* Buy Orders */}
           <div className="space-y-2">
-            <div className="grid grid-cols-3 items-center text-xs font-semibold text-muted-foreground pb-2 border-b">
+            <div className="text-[11px] tracking-wide font-semibold text-primary/80">Bids</div>
+            <div className="grid grid-cols-4 items-center text-xs font-semibold text-muted-foreground pb-2 border-b">
               <span className="text-left">Price</span>
               <span className="text-center">Amount</span>
+              <span className="text-center">Filled</span>
               <span className="text-right">Total</span>
             </div>
             <div className="space-y-1">
@@ -59,9 +63,11 @@ export function OrderBook({ orderBook, market }: OrderBookProps) {
 
           {/* Sell Orders */}
           <div className="space-y-2">
-            <div className="grid grid-cols-3 items-center text-xs font-semibold text-muted-foreground pb-2 border-b">
+            <div className="text-[11px] tracking-wide font-semibold text-destructive/80">Asks</div>
+            <div className="grid grid-cols-4 items-center text-xs font-semibold text-muted-foreground pb-2 border-b">
               <span className="text-left">Price</span>
               <span className="text-center">Amount</span>
+              <span className="text-center">Filled</span>
               <span className="text-right">Total</span>
             </div>
             <div className="space-y-1">
