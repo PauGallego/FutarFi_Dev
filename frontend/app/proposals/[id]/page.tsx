@@ -269,6 +269,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
                   onCancelOrder={handleCancelOrder}
                   userOrdersError={userOrdersError}
                   orderBookEntries={liveOrderbook}
+                  proposalId={proposal.id}
                 />
               )
             )

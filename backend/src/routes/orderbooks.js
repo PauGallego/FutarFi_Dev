@@ -36,6 +36,9 @@ function sideToKey(side) { return side === 'approve' ? 'yes' : 'no'; }
 // Build and persist a compact order book snapshot for a proposal/side
 async function updateOrderBook(proposalId, side, io) {
   try {
+    // Read previous snapshot to detect top-of-book changes
+    const prevDoc = await OrderBook.findOne({ proposalId, side }).lean();
+
     const openOrders = await Order.find({
       proposalId,
       side,
@@ -69,11 +72,49 @@ async function updateOrderBook(proposalId, side, io) {
     const bids = toArr(bidsMap, -1); // high to low
     const asks = toArr(asksMap, +1); // low to high
 
+    // Determine new top-of-book and mid price
+    const bestBidNew = bids?.[0] || null; // highest buyer
+    const bestAskNew = asks?.[0] || null; // cheapest seller
+    let midStr;
+    if (bestBidNew && bestAskNew) {
+      const bid = parseFloat(bestBidNew.price);
+      const ask = parseFloat(bestAskNew.price);
+      if (Number.isFinite(bid) && Number.isFinite(ask)) {
+        // Mid-price = average of best bid and best ask
+        midStr = ((bid + ask) / 2).toFixed(8);
+      }
+    }
+
+    // Persist snapshot (and lastPrice if we computed a mid)
+    const setUpdate = { bids, asks, updatedAt: new Date() };
+    if (midStr) setUpdate.lastPrice = midStr;
+
     const doc = await OrderBook.findOneAndUpdate(
       { proposalId, side },
-      { $set: { bids, asks, updatedAt: new Date() }, $setOnInsert: { proposalId, side } },
+      { $set: setUpdate, $setOnInsert: { proposalId, side } },
       { upsert: true, new: true }
     );
+
+    // Detect change of buyer/seller combination (top-of-book changed)
+    const prevBid = prevDoc?.bids?.[0] || null;
+    const prevAsk = prevDoc?.asks?.[0] || null;
+    const topChanged = !!bestBidNew && !!bestAskNew && (
+      !prevBid || !prevAsk || prevBid.price !== bestBidNew.price || prevAsk.price !== bestAskNew.price
+    );
+
+    if (topChanged && midStr) {
+      try {
+        await PriceHistory.create({
+          proposalId,
+          side,
+          price: midStr,
+          volume: '0', // snapshot, not traded volume
+          timestamp: new Date()
+        });
+      } catch (e) {
+        console.error('PriceHistory create error:', e.message);
+      }
+    }
 
     try { if (io && typeof notifyOrderBookUpdate === 'function') notifyOrderBookUpdate(io, proposalId, side, doc); } catch (_) {}
     return doc;
@@ -2018,6 +2059,9 @@ async function executeOrder(order, io) {
 
     for (const matchingOrder of matchingOrders) {
       // Stop if nothing left
+
+
+
       if (order.orderType === 'buy' && remainingBuyPyusd <= 0n) break;
       if (order.orderType === 'sell' && remainingSellTokens <= 0n) break;
 
@@ -2063,6 +2107,19 @@ async function executeOrder(order, io) {
           timestamp: new Date(),
           matchedOrderId: matchingOrder._id.toString()
         });
+
+        // Store trade price + volume for charts (volume = base token amount)
+        try {
+          await PriceHistory.create({
+            proposalId: order.proposalId,
+            side: order.side,
+            price: matchingOrder.price,
+            volume: fmt(tradeTokens, tokenDec),
+            timestamp: new Date()
+          });
+        } catch (e) {
+          console.error('PriceHistory (trade BUY) create error:', e.message);
+        }
 
         // Submit on-chain
         try {
@@ -2135,6 +2192,19 @@ async function executeOrder(order, io) {
           timestamp: new Date(),
           matchedOrderId: matchingOrder._id.toString()
         });
+
+        // Store trade price + volume for charts (volume = base token amount)
+        try {
+          await PriceHistory.create({
+            proposalId: order.proposalId,
+            side: order.side,
+            price: matchingOrder.price,
+            volume: fmt(tradeTokens, tokenDec),
+            timestamp: new Date()
+          });
+        } catch (e) {
+          console.error('PriceHistory (trade SELL) create error:', e.message);
+        }
 
         // Submit on-chain
         try {
