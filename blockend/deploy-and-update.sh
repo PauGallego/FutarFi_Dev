@@ -20,7 +20,7 @@ if [ $? -eq 0 ]; then
     # Defaults for minting
     TO_ADDRESS=${TO_ADDRESS:-$OWNER_ADDRESS}
     # Amount uses 6 decimals. Example: 1,000,000 PYUSD => 1_000_000 * 10^6 = 1000000000000
-    AMOUNT_WEI=${AMOUNT_WEI:-1000000000000}
+    AMOUNT_WEI=${AMOUNT_WEI:-100000000000000}
 
     if [ -z "$PYUSD_ADDRESS" ]; then
         echo "Error: Could not extract PYUSD address from deployment output."
@@ -76,7 +76,20 @@ EOF
         echo "ProposalManager: $PROPOSAL_MANAGER"
         echo "Recipient: $TO_ADDRESS"
         echo "User PYUSD Balance: $PYUSD_BALANCE PYUSD (6 decimals)"
-        
+
+        # Mint PYUSD to second Anvil account
+        SECOND_ANVIL=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+        echo "Minting PYUSD to second Anvil account: $SECOND_ANVIL ..."
+        PYUSD_MINT_OUTPUT_2=$(TO=$SECOND_ANVIL AMOUNT=$AMOUNT_WEI PYUSD_CONTRACT=$PYUSD_ADDRESS forge script script/Mintpyusd.sol --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast 2>&1)
+        if [ $? -eq 0 ]; then
+            PYUSD_BALANCE_2=$(echo "$PYUSD_MINT_OUTPUT_2" | grep "User PYUSD Balance:" | tail -1 | awk '{print $4}')
+            echo "Second account PYUSD mint successful!"
+            echo "User PYUSD Balance (second account): $PYUSD_BALANCE_2 PYUSD (6 decimals)"
+        else
+            echo "PYUSD minting to second account failed!"
+            echo "$PYUSD_MINT_OUTPUT_2"
+        fi
+
     else
         echo "PYUSD minting failed!"
         echo "$PYUSD_MINT_OUTPUT"
