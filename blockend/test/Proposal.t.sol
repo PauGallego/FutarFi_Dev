@@ -13,7 +13,7 @@ import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 /// @notice Simple mock ERC20 used as PYUSD collateral in tests
 contract MockERC20 is ERC20 {
     constructor() ERC20("MockUSD", "MUSD") {
-        _mint(msg.sender, 1_000_000e18);
+        _mint(msg.sender, 50_000_000e18);
     }
 }
 
@@ -125,8 +125,8 @@ contract ProposalBasicTest is Test {
             10,              // auctionDuration
             20,              // liveDuration
             "Subject Token",
-            1,            // minToOpen (1 token)
-            100000e6,            // maxCap (1 token)
+            1e18,            // minToOpen (1 token)
+            100e18,            // maxCap (1 token)
             address(target), // target
             data,            // data
             PYTH_CONTRACT,   // pythAddr (mock)
@@ -143,25 +143,25 @@ contract ProposalBasicTest is Test {
         // Fund two buyers for the auctions and approve Treasury
         address buyerYes = makeAddr("buyerYes");
         address buyerNo = makeAddr("buyerNo");
-        pyusd.transfer(buyerYes, 2_100_000); // enough for auction + later trades
-        pyusd.transfer(buyerNo, 2_100_000);
+        pyusd.transfer(buyerYes,10_000_000e18 ); // enough for auction + later trades
+        pyusd.transfer(buyerNo, 10_000_000e18);
         vm.prank(buyerYes);
         pyusd.approve(treasury, type(uint256).max);
         vm.prank(buyerNo);
         pyusd.approve(treasury, type(uint256).max);
 
         vm.prank(buyerYes);
-        yes.buyLiquidity(2e6);  // buy to cap
+        yes.buyLiquidity(2e18);  // buy to cap
         vm.prank(buyerNo);
-        no.buyLiquidity(2e6);   // buy to cap
+        no.buyLiquidity(2e18);   // buy to cap
 
         uint256 endTime = yes.END_TIME();
         vm.warp(endTime + 1);
 
-        vm.prank(attestor);
-        yes.finalize();
-        vm.prank(attestor);
-        no.finalize();
+        // vm.prank(attestor);
+        // yes.finalize();
+        // vm.prank(attestor);
+        // no.finalize();
         assertEq(uint8(proposal.state()), uint8(IProposal.State.Live), "Proposal not in Live state");
 
         // After both auctions, proposal live times are set

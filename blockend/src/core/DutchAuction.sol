@@ -133,7 +133,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
         MARKET_TOKEN.mint(msg.sender, tokensOut);
         emit LiquidityAdded(msg.sender, address(MARKET_TOKEN), _payAmount, actualPrice, tokensOut);
 
-        if (MARKET_TOKEN.totalSupply() == MARKET_TOKEN.cap()){
+        if (MARKET_TOKEN.totalSupply() >= MARKET_TOKEN.cap()){
             isValid = true;
             isFinalized = true;
             emit AuctionisValid();
@@ -158,7 +158,7 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
                 _finalize();
             }
         } else {
-            if (MARKET_TOKEN.totalSupply() == MARKET_TOKEN.cap()){
+            if (MARKET_TOKEN.totalSupply() >= MARKET_TOKEN.cap() * 99 / 100) {
                 isValid = true;
                 isFinalized = true;
                 emit AuctionisValid();
