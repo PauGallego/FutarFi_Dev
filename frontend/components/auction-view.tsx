@@ -81,6 +81,9 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
   // Onchain minimum required to open (PyUSD, 6d or 18d per contract). Here it's uint256, represents PyUSD amount.
   const { data: minToOpen } = useReadContract({ address: proposalAddress, abi: proposal_abi, functionName: "minToOpen" })
   const minimumRequired = (typeof minToOpen === "bigint" ? minToOpen : auctionData.minimumRequired)
+  // Per-auction minimum token supply to consider market valid (18 decimals, token units)
+  const { data: yesMinToOpen } = useReadContract({ address: yesAuctionAddr as `0x${string}` | undefined, abi: dutchAuction_abi, functionName: "MIN_TO_OPEN" })
+  const { data: noMinToOpen } = useReadContract({ address: noAuctionAddr as `0x${string}` | undefined, abi: dutchAuction_abi, functionName: "MIN_TO_OPEN" })
 
   // Onchain remaining (cap - totalSupply) and user balances
   const { data: yesCap } = useReadContract({ address: yesTokenAddr as `0x${string}` | undefined, abi: marketToken_abi, functionName: "cap" })
@@ -208,7 +211,10 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
   useEffect(() => {
     const onTx = () => { void refetchNow() }
     window.addEventListener("auction:tx", onTx)
-    const id = setInterval(() => { void refetchNow() }, 10_000)
+    // Prime once on mount for immediate freshness
+    void refetchNow()
+    // Poll every 3 seconds to reflect other users' actions
+    const id = setInterval(() => { void refetchNow() }, 3_000)
     return () => {
       window.removeEventListener("auction:tx", onTx)
       clearInterval(id)
@@ -228,8 +234,6 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
   }, [raisedOverride, potYes, potNo, auctionData.yesTotalBids, auctionData.noTotalBids])
   const isSuccessful = totalRaised >= minimumRequired
 
-  console.log("wtff", totalRaised);
-  console.log("wtff2", minimumRequired);
   // Percent progress toward minimum required (total raised vs minimum)
   const minProgressPercent = useMemo(() => {
     if ((minimumRequired ?? 0n) <= 0n) return 100
@@ -237,6 +241,36 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
     const pct = Number(pctTimes10) / 10
     return pct > 100 ? 100 : pct
   }, [totalRaised, minimumRequired])
+
+  // Compute current totalSupply derived from (cap - remaining) when possible to reflect our live overrides/polling
+  const yesSupplyForMin = useMemo(() => {
+    if (typeof yesCap === "bigint") return yesCap - yesRemaining
+    return (typeof yesSupply === "bigint" ? yesSupply : 0n)
+  }, [yesCap, yesRemaining, yesSupply])
+
+  const noSupplyForMin = useMemo(() => {
+    if (typeof noCap === "bigint") return noCap - noRemaining
+    return (typeof noSupply === "bigint" ? noSupply : 0n)
+  }, [noCap, noRemaining, noSupply])
+
+  // Percent progress toward minimum based on TOKEN supply vs MIN_TO_OPEN (both 18 decimals)
+  const yesMinProgressPercent = useMemo(() => {
+    const supply = yesSupplyForMin
+    const min = (typeof yesMinToOpen === "bigint" ? yesMinToOpen : 0n)
+    if (min <= 0n) return 100
+    const pctTimes10 = (supply * 1000n) / min // one decimal
+    const pct = Number(pctTimes10) / 10
+    return pct > 100 ? 100 : pct
+  }, [yesSupplyForMin, yesMinToOpen])
+
+  const noMinProgressPercent = useMemo(() => {
+    const supply = noSupplyForMin
+    const min = (typeof noMinToOpen === "bigint" ? noMinToOpen : 0n)
+    if (min <= 0n) return 100
+    const pctTimes10 = (supply * 1000n) / min // one decimal
+    const pct = Number(pctTimes10) / 10
+    return pct > 100 ? 100 : pct
+  }, [noSupplyForMin, noMinToOpen])
 
   return (
     <div className="space-y-6">
@@ -313,7 +347,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
         {/* YES Token Card */}
         <Card className="border-primary/30 bg-primary/5">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg text-primary">tYES Token</CardTitle>
+            <CardTitle className="text-lg text-primary">tYES</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -323,21 +357,21 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Remaining Available</span>
+                <span className="text-muted-foreground">Remaining Mintable</span>
                 <span className="font-mono text-foreground">{(Number((yesRemaining) / BigInt(1e18)).toFixed(6))}</span>
               </div>
               <Progress value={yesRemainingPercent} className="h-2 bg-primary/20" />
               <p className="text-xs text-muted-foreground text-right">{yesRemainingPercent.toFixed(1)}% remaining</p>
             </div>
 
-            {/* Progress to Minimum */}
+            {/* Progress to Minimum (token supply vs minToOpen) */}
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">To Minimum</span>
-                <span className="font-mono text-foreground">{minProgressPercent.toFixed(1)}%</span>
+                <span className="text-muted-foreground">Reach min supply</span>
+                <span className="font-mono text-foreground">{yesMinProgressPercent.toFixed(1)}%</span>
               </div>
-              <Progress value={minProgressPercent} className="h-2 bg-primary/20" />
-              <p className="text-xs text-muted-foreground text-right">{minProgressPercent.toFixed(1)}% of minimum</p>
+              <Progress value={yesMinProgressPercent} className="h-2 bg-primary/20" />
+              <p className="text-xs text-muted-foreground text-right">{yesMinProgressPercent.toFixed(1)}% of minimum</p>
             </div>
 
             <div className="pt-2 border-t border-primary/20">
@@ -350,7 +384,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
         {/* NO Token Card */}
         <Card className="border-destructive/30 bg-destructive/5">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg text-destructive">tNO Token</CardTitle>
+            <CardTitle className="text-lg text-destructive">tNO</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -360,21 +394,21 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Remaining Available</span>
+                <span className="text-muted-foreground">Remaining Mintable</span>
                 <span className="font-mono text-foreground">{(Number((noRemaining) / BigInt(1e18)).toFixed(6))}</span>
               </div>
               <Progress value={noRemainingPercent} className="h-2 bg-destructive/20 [&>div]:bg-destructive" />
               <p className="text-xs text-muted-foreground text-right">{noRemainingPercent.toFixed(1)}% remaining</p>
             </div>
 
-            {/* Progress to Minimum */}
+            {/* Progress to Minimum (token supply vs minToOpen) */}
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">To Minimum</span>
-                <span className="font-mono text-foreground">{minProgressPercent.toFixed(1)}%</span>
+                <span className="text-muted-foreground">Reach min supply</span>
+                <span className="font-mono text-foreground">{noMinProgressPercent.toFixed(1)}%</span>
               </div>
-              <Progress value={minProgressPercent} className="h-2 bg-destructive/20 [&>div]:bg-destructive" />
-              <p className="text-xs text-muted-foreground text-right">{minProgressPercent.toFixed(1)}% of minimum</p>
+              <Progress value={noMinProgressPercent} className="h-2 bg-destructive/20 [&>div]:bg-destructive" />
+              <p className="text-xs text-muted-foreground text-right">{noMinProgressPercent.toFixed(1)}% of minimum</p>
             </div>
 
             <div className="pt-2 border-t border-destructive/20">

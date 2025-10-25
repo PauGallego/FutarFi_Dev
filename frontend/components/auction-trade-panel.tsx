@@ -135,7 +135,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
               <span className="font-mono">{Number(estimatedTokens).toFixed(6)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Your {selectedMarket} Balance:</span>
+              <span className="text-muted-foreground">Your t{selectedMarket} Balance:</span>
               <span className="font-mono">{(Number((userTokenBalance) ?? 0n) / 1e18).toFixed(6)}</span>
             </div>
             <div className="flex justify-between">
@@ -145,7 +145,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
           </div>
 
           <Button className="w-full" onClick={handleBid} disabled={!canBuy}>
-            {isApproving ? "Approving..." : isBuying ? "Buying..." : "Add Liquidity"}
+            {isApproving ? "Approving..." : isBuying ? "Buying..." : "Buy Liquidity"}
           </Button>
         </CardContent>
       </Card>
