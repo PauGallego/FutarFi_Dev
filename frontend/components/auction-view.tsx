@@ -31,34 +31,68 @@ const AnimatedDot = (props: any) => {
     </g>
   )
 }
-
-function useCountdown(endTime: bigint) {
+function useCountdown(endTime: bigint | number, nowOverride?: number) {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 })
 
   useEffect(() => {
     const calculateTimeLeft = () => {
-      const now = Math.floor(Date.now() / 1000)
-      const end = Number(endTime)
-      const difference = end - now
+      let endSec = Number(endTime)
+      // If it's a timestamp in milliseconds, convert to seconds
+      if (endSec > 1e12) endSec = Math.floor(endSec / 1000)
 
-      if (difference > 0) {
-        const days = Math.floor(difference / (60 * 60 * 24))
-        const hours = Math.floor((difference % (60 * 60 * 24)) / (60 * 60))
-        const minutes = Math.floor((difference % (60 * 60)) / 60)
-        const seconds = Math.floor(difference % 60)
+      // Derive current time from Date.now() each tick and apply drift from chain time if provided
+      const clientNowSec = Math.floor(Date.now() / 1000)
+      const chainNowSec = typeof nowOverride === 'number'
+        ? (nowOverride > 1e12 ? Math.floor(nowOverride / 1000) : Math.floor(nowOverride))
+        : clientNowSec
+      const drift = chainNowSec - clientNowSec
+      const nowSec = clientNowSec + drift
+
+      const diff = endSec - nowSec
+
+      if (diff > 0) {
+        const days = Math.floor(diff / (60 * 60 * 24))
+        const hours = Math.floor((diff % (60 * 60 * 24)) / (60 * 60))
+        const minutes = Math.floor((diff % (60 * 60)) / 60)
+        const seconds = diff % 60
         setTimeLeft({ days, hours, minutes, seconds })
       } else {
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 })
       }
     }
 
+    // Initial calculation
     calculateTimeLeft()
-    const interval = setInterval(calculateTimeLeft, 1000)
 
+    const interval = setInterval(calculateTimeLeft, 1000)
     return () => clearInterval(interval)
-  }, [endTime])
+  }, [endTime, nowOverride])
 
   return timeLeft
+}
+
+// Helper to format a timestamp (seconds or ms) into a readable date & time
+function formatDateTime(timestamp: number | bigint | undefined): string {
+  if (timestamp === undefined || timestamp === null) return "N/A"
+  const tsNum = typeof timestamp === "bigint" ? Number(timestamp) : Number(timestamp)
+  const ms = tsNum > 1e12 ? tsNum : tsNum * 1000
+  return new Date(ms).toLocaleString()
+}
+
+// Helper to pad time units (e.g., 3 -> 03)
+function pad2(n: number) { return n.toString().padStart(2, '0') }
+
+// Price formatting helpers to keep big labels from breaking
+function formatPriceShort(value: number): string {
+  const abs = Math.abs(value)
+  if (abs >= 1e12) return (value / 1e12).toFixed(2) + "T"
+  if (abs >= 1e9) return (value / 1e9).toFixed(2) + "B"
+  if (abs >= 1e6) return (value / 1e6).toFixed(2) + "M"
+  if (abs >= 1e3) return (value / 1e3).toFixed(2) + "K"
+  return value.toFixed(2)
+}
+function formatPriceFull(value: number): string {
+  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 export function AuctionView({ auctionData, userBalance, proposalAddress }: AuctionViewProps) {
@@ -130,7 +164,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
 
   // Use on-chain END_TIME for countdown when available
   const effectiveEndTime = (typeof endTimeSec === "bigint" ? endTimeSec : auctionData.auctionEndTime)
-  const timeLeft = useCountdown(effectiveEndTime)
+  const timeLeft = useCountdown(effectiveEndTime, blockTimestamp)
 
   // Compute remaining using overrides first, then on-chain read, then fallback to provided auctionData
   const yesRemaining = useMemo(() => {
@@ -303,6 +337,14 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
     return Array.from({ length: count }, (_, i) => Math.round(startTime + (i * duration) / (count - 1)))
   }, [startTime, endTime])
 
+  // Build countdown text (e.g., 1d 03:22:10) and fallback when ended
+  const countdownText = useMemo(() => {
+    const total = timeLeft.days + timeLeft.hours + timeLeft.minutes + timeLeft.seconds
+    if (total <= 0) return "Ended"
+    const d = timeLeft.days > 0 ? `${timeLeft.days}d ` : ""
+    return `${d}${pad2(timeLeft.hours)}:${pad2(timeLeft.minutes)}:${pad2(timeLeft.seconds)}`
+  }, [timeLeft])
+
   return (
     <div className="space-y-6">
       <Card className="border-primary/20">
@@ -315,9 +357,9 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 text-sm">
                 <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="font-mono text-foreground">
-                  {timeLeft.days}d {timeLeft.hours}h {timeLeft.minutes}m
-                </span>
+               <span title={formatDateTime(effectiveEndTime)}>
+                {countdownText}
+              </span>
               </div>
               <Badge
                 variant={isSuccessful ? "default" : "secondary"}
@@ -351,8 +393,10 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
                   fontSize={12}
                   domain={[0, startPrice ?? 1]}
                   tick={{ fill: textColor }}
-                  tickFormatter={(v: number) => v.toFixed(2)}
-                  label={{ value: "Price", angle: -90, position: "insideLeft", fill: textColor }}
+                  tickFormatter={(v: number) => formatPriceShort(v)}
+                  width={72}
+                  tickCount={6}
+                  label={{ value: "", angle: -90, position: "insideLeft", fill: textColor }}
                 />
                 <Tooltip
                   contentStyle={{
@@ -361,7 +405,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
                     borderRadius: "8px",
                     color: textColor,
                   }}
-                  formatter={(value: any) => [`$${Number(value).toFixed(2)}`, "Price"]}
+                  formatter={(value: any) => [`$${formatPriceFull(Number(value))}`, "Price"]}
                   labelFormatter={(label: any) => new Date(Number(label) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 />
                 <Line
