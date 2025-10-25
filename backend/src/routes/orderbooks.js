@@ -119,7 +119,7 @@ async function ensureSufficientBalance({ proposal, proposalId, side, orderType, 
     pyusd.decimals().catch(() => 18)
   ]);
 
-  // SELL: user must have enough market tokens
+  // SELL: user must have enough market tokens (amount is token qty)
   if (orderType === 'sell') {
     const requiredToken = ethers.parseUnits(String(amount), Number(tokenDec));
     const userTokenBal = await token.balanceOf(userAddress).catch(() => 0n);
@@ -131,31 +131,13 @@ async function ensureSufficientBalance({ proposal, proposalId, side, orderType, 
     return; // sell check done
   }
 
-  // BUY: user must have enough PYUSD for price*amount
-  // Determine effective price: use provided price; for market order, try best sell price
-  let effectivePrice = price;
-  if ((!effectivePrice || Number(effectivePrice) <= 0) && orderExecution === 'market') {
-    effectivePrice = await getBestSellPrice(proposalId, side);
-  }
-
-  if (!effectivePrice || Number(effectivePrice) <= 0) {
-    // If we still don't have a price (e.g., empty order book), skip strict check
-    // but ensure the user has a positive PYUSD balance
-    const bal = await pyusd.balanceOf(userAddress).catch(() => 0n);
-    if (bal <= 0n) throw new Error('Insufficient PYUSD balance');
-    return;
-  }
-
-  const priceUnits = ethers.parseUnits(String(effectivePrice), Number(pyusdDec));
-  const amountUnits = ethers.parseUnits(String(amount), Number(tokenDec));
-  const scale = 10n ** BigInt(Number(tokenDec));
-  const requiredPyusd = (priceUnits * amountUnits) / scale;
+  // BUY: amount is a PyUSD budget. User must have at least this much PyUSD.
+  const requiredPyusd = ethers.parseUnits(String(amount), Number(pyusdDec));
   const userPyusdBal = await pyusd.balanceOf(userAddress).catch(() => 0n);
-
   if (userPyusdBal < requiredPyusd) {
     const need = ethers.formatUnits(requiredPyusd, Number(pyusdDec));
     const have = ethers.formatUnits(userPyusdBal, Number(pyusdDec));
-    throw new Error(`Insufficient PYUSD balance. Required: ${need}, Available: ${have}`);
+    throw new Error(`Insufficient PyUSD balance. Required: ${need}, Available: ${have}`);
   }
 }
 
@@ -1892,8 +1874,8 @@ async function executeOrder(order, io) {
     let priceFilter = {};
     if (order.orderExecution === 'limit') {
       priceFilter = order.orderType === 'buy'
-        ? { $expr: { $lte: [{ $toDouble: '$price' }, parseFloat(order.price)] } }
-        : { $expr: { $gte: [{ $toDouble: '$price' }, parseFloat(order.price)] } };
+        ? { $expr: { $lte: [{ $toDouble: '$price' }, parseFloat(order.price) ] } }
+        : { $expr: { $gte: [{ $toDouble: '$price' }, parseFloat(order.price) ] } };
     }
 
     // Find matching orders
@@ -1908,86 +1890,182 @@ async function executeOrder(order, io) {
       createdAt: 1
     });
 
-    let remainingAmount = parseFloat(order.amount);
-    let totalExecuted = 0;
+    // Helpers for decimal math
+    const TEN18 = 10n ** 18n;
+    const toUnits = (v, dec) => { try { return ethers.parseUnits(String(v ?? '0'), Number(dec)); } catch { return 0n; } };
+    const fmt = (v, dec) => ethers.formatUnits(v, Number(dec));
+
+    // Prefetch decimals for correct math using proposal info if available via ensureSufficientBalance call path
+    // Fallback to 18/6
+    let tokenDec = 18, pyusdDec = 6;
+    try {
+      const proposalDoc = await Proposal.findOne({ proposalContractId: order.proposalId });
+      const key = sideToKey(order.side);
+      const tokenAddr = proposalDoc?.auctions?.[key]?.marketToken;
+      const pyusdAddr = proposalDoc?.auctions?.[key]?.pyusd || proposalDoc?.auctions?.yes?.pyusd || proposalDoc?.auctions?.no?.pyusd;
+      if (tokenAddr && pyusdAddr) {
+        const provider = getProvider();
+        const token = new ethers.Contract(tokenAddr, ERC20_MIN_ABI, provider);
+        const pyusd = new ethers.Contract(pyusdAddr, ERC20_MIN_ABI, provider);
+        const [td, pd] = await Promise.all([
+          token.decimals().catch(() => 18),
+          pyusd.decimals().catch(() => 6)
+        ]);
+        tokenDec = Number(td) || 18;
+        pyusdDec = Number(pd) || 6;
+      }
+    } catch {}
+
+    // Track remaining in native units of the order
+    let remainingBuyPyusd = 0n; // for buy orders (in PyUSD decimals)
+    let remainingSellTokens = 0n; // for sell orders (in token decimals)
+
+    if (order.orderType === 'buy') {
+      const amt = toUnits(order.amount, pyusdDec);
+      const filled = toUnits(order.filledAmount || '0', pyusdDec);
+      remainingBuyPyusd = amt > filled ? (amt - filled) : 0n;
+    } else {
+      const amt = toUnits(order.amount, tokenDec);
+      const filled = toUnits(order.filledAmount || '0', tokenDec);
+      remainingSellTokens = amt > filled ? (amt - filled) : 0n;
+    }
+
+    let totalTokensExecuted = 0n; // always track in token units (18d)
+    let totalPyusdExecuted = 0n;  // always track in PyUSD units (6d)
 
     for (const matchingOrder of matchingOrders) {
-      if (remainingAmount <= 0) break;
+      // Stop if nothing left
+      if (order.orderType === 'buy' && remainingBuyPyusd <= 0n) break;
+      if (order.orderType === 'sell' && remainingSellTokens <= 0n) break;
 
-      const availableAmount = parseFloat(matchingOrder.amount) - parseFloat(matchingOrder.filledAmount || '0');
-      const tradeAmount = Math.min(remainingAmount, availableAmount);
+      // Price per token in PyUSD decimals
+      const price6 = toUnits(matchingOrder.price, pyusdDec);
+      if (price6 <= 0n) continue;
 
-      if (tradeAmount <= 0) continue;
+      if (order.orderType === 'buy') {
+        // Opposite is SELL: it has tokens available
+        const moAmt = toUnits(matchingOrder.amount, tokenDec);
+        const moFilled = toUnits(matchingOrder.filledAmount || '0', tokenDec);
+        const moAvailTokens = moAmt > moFilled ? (moAmt - moFilled) : 0n;
+        if (moAvailTokens <= 0n) continue;
 
-      console.log(`Executing trade: ${tradeAmount} at price ${matchingOrder.price}`);
+        // How many tokens can buyer afford at this price?
+        const affordableTokens = (remainingBuyPyusd * TEN18) / price6; // in token 18d
+        const tradeTokens = affordableTokens < moAvailTokens ? affordableTokens : moAvailTokens;
+        if (tradeTokens <= 0n) continue;
+        const pyusdSpent = (tradeTokens * price6) / TEN18; // in pyusd decimals
 
-      // Update matching order
-      const newFilledAmount = parseFloat(matchingOrder.filledAmount || '0') + tradeAmount;
-      matchingOrder.filledAmount = newFilledAmount.toString();
-      matchingOrder.status = newFilledAmount >= parseFloat(matchingOrder.amount) ? 'filled' : 'partial';
-      matchingOrder.updatedAt = new Date();
-
-      // Record fill for matching order
-      matchingOrder.fills.push({
-        price: matchingOrder.price,
-        amount: tradeAmount.toString(),
-        timestamp: new Date(),
-        matchedOrderId: order._id.toString()
-      });
-
-      await matchingOrder.save();
-
-      // NEW: notify counterparty user about their order update
-      try { if (io) notifyUserOrdersUpdate(io, matchingOrder.userAddress, { reason: 'order-updated', changedOrderId: matchingOrder._id.toString() }); } catch (e) {}
-
-      // Update our order
-      remainingAmount -= tradeAmount;
-      totalExecuted += tradeAmount;
-
-      if (order.orderExecution === 'market') {
-        order.price = matchingOrder.price; // Use matching order price for market
-      }
-
-      // Record fill for original order
-      order.fills.push({
-        price: matchingOrder.price,
-        amount: tradeAmount.toString(),
-        timestamp: new Date(),
-        matchedOrderId: matchingOrder._id.toString()
-      });
-
-      console.log(`Trade executed: ${tradeAmount}, remaining: ${remainingAmount}`);
-
-      // NEW: send on-chain applyBatch per fill (buyer/seller inferred)
-      try {
-        const buyOrder = order.orderType === 'buy' ? order : matchingOrder;
-        const sellOrder = order.orderType === 'sell' ? order : matchingOrder;
-        const tx = await submitFillToChain({
-          proposalId: order.proposalId,
-          side: order.side,
-          buyOrder,
-          sellOrder,
+        // Update matching SELL order
+        const newMoFilled = moFilled + tradeTokens;
+        matchingOrder.filledAmount = fmt(newMoFilled, tokenDec);
+        matchingOrder.status = newMoFilled >= moAmt ? 'filled' : 'partial';
+        matchingOrder.updatedAt = new Date();
+        matchingOrder.fills.push({
           price: matchingOrder.price,
-          amount: tradeAmount.toString()
+          amount: fmt(tradeTokens, tokenDec), // token amount
+          timestamp: new Date(),
+          matchedOrderId: order._id.toString()
         });
-        console.log(`[applyBatch] tx sent: ${tx.hash}`);
-        // Save tx hash on both orders
+        await matchingOrder.save();
+        try { if (io) notifyUserOrdersUpdate(io, matchingOrder.userAddress, { reason: 'order-updated', changedOrderId: matchingOrder._id.toString() }); } catch {}
+
+        // Update our BUY order (in PyUSD units)
+        remainingBuyPyusd = remainingBuyPyusd > pyusdSpent ? (remainingBuyPyusd - pyusdSpent) : 0n;
+        totalTokensExecuted += tradeTokens;
+        totalPyusdExecuted += pyusdSpent;
+        if (order.orderExecution === 'market') order.price = matchingOrder.price;
+        order.fills.push({
+          price: matchingOrder.price,
+          amount: fmt(tradeTokens, tokenDec), // token amount
+          timestamp: new Date(),
+          matchedOrderId: matchingOrder._id.toString()
+        });
+
+        // Submit on-chain
         try {
-          matchingOrder.txHash = tx.hash;
-          await matchingOrder.save();
-        } catch (_) {}
-        order.txHash = tx.hash; // will be persisted on final save
-      } catch (e) {
-        console.error('[applyBatch] send error:', e.message);
+          const buyOrder = order; const sellOrder = matchingOrder;
+          const tx = await submitFillToChain({
+            proposalId: order.proposalId,
+            side: order.side,
+            buyOrder,
+            sellOrder,
+            price: matchingOrder.price,
+            amount: fmt(tradeTokens, tokenDec)
+          });
+          console.log(`[applyBatch] tx sent: ${tx.hash}`);
+          try { matchingOrder.txHash = tx.hash; await matchingOrder.save(); } catch {}
+          order.txHash = tx.hash;
+        } catch (e) { console.error('[applyBatch] send error:', e.message); }
+      } else {
+        // Our order is SELL, opposite is BUY with PyUSD budget
+        const moAmt6 = toUnits(matchingOrder.amount, pyusdDec);
+        const moFilled6 = toUnits(matchingOrder.filledAmount || '0', pyusdDec);
+        const moBudget = moAmt6 > moFilled6 ? (moAmt6 - moFilled6) : 0n;
+        if (moBudget <= 0n) continue;
+
+        // How many tokens can buyer afford?
+        const affordableTokens = (moBudget * TEN18) / price6;
+        const tradeTokens = remainingSellTokens < affordableTokens ? remainingSellTokens : affordableTokens;
+        if (tradeTokens <= 0n) continue;
+        const pyusdSpent = (tradeTokens * price6) / TEN18; // in pyusd decimals
+
+        // Update matching BUY order (filledAmount in PyUSD)
+        const newMoFilled6 = moFilled6 + pyusdSpent;
+        matchingOrder.filledAmount = fmt(newMoFilled6, pyusdDec);
+        matchingOrder.status = newMoFilled6 >= moAmt6 ? 'filled' : 'partial';
+        matchingOrder.updatedAt = new Date();
+        matchingOrder.fills.push({
+          price: matchingOrder.price,
+          amount: fmt(tradeTokens, tokenDec), // token amount
+          timestamp: new Date(),
+          matchedOrderId: order._id.toString()
+        });
+        await matchingOrder.save();
+        try { if (io) notifyUserOrdersUpdate(io, matchingOrder.userAddress, { reason: 'order-updated', changedOrderId: matchingOrder._id.toString() }); } catch {}
+
+        // Update our SELL order (filledAmount in tokens)
+        remainingSellTokens = remainingSellTokens > tradeTokens ? (remainingSellTokens - tradeTokens) : 0n;
+        totalTokensExecuted += tradeTokens;
+        totalPyusdExecuted += pyusdSpent;
+        if (order.orderExecution === 'market') order.price = matchingOrder.price;
+        order.fills.push({
+          price: matchingOrder.price,
+          amount: fmt(tradeTokens, tokenDec), // token amount
+          timestamp: new Date(),
+          matchedOrderId: matchingOrder._id.toString()
+        });
+
+        // Submit on-chain
+        try {
+          const buyOrder = matchingOrder; const sellOrder = order;
+          const tx = await submitFillToChain({
+            proposalId: order.proposalId,
+            side: order.side,
+            buyOrder,
+            sellOrder,
+            price: matchingOrder.price,
+            amount: fmt(tradeTokens, tokenDec)
+          });
+          console.log(`[applyBatch] tx sent: ${tx.hash}`);
+          try { matchingOrder.txHash = tx.hash; await matchingOrder.save(); } catch {}
+          order.txHash = tx.hash;
+        } catch (e) { console.error('[applyBatch] send error:', e.message); }
       }
     }
 
-    // Finalize original order
-    order.filledAmount = totalExecuted.toString();
-    if (totalExecuted >= parseFloat(order.amount)) {
-      order.status = 'filled';
-    } else if (totalExecuted > 0) {
-      order.status = 'partial';
+    // Finalize original order statuses and filledAmount in native units
+    if (order.orderType === 'buy') {
+      const amt = toUnits(order.amount, pyusdDec);
+      const prevFilled = toUnits(order.filledAmount || '0', pyusdDec);
+      const newFilled = prevFilled + totalPyusdExecuted;
+      order.filledAmount = fmt(newFilled, pyusdDec);
+      order.status = newFilled >= amt ? 'filled' : (newFilled > 0n ? 'partial' : order.status);
+    } else {
+      const amt = toUnits(order.amount, tokenDec);
+      const prevFilled = toUnits(order.filledAmount || '0', tokenDec);
+      const newFilled = prevFilled + totalTokensExecuted;
+      order.filledAmount = fmt(newFilled, tokenDec);
+      order.status = newFilled >= amt ? 'filled' : (newFilled > 0n ? 'partial' : order.status);
     }
     order.updatedAt = new Date();
     await order.save();
@@ -1995,11 +2073,10 @@ async function executeOrder(order, io) {
     console.log(`Order ${order._id} final status: ${order.status}, filled: ${order.filledAmount}/${order.amount}`);
 
     // NEW: notify original user if anything executed or changed
-    try { if (io && totalExecuted > 0) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-updated', changedOrderId: order._id.toString() }); } catch (e) {}
+    try { if (io && (totalTokensExecuted > 0n || totalPyusdExecuted > 0n)) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-updated', changedOrderId: order._id.toString() }); } catch (e) {}
 
     // Notify clients if any execution happened
-    if (io && typeof notifyOrderMatched === 'function' && totalExecuted > 0) {
-      // keep existing behavior (signature mismatch tolerated elsewhere)
+    if (io && typeof notifyOrderMatched === 'function' && (totalTokensExecuted > 0n)) {
       try { notifyOrderMatched(io, order); } catch (e) {}
     }
 
