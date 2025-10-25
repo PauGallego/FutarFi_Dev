@@ -35,8 +35,11 @@ export function useGetTop(options: UseGetTopOptions) {
   const computeFromOrdersFallback = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/orderbooks/${proposalId}/${side}/orders`)
-      const json = await res.json()
+      const ct = res.headers.get('content-type') || ''
       if (!res.ok) return false
+      let json: any = null
+      if (ct.includes('application/json')) json = await res.json()
+      else json = { orders: [] }
       const orders = Array.isArray(json?.orders) ? json.orders : []
       const bids: number[] = []
       const asks: number[] = []
@@ -65,16 +68,25 @@ export function useGetTop(options: UseGetTopOptions) {
     setError(null)
     try {
       const res = await fetch(`${API_BASE}/orderbooks/${proposalId}/${side}/top`)
-      const json = await res.json()
+      const ct = res.headers.get('content-type') || ''
       if (!res.ok) {
-        // Attempt graceful fallback to /orders computation when /top is unavailable
         const ok = await computeFromOrdersFallback()
         if (!ok) {
-          setError(json?.error || `Request failed with status ${res.status}`)
+          let errMsg = `Request failed with status ${res.status}`
+          if (ct.includes('application/json')) { try { const j = await res.json(); errMsg = j?.error || errMsg } catch {} }
+          else { try { const t = await res.text(); if (t) errMsg = `${errMsg}: ${t.slice(0,160)}` } catch {} }
+          setError(errMsg)
           setData({})
         }
         return
       }
+      if (!ct.includes('application/json')) {
+        // Non-JSON; try fallback
+        const ok = await computeFromOrdersFallback()
+        if (!ok) setError('Unexpected response for /top (not JSON)')
+        return
+      }
+      const json = await res.json()
       const bestBid = json?.bestBid?.price != null ? Number(json.bestBid.price) : undefined
       const bestAsk = json?.bestAsk?.price != null ? Number(json.bestAsk.price) : undefined
       let mid: number | undefined = undefined
@@ -83,7 +95,6 @@ export function useGetTop(options: UseGetTopOptions) {
       else if (bestAsk !== undefined) mid = bestAsk
       setData({ bestBid, bestAsk, mid })
     } catch (e) {
-      // Network failure: attempt fallback once
       const ok = await computeFromOrdersFallback()
       if (!ok) {
         setError(e instanceof Error ? e.message : String(e))
@@ -124,9 +135,7 @@ export function useGetTop(options: UseGetTopOptions) {
     }
     const s = socketRef.current
 
-    const handleConnect = () => {
-      s.emit('join-orderbook', proposalId, side)
-    }
+    const handleConnect = () => { s.emit('join-orderbook', proposalId, side) }
     const handleOrderbookUpdated = () => { void fetchTop() }
     const handleNewOrder = () => { void fetchTop() }
     const handleOrderStatusChange = () => { void fetchTop() }

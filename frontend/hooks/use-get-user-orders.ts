@@ -72,14 +72,35 @@ export function useGetUserOrders(options: UseGetUserOrdersOptions = {}) {
         body: JSON.stringify(body),
       })
 
-      const data = await res.json()
+      const ct = res.headers.get('content-type') || ''
       if (!res.ok) {
-        setError(data?.error || `Request failed with status ${res.status}`)
+        let errMsg = `Request failed with status ${res.status}`
+        if (ct.includes('application/json')) {
+          try {
+            const data = await res.json()
+            errMsg = data?.error || errMsg
+          } catch {}
+        } else {
+          try {
+            const text = await res.text()
+            if (text) errMsg = `${errMsg}: ${text.slice(0, 160)}`
+          } catch {}
+        }
         setOrders([])
-      } else {
-        setOrders(Array.isArray(data) ? data : [])
-        setError(null)
+        setError(errMsg)
+        return
       }
+
+      if (!ct.includes('application/json')) {
+        const text = await res.text().catch(() => '')
+        setOrders([])
+        setError(`Unexpected response (not JSON): ${text?.slice(0, 160)}`)
+        return
+      }
+
+      const data = await res.json()
+      setOrders(Array.isArray(data) ? data : [])
+      setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setOrders([])

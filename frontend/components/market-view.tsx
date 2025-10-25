@@ -1,5 +1,5 @@
 "use client"
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   XAxis,
@@ -74,6 +74,7 @@ export function MarketView({
   const [candlesError, setCandlesError] = useState<string | null>(null)
   const interval = "1m"
   const NUM_BARS = 20 // número fijo de barras en el gráfico
+  const backoffRef = useRef<{ ms: number; next: number }>({ ms: 0, next: 0 })
 
   useEffect(() => {
     if (!proposalId) return
@@ -81,6 +82,7 @@ export function MarketView({
 
     const controller = new AbortController()
     async function fetchCandles() {
+      if (backoffRef.current.next && Date.now() < backoffRef.current.next) return
       setCandlesError(null)
       setLoadingCandles(true)
       try {
@@ -88,11 +90,30 @@ export function MarketView({
           `${API_BASE}/orderbooks/${proposalId}/${side}/candles?interval=${interval}&limit=${NUM_BARS}`,
           { signal: controller.signal }
         )
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const ct = res.headers.get("content-type") || ""
+        if (!res.ok) {
+          const body = await res.text().catch(() => "")
+          // Exponential backoff on 429
+          if (res.status === 429) {
+            backoffRef.current.ms = Math.min(backoffRef.current.ms ? backoffRef.current.ms * 2 : 5000, 60000)
+            backoffRef.current.next = Date.now() + backoffRef.current.ms
+          }
+          throw new Error(`HTTP ${res.status}${body ? `: ${body.slice(0, 120)}` : ""}`)
+        }
+        if (!ct.includes("application/json")) {
+          const body = await res.text().catch(() => "")
+          throw new Error(`Unexpected response (not JSON): ${body.slice(0, 120)}`)
+        }
         const data: CandlesResponse = await res.json()
         setCandles(Array.isArray(data?.candles) ? data.candles : [])
+        // reset backoff on success
+        backoffRef.current.ms = 0
+        backoffRef.current.next = 0
       } catch (e: any) {
-        if (e?.name !== "AbortError") setCandlesError(e?.message || "Failed to load candles")
+        if (e?.name !== "AbortError") {
+          setCandles([])
+          setCandlesError(e?.message || "Failed to load candles")
+        }
       } finally {
         setLoadingCandles(false)
       }
@@ -106,41 +127,47 @@ export function MarketView({
     }
   }, [proposalId, selectedMarket])
 
-  // Gráfico de velas con NUM_BARS fijo
+  // Gráfico de velas con NUM_BARS fijo (últimas N velas alineadas a la derecha)
   const fixedCandleChartData = useMemo(() => {
-    return Array(NUM_BARS)
-      .fill(null)
-      .map((_, i) => {
-        const c = candles[i]
-        if (!c)
-          return { time: "", open: 0, high: 0, low: 0, close: 0, bodyBase: 0, body: 0, rangeHL: 0, isUp: true }
-        const bodyBase = Math.min(Number(c.open), Number(c.close))
-        const body = Math.abs(Number(c.close) - Number(c.open))
-        const low = Number(c.low)
-        const high = Number(c.high)
-        return {
-          time: formatTimeLabel(c.timestamp),
-          open: Number(c.open),
-          high,
-          low,
-          close: Number(c.close),
-          bodyBase,
-          body,
-          rangeHL: Math.max(0, high - low),
-          isUp: Number(c.close) >= Number(c.open),
-        }
-      })
+    const out = new Array(NUM_BARS).fill(null).map(() => ({ time: "", open: 0, high: 0, low: 0, close: 0, bodyBase: 0, body: 0, rangeHL: 0, isUp: true }))
+    const start = Math.max(0, candles.length - NUM_BARS)
+    const slice = candles.slice(start)
+    // place slice at the end of out
+    const offset = NUM_BARS - slice.length
+    slice.forEach((c, i) => {
+      const bodyBase = Math.min(Number(c.open), Number(c.close))
+      const body = Math.abs(Number(c.close) - Number(c.open))
+      const low = Number(c.low)
+      const high = Number(c.high)
+      out[offset + i] = {
+        time: formatTimeLabel(c.timestamp),
+        open: Number(c.open),
+        high,
+        low,
+        close: Number(c.close),
+        bodyBase,
+        body,
+        rangeHL: Math.max(0, high - low),
+        isUp: Number(c.close) >= Number(c.open),
+      }
+    })
+    return out
   }, [candles])
 
-  // Gráfico de volumen con NUM_BARS fijo
+  // Gráfico de volumen con NUM_BARS fijo (últimas N barras)
   const fixedVolumeChartData = useMemo(() => {
-    return Array(NUM_BARS)
-      .fill(null)
-      .map((_, i) => {
-        const c = candles[i]
-        return { time: c ? formatTimeLabel(c.timestamp) : "", volume: c ? Number(c.volume) : 0 }
-      })
+    const out = new Array(NUM_BARS).fill(null).map(() => ({ time: "", volume: 0 }))
+    const start = Math.max(0, candles.length - NUM_BARS)
+    const slice = candles.slice(start)
+    const offset = NUM_BARS - slice.length
+    slice.forEach((c, i) => {
+      out[offset + i] = { time: formatTimeLabel(c.timestamp), volume: Number(c.volume) }
+    })
+    return out
   }, [candles])
+
+  // Force chart remount when data set changes to avoid stale layout after hard refresh
+  const chartKey = useMemo(() => `${proposalId ?? ''}-${selectedMarket}-${candles.length}-${candles[candles.length - 1]?.timestamp ?? ''}`, [proposalId, selectedMarket, candles])
 
   return (
     <div className="space-y-6">
@@ -153,14 +180,10 @@ export function MarketView({
         <CardContent>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={fixedCandleChartData} barCategoryGap={2}>
+              <BarChart key={`c-${chartKey}`} data={fixedCandleChartData} barCategoryGap={2}>
                 <CartesianGrid strokeDasharray="3 3" stroke={GREEN} />
                 <XAxis dataKey="time" stroke={GREEN} tick={{ fill: GREEN, fontSize: 12 }} interval={0} />
-                <YAxis
-                  stroke={GREEN}
-                  tick={{ fill: GREEN, fontSize: 12 }}
-                  domain={["dataMin - (dataMax - dataMin) * 0.1", "dataMax + (dataMax - dataMin) * 0.1"]}
-                />
+                <YAxis stroke={GREEN} tick={{ fill: GREEN, fontSize: 12 }} domain={["auto", "auto"]} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "hsl(var(--background))",
@@ -202,7 +225,7 @@ export function MarketView({
         <CardContent>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={fixedVolumeChartData}>
+              <BarChart key={`v-${chartKey}`} data={fixedVolumeChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={GREEN} />
                 <XAxis dataKey="time" stroke={GREEN} tick={{ fill: GREEN, fontSize: 12 }} interval={0} />
                 <YAxis stroke={GREEN} tick={{ fill: GREEN, fontSize: 12 }} />

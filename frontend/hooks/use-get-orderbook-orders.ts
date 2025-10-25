@@ -27,12 +27,25 @@ export function useGetOrderbookOrders(options: UseGetOrderbookOrdersOptions) {
     setError(null)
     try {
       const res = await fetch(`${API_BASE}/orderbooks/${proposalId}/${side}/orders`)
-      const data = await res.json()
+      const ct = res.headers.get('content-type') || ''
       if (!res.ok) {
-        setError(data?.error || `Request failed with status ${res.status}`)
+        let errMsg = `Request failed with status ${res.status}`
+        if (ct.includes('application/json')) {
+          try { const j = await res.json(); errMsg = j?.error || errMsg } catch {}
+        } else {
+          try { const t = await res.text(); if (t) errMsg = `${errMsg}: ${t.slice(0,160)}` } catch {}
+        }
         setOrders([])
+        setError(errMsg)
         return
       }
+      if (!ct.includes('application/json')) {
+        const t = await res.text().catch(() => '')
+        setOrders([])
+        setError(`Unexpected response (not JSON): ${t.slice(0,160)}`)
+        return
+      }
+      const data = await res.json()
       const entries: OrderBookEntry[] = Array.isArray(data?.orders) ? data.orders.map((o: any) => {
         const price = typeof o.price === 'number' ? o.price : Number(o.price || 0)
         const amount = typeof o.amount === 'number' ? o.amount : Number(o.amount || 0)
