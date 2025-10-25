@@ -11,6 +11,7 @@
     {"type":"function","name":"priceNow","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
     {"type":"function","name":"isFinalized","stateMutability":"view","inputs":[],"outputs":[{"type":"bool"}]},
     {"type":"function","name":"isValid","stateMutability":"view","inputs":[],"outputs":[{"type":"bool"}]},
-    {"type":"function","name":"isCanceled","stateMutability":"view","inputs":[],"outputs":[{"type":"bool"}]}
+    {"type":"function","name":"isCanceled","stateMutability":"view","inputs":[],"outputs":[{"type":"bool"}]},
+    {"type":"function","name":"finalize","stateMutability":"nonpayable","inputs":[],"outputs":[]}
   ]
 }

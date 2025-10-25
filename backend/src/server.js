@@ -287,6 +287,21 @@ server.listen(PORT, () => {
       }
     }, Number(process.env.PROPOSALS_POLL_MS || 15000));
   }
+
+  // Periodically try to finalize eligible Dutch auctions
+  if (String(process.env.AUCTION_FINALIZE_ENABLED || 'true').toLowerCase() === 'true') {
+    const { monitorAuctionsToFinalize } = require('./services/chainService');
+    startPoll('auctions-finalize', async () => {
+      try {
+        const res = await monitorAuctionsToFinalize();
+        if (res.tried || res.finalized) {
+          console.log(`auctions-finalize: tried=${res.tried} finalized=${res.finalized}`);
+        }
+      } catch (e) {
+        console.error('auctions-finalize error:', e.message);
+      }
+    }, Number(process.env.AUCTION_FINALIZE_MS || 30000));
+  }
 });
 
 module.exports = { app, io };

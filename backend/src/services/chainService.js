@@ -450,9 +450,10 @@ async function upsertProposalAndAuctions(snapshot) {
   // Upsert Auction docs (without maxTokenCap/minTokenCap)
   const upsertAuction = async (side, a) => {
     if (!a || !a.auctionAddress) return;
+    const proposalIdStrLocal = proposalIdStr;
     const payload = {
-      proposalId: proposalIdStr,
-      side,
+      // proposalId: proposalIdStrLocal, // do not include in $set to avoid conflict
+      // side,                           // do not include in $set to avoid conflict
       auctionAddress: a.auctionAddress,
       marketToken: a.marketToken,
       pyusd: a.pyusd,
@@ -471,8 +472,8 @@ async function upsertProposalAndAuctions(snapshot) {
     };
 
     await Auction.findOneAndUpdate(
-      { proposalId: proposalIdStr, side },
-      { $set: payload, $setOnInsert: { proposalId: proposalIdStr, side } },
+      { proposalId: proposalIdStrLocal, side },
+      { $set: payload, $setOnInsert: { proposalId: proposalIdStrLocal, side } },
       { upsert: true, new: true }
     );
   };
@@ -719,18 +720,144 @@ function startProposalCreatedWatcher({ manager, confirmations = 0, fromBlock } =
   })();
 }
 
+// Finalize helpers
+
+async function attemptFinalizeAuction(auctionAddress) {
+  if (!auctionAddress) throw new Error('auctionAddress required');
+  try {
+    const { hash, receipt } = await sendTx({
+      address: auctionAddress,
+      abi: AUCTION_ABI,
+      method: 'finalize',
+      args: []
+    });
+    return { ok: true, hash, blockNumber: Number(receipt?.blockNumber || 0) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function canFinalizeAuction(auctionAddress) {
+  try {
+    const c = getContract(auctionAddress, AUCTION_ABI, false);
+    const [isFinalized, endTimeBn, marketTokenAddr, minToOpenBn] = await Promise.all([
+      c.isFinalized(),
+      c.END_TIME(),
+      c.MARKET_TOKEN(),
+      c.MIN_TO_OPEN()
+    ]);
+    if (isFinalized) return { can: false, reason: 'already-finalized' };
+    const now = Math.floor(Date.now() / 1000);
+    const endTime = Number(endTimeBn);
+    const endPassed = now >= endTime;
+
+    // Early finalize when cap is reached
+    const t = getContract(marketTokenAddr, TOKEN_MIN_ABI, false);
+    const [totalSupplyBn, capBn] = await Promise.all([
+      t.totalSupply(),
+      t.cap()
+    ]);
+    const totalSupply = typeof totalSupplyBn === 'bigint' ? totalSupplyBn : BigInt(totalSupplyBn);
+    const cap = typeof capBn === 'bigint' ? capBn : BigInt(capBn);
+
+    if (totalSupply === cap) return { can: true, reason: 'cap-reached' };
+    if (endPassed) return { can: true, reason: 'ended' };
+
+    return { can: false, reason: 'not-ready' };
+  } catch (e) {
+    return { can: false, reason: `read-error:${e.message}` };
+  }
+}
+
+// Scan DB for auctions and try to finalize them only if proposal is in 'auction' state
+async function monitorAuctionsToFinalize({ limit = 20 } = {}) {
+  const signer = getSigner();
+  if (!signer) {
+    // No PRIVATE_KEY configured
+    return { tried: 0, finalized: 0 };
+  }
+
+  const Auction = require('../models/Auction');
+  const Proposal = require('../models/Proposal');
+  const candidates = await Auction.find({}).sort({ updatedAt: 1 }).limit(limit);
+  console.log(`[finalize-auction] scan: candidates=${candidates?.length || 0}`);
+  if (!candidates || !candidates.length) return { tried: 0, finalized: 0 };
+
+  let finalizedCount = 0;
+  let tried = 0;
+
+  for (const a of candidates) {
+    const addr = a.auctionAddress;
+    if (!addr) continue;
+
+    // Find related proposal and check its on-chain state
+    let proposalAddr;
+    try {
+      const p = await Proposal.findOne({ id: a.proposalId });
+      proposalAddr = p?.proposalAddress;
+    } catch (_) {}
+    if (!proposalAddr) continue;
+
+    // state() -> 0 auction, 1 live, 2 resolved, 3 cancelled
+    let stateNum = -1;
+    try {
+      const pc = getContract(proposalAddr, PROPOSAL_ABI, false);
+      const st = await pc.state();
+      stateNum = Number(st);
+    } catch (e) {
+      console.warn(`[finalize-auction] could not read proposal state ${proposalAddr}: ${e.message}`);
+      continue;
+    }
+
+    if (stateNum !== 0) continue; // only try when proposal is in auction
+
+    // Log attempt details (proposal is in auction state)
+    let signerAddr = 'unknown';
+    try { signerAddr = await signer.getAddress(); } catch (_) {}
+    console.log(`[finalize-auction] attempting finalize: proposalId=${a.proposalId} proposal=${proposalAddr} auction=${addr} by=${signerAddr}`);
+
+    tried++;
+    const res = await attemptFinalizeAuction(addr);
+    if (res.ok) {
+      finalizedCount++;
+      try { await Auction.updateOne({ _id: a._id }, { $set: { finalized: true } }); } catch (_) {}
+      console.log(`[finalize-auction] success: proposalId=${a.proposalId} auction=${addr} tx=${res.hash}`);
+    } else {
+      console.warn(`[finalize-auction] fail: proposalId=${a.proposalId} auction=${addr} error=${res.error}`);
+    }
+  }
+
+  return { tried, finalized: finalizedCount };
+}
+
 module.exports = {
+  // Core contract helpers
   getContract,
   callView,
   sendTx,
+
+  // Polling utilities
   startPoll,
   stopPoll,
   stopAllPolls,
   executeBatch,
+
+  // Orderbook/filled orders
   monitorFilledOrders,
+
+  // Proposal sync and watchers
   syncProposalFromChain,
-  // new exports
-  syncProposalsFromManager,
   syncProposalByAddress,
-  startProposalCreatedWatcher
+  syncProposalsFromManager,
+  startProposalManagerWatcher,
+  startProposalCreatedWatcher,
+
+  // Auction finalize monitor + helpers
+  monitorAuctionsToFinalize,
+  attemptFinalizeAuction,
+  canFinalizeAuction,
+
+  // For testing
+  _getProvider: getProvider,
+  _getSigner: getSigner
 };

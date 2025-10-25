@@ -32,7 +32,13 @@ function getSigner() {
   const pk = process.env.PRIVATE_KEY;
   if (!pk) return null;
   const prov = getProvider();
-  signer = new ethers.Wallet(pk, prov);
+  const base = new ethers.Wallet(pk, prov);
+  // Wrap with NonceManager to avoid nonce-too-low when multiple txs are sent quickly
+  try {
+    signer = new ethers.NonceManager(base);
+  } catch (_) {
+    signer = base; // fallback
+  }
   return signer;
 }
 
