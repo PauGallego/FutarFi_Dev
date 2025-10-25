@@ -228,6 +228,8 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
   }, [raisedOverride, potYes, potNo, auctionData.yesTotalBids, auctionData.noTotalBids])
   const isSuccessful = totalRaised >= minimumRequired
 
+  console.log("wtff", totalRaised);
+  console.log("wtff2", minimumRequired);
   // Percent progress toward minimum required (total raised vs minimum)
   const minProgressPercent = useMemo(() => {
     if ((minimumRequired ?? 0n) <= 0n) return 100
@@ -322,7 +324,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Remaining Available</span>
-                <span className="font-mono text-foreground">{formatUnits(yesRemaining, (yesDecimals as number) ?? 18)}</span>
+                <span className="font-mono text-foreground">{(Number((yesRemaining) / BigInt(1e18)).toFixed(6))}</span>
               </div>
               <Progress value={yesRemainingPercent} className="h-2 bg-primary/20" />
               <p className="text-xs text-muted-foreground text-right">{yesRemainingPercent.toFixed(1)}% remaining</p>
@@ -340,7 +342,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
 
             <div className="pt-2 border-t border-primary/20">
               <p className="text-xs text-muted-foreground mb-1">Your Balance</p>
-              <p className="font-mono text-lg text-foreground">{(Number((yesBalOverride ?? yesUserBal) ?? 0n) / 1e6).toFixed(6)}</p>
+              <p className="font-mono text-lg text-foreground">{(Number((yesBalOverride ?? yesUserBal) ?? 0n) / 1e18).toFixed(6)}</p>
             </div>
           </CardContent>
         </Card>
@@ -359,7 +361,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Remaining Available</span>
-                <span className="font-mono text-foreground">{formatUnits(noRemaining, (noDecimals as number) ?? 18)}</span>
+                <span className="font-mono text-foreground">{(Number((noRemaining) / BigInt(1e18)).toFixed(6))}</span>
               </div>
               <Progress value={noRemainingPercent} className="h-2 bg-destructive/20 [&>div]:bg-destructive" />
               <p className="text-xs text-muted-foreground text-right">{noRemainingPercent.toFixed(1)}% remaining</p>
@@ -377,7 +379,9 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
 
             <div className="pt-2 border-t border-destructive/20">
               <p className="text-xs text-muted-foreground mb-1">Your Balance</p>
-              <p className="font-mono text-lg text-foreground">{(Number((noBalOverride ?? noUserBal) ?? 0n) / 1e6).toFixed(6)}</p>
+              <p className="font-mono text-lg text-foreground">
+                {(Number((noBalOverride ?? noUserBal) ?? 0n) / 1e18).toFixed(6)}
+              </p>
             </div>
           </CardContent>
         </Card>

@@ -120,13 +120,13 @@ contract DutchAuction is ReentrancyGuard, Ownable, IDutchAuction {
 
         // tokens = payAmount / price per token
         uint256 price = actualPrice;
-        uint256 tokensOut = (_payAmount * 1e6) / price;
+        uint256 tokensOut = (_payAmount * 1e18) / price;
 
         uint256 tokensRemain = MARKET_TOKEN.cap() - MARKET_TOKEN.totalSupply();
         tokensOut = Math.min(tokensOut, tokensRemain);
 
         // adjust payAmount if hitting cap
-        if (tokensOut == tokensRemain)_payAmount = (tokensOut * price) / 1e6;
+        if (tokensOut == tokensRemain)_payAmount = (tokensOut * price) / 1e18;
 
         // approval must be given beforehand
         ITreasury(TREASURY).fundFromAuction(msg.sender, _payAmount);

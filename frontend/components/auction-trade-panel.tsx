@@ -136,7 +136,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Your {selectedMarket} Balance:</span>
-              <span className="font-mono">{(Number(userTokenBalance) / 1e6).toFixed(6)}</span>
+              <span className="font-mono">{(Number((userTokenBalance) ?? 0n) / 1e18).toFixed(6)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Remaining Mintable:</span>

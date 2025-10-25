@@ -33,7 +33,7 @@ contract DutchAuctionTest is Test {
     address constant PYTH_CONTRACT = 0x4305FB66699C3B2702D4d05CF36551390A4c69C6;
     bytes32 constant PYTH_ID = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
 
-    uint256 constant CAP = 500_000e18;
+    uint256 constant CAP = 100e18;
 
     function setUp() public {
         proposal = new Proposal();
@@ -46,7 +46,7 @@ contract DutchAuctionTest is Test {
             100000,            // auctionDuration
             200000,            // liveDuration
             "Subject Token",     // subjectToken
-            999e18,              // minToOpen
+            90e18,              // minToOpen
             CAP,        // maxCap
             address(0),     // target
             "",            // data
@@ -75,15 +75,33 @@ contract DutchAuctionTest is Test {
         uint256 price = yesAuction.priceNow();
 
         uint256 payAmount = 1_000_000;
-        
+
+        uint256 cap = yesToken.cap();
+        console.log("Auction cap:", cap);
+        uint256 totalSupplyBefore = yesToken.totalSupply();
+        console.log("Total supply before:", totalSupplyBefore);
+
+        uint256 availableToBuy = cap - totalSupplyBefore;
+        console.log("Available to buy before:", availableToBuy);
+
         vm.startPrank(buyer);
         pyusd.approve(address(treasury), type(uint256).max);
         yesAuction.buyLiquidity(payAmount);
         vm.stopPrank();
 
-        uint256 expectedTokens = (payAmount * 1e6) / price;
-        assertEq(yesToken.balanceOf(buyer), expectedTokens, "buyer token balance");
 
+
+        uint256 totalSupplyAfter = yesToken.totalSupply();
+        console.log("Total supply after:", totalSupplyAfter);
+        availableToBuy = cap - totalSupplyAfter;
+        console.log("Available to buy after:", availableToBuy);
+
+        // check total supply increased
+        uint256 expectedTokens = (payAmount * 1e18) / price;
+
+        assertEq(totalSupplyAfter - totalSupplyBefore, expectedTokens, "total supply increased incorrectly");
+
+        assertEq(yesToken.balanceOf(buyer), expectedTokens, "buyer token balance");
         assertEq(treasury.balances(buyer), payAmount, "treasury recorded balance");
         assertEq(treasury.potYes(), payAmount, "treasury potYes updated");
     }
@@ -109,7 +127,7 @@ contract DutchAuctionTest is Test {
 
         // buy over the cap, must buy only up to cap and return the rest
         uint256 tokensToBuy = (CAP - yesToken.totalSupply() ) + 1; // buy up to cap
-        uint256 payAmount = (tokensToBuy * price) / 1e6;
+        uint256 payAmount = (tokensToBuy * price) / 1e18;
 
         uint256 buyerInitialPYUSD = pyusd.balanceOf(buyer);
         // buyer buys
@@ -122,7 +140,7 @@ contract DutchAuctionTest is Test {
         assertApproxEqAbs(buyerInitialPYUSD - buyerFinalPYUSD, payAmount, 10000, "PYUSD spent should equal payAmount");
 
         // check tokens received
-        uint256 expectedTokens = (payAmount * 1e6) / price;
+        uint256 expectedTokens = (payAmount * 1e18) / price;
         assertEq(yesToken.balanceOf(buyer), expectedTokens, "Buyer should receive expected tokens");
 
         // auction should be finalized
