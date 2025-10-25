@@ -1,19 +1,21 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Slider } from "@/components/ui/slider"
-import { useAccount, useReadContract } from "wagmi"
+import { useAccount } from "wagmi"
+import { usePublicClient } from "wagmi"
 import { toast } from "sonner"
 import type { OrderType, TradeAction, MarketOption } from "@/lib/types"
 import { useCreateOrder } from "@/hooks/use-create-order"
 import { useGetProposalById } from "@/hooks/use-get-proposalById"
 import { marketToken_abi } from "@/contracts/marketToken-abi"
 import { parseUnits, formatUnits } from "viem"
+import { ethers } from "ethers"
 
 type MarketTradePanelProps = {
   selectedMarket: MarketOption
@@ -24,6 +26,7 @@ type MarketTradePanelProps = {
 
 export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, onOrderPlaced }: MarketTradePanelProps) {
   const { isConnected, address } = useAccount()
+  const publicClient = usePublicClient()
   const { createOrder, isLoading: creating, error: createError } = useCreateOrder()
 
   const [orderType, setOrderType] = useState<OrderType>("market")
@@ -32,27 +35,41 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   const [limitPrice, setLimitPrice] = useState("")
   const [slippage, setSlippage] = useState([0.5])
 
-  // Fetch proposal addresses so we can read balances
+  // Fetch proposal addresses so we can read balances and spender (proposal address)
   const { proposal } = useGetProposalById(proposalId)
   const pyusdAddr = proposal?.pyUSD as `0x${string}` | undefined
   const marketTokenAddr = (selectedMarket === "YES" ? proposal?.yesToken : proposal?.noToken) as `0x${string}` | undefined
+  const proposalAddr = proposal?.address as `0x${string}` | undefined // spender for applyBatch
 
   // Read user balances
-  const { data: pyusdBalance } = useReadContract({
-    address: pyusdAddr,
-    abi: marketToken_abi,
-    functionName: "balanceOf",
-    args: [address ?? "0x0000000000000000000000000000000000000000"],
-  })
-  const { data: userTokenBalance } = useReadContract({
-    address: marketTokenAddr,
-    abi: marketToken_abi,
-    functionName: "balanceOf",
-    args: [address ?? "0x0000000000000000000000000000000000000000"],
-  })
+  const [pyusdBalance, setPyusdBalance] = useState<bigint>(0n)
+  const [userTokenBalance, setUserTokenBalance] = useState<bigint>(0n)
+
+  const refetchBalances = useCallback(async () => {
+    try {
+      if (!publicClient || !address) return
+      if (pyusdAddr) {
+        const bal = (await publicClient.readContract({ address: pyusdAddr, abi: marketToken_abi, functionName: "balanceOf", args: [address] })) as bigint
+        setPyusdBalance(bal ?? 0n)
+      } else {
+        setPyusdBalance(0n)
+      }
+      if (marketTokenAddr) {
+        const bal2 = (await publicClient.readContract({ address: marketTokenAddr, abi: marketToken_abi, functionName: "balanceOf", args: [address] })) as bigint
+        setUserTokenBalance(bal2 ?? 0n)
+      } else {
+        setUserTokenBalance(0n)
+      }
+    } catch {
+      // ignore
+    }
+  }, [publicClient, address, pyusdAddr, marketTokenAddr])
+
+  useEffect(() => { void refetchBalances() }, [refetchBalances])
+
   const displayBalance = useMemo(() => {
-    if (tradeAction === "BUY") return (Number((pyusdBalance as bigint) ?? 0n) / 1e6)
-    return (Number((userTokenBalance as bigint) ?? 0n) / 1e18)
+    if (tradeAction === "BUY") return Number(pyusdBalance ?? 0n) / 1e6
+    return Number(userTokenBalance ?? 0n) / 1e18
   }, [tradeAction, pyusdBalance, userTokenBalance])
   const balanceLabel = tradeAction === "BUY" ? "PyUSD" : `t${selectedMarket}`
 
@@ -64,8 +81,86 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
       return 0n
     }
   }, [amount, tradeAction])
-  const maxBalance = (tradeAction === "BUY" ? (pyusdBalance as bigint) : (userTokenBalance as bigint)) || 0n
+  const maxBalance = (tradeAction === "BUY" ? pyusdBalance : userTokenBalance) || 0n
   const insufficientBalance = amountParsed > maxBalance
+
+  // ----- Allowance & Approvals (spender = Proposal contract) -----
+  const tokenToApprove = tradeAction === "BUY" ? pyusdAddr : marketTokenAddr
+  const [allowance, setAllowance] = useState<bigint>(0n)
+  const [isApproving, setIsApproving] = useState(false)
+
+  const refetchAllowance = useCallback(async () => {
+    try {
+      if (!publicClient || !address || !proposalAddr || !tokenToApprove) {
+        setAllowance(0n)
+        return
+      }
+      const a = (await publicClient.readContract({
+        address: tokenToApprove,
+        abi: marketToken_abi,
+        functionName: "allowance",
+        args: [address, proposalAddr],
+      })) as bigint
+      setAllowance(a ?? 0n)
+    } catch {
+      setAllowance(0n)
+    }
+  }, [publicClient, address, proposalAddr, tokenToApprove])
+
+  useEffect(() => { void refetchAllowance() }, [refetchAllowance])
+  useEffect(() => { // refetch when inputs that affect required token change
+    void refetchAllowance()
+  }, [tradeAction, selectedMarket, refetchAllowance])
+
+  const needsApproval = useMemo(() => {
+    if (!amountParsed || amountParsed === 0n) return false
+    return amountParsed > (allowance ?? 0n)
+  }, [amountParsed, allowance])
+
+  const handleApprove = useCallback(async (): Promise<boolean> => {
+    if (!address) {
+      toast.error("Connect wallet")
+      return false
+    }
+    if (!tokenToApprove || !proposalAddr) {
+      toast.error("Missing token or spender")
+      return false
+    }
+    if (amountParsed <= 0n) {
+      toast.error("Enter amount first")
+      return false
+    }
+
+    const anyWindow = window as any
+    if (!anyWindow?.ethereum) {
+      toast.error("No wallet found")
+      return false
+    }
+
+    try {
+      setIsApproving(true)
+      const provider = new ethers.BrowserProvider(anyWindow.ethereum)
+      const signer = await provider.getSigner()
+      const erc20 = new ethers.Contract(tokenToApprove as string, marketToken_abi as any, signer)
+      const tx = await erc20.approve(proposalAddr as string, amountParsed)
+      toast.info("Approval submitted", { description: tx.hash })
+      const rcpt = await tx.wait(1)
+      if (!rcpt || (rcpt.status !== 1n && rcpt.status !== 1)) {
+        toast.error("Approve failed on-chain")
+        setIsApproving(false)
+        return false
+      }
+      await refetchAllowance()
+      toast.success("Approved")
+      return true
+    } catch (e: any) {
+      const msg = e?.shortMessage || e?.message || "Approve failed"
+      toast.error(msg)
+      return false
+    } finally {
+      setIsApproving(false)
+    }
+  }, [address, tokenToApprove, proposalAddr, amountParsed, refetchAllowance])
 
   // Mock calculations
   const estimatedPrice = orderType === "market" ? 0.52 : Number.parseFloat(limitPrice) || 0
@@ -76,6 +171,12 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
 
   const handleCreateOrder = async () => {
     if (!amount) return
+
+    // Auto-approve if needed before placing the order
+    if (needsApproval) {
+      const ok = await handleApprove()
+      if (!ok) return
+    }
 
     const side: 'approve' | 'reject' = selectedMarket === "YES" ? 'approve' : 'reject'
     const payload = {
@@ -137,6 +238,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
 
           <div>
             <CardTitle className="text-lg">Create Order</CardTitle>
+            {/* Fix broken description */}
             <CardDescription>Place market or limit orders</CardDescription>
           </div>
         </CardHeader>
@@ -271,9 +373,10 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
           <Button
             className="w-full"
             onClick={handleCreateOrder}
+            // allow click to auto-approve, so do not disable when needsApproval is true
             disabled={!isConnected || creating || !amount || (orderType === "limit" && !limitPrice) || insufficientBalance}
           >
-            {creating ? "Creating..." : `${tradeAction} ${orderType === "market" ? "at Market" : "with Limit"}`}
+            {creating ? (isApproving ? "Approving..." : "Creating...") : `${tradeAction} ${orderType === "market" ? "at Market" : "with Limit"}`}
           </Button>
         </CardContent>
       </Card>

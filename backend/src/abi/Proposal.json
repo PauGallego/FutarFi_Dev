@@ -15,6 +15,51 @@
     },
     {
       "type": "function",
+      "name": "applyBatch",
+      "inputs": [
+        {
+          "name": "",
+          "type": "tuple[]",
+          "internalType": "struct IProposal.Trade[]",
+          "components": [
+            {
+              "name": "seller",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "buyer",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "outcomeToken",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "tokenAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "pyUsdAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "twapPrice",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
       "name": "auctionEndTime",
       "inputs": [],
       "outputs": [
@@ -35,6 +80,19 @@
           "name": "",
           "type": "uint256",
           "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "data",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bytes",
+          "internalType": "bytes"
         }
       ],
       "stateMutability": "view"
@@ -130,14 +188,19 @@
           "internalType": "bytes"
         },
         {
-          "name": "_pythAddr",
+          "name": "_pythContract",
           "type": "address",
           "internalType": "address"
         },
         {
-          "name": "_pythId",
+          "name": "_priceFeedId",
           "type": "bytes32",
           "internalType": "bytes32"
+        },
+        {
+          "name": "_attestor",
+          "type": "address",
+          "internalType": "address"
         }
       ],
       "outputs": [],
@@ -249,13 +312,6 @@
     },
     {
       "type": "function",
-      "name": "resolve",
-      "inputs": [],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "settleAuctions",
       "inputs": [],
       "outputs": [],
@@ -289,6 +345,19 @@
     },
     {
       "type": "function",
+      "name": "target",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "title",
       "inputs": [],
       "outputs": [
@@ -309,6 +378,32 @@
           "name": "",
           "type": "address",
           "internalType": "contract Treasury"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "twapPriceTokenNo",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "twapPriceTokenYes",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
         }
       ],
       "stateMutability": "view"

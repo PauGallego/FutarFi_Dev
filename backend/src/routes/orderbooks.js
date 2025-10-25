@@ -14,12 +14,100 @@ const {
 } = require('../middleware/websocket');
 const PriceHistory = require('../models/PriceHistory');
 const TWAP = require('../models/TWAP');
+const { ethers } = require('ethers');
+const { getProvider } = require('../config/ethers');
+// New: chain apply-batch service
+const { submitFillToChain } = require('../services/applyBatchService');
+
+
+// Minimal ERC20 ABI for balance/decimals
+const ERC20_MIN_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function decimals() view returns (uint8)'
+];
 
 function normalizeSide(side) { if (side === 'yes') return 'approve'; if (side === 'no') return 'reject'; return side; }
 function isValidSide(side) { return ['approve', 'reject'].includes(side); }
 function isValidOrderType(orderType) { return ['buy', 'sell'].includes(orderType); }
 function isValidOrderExecution(orderExecution) { return ['limit', 'market'].includes(orderExecution); }
 function sendError(res, status, message) { return res.status(status).json({ error: message }); }
+function sideToKey(side) { return side === 'approve' ? 'yes' : 'no'; }
+
+async function getBestSellPrice(proposalId, side) {
+  try {
+    const sells = await Order.find({
+      proposalId,
+      side,
+      orderType: 'sell',
+      status: { $in: ['open', 'partial'] }
+    }).select('price').lean();
+    if (!sells || sells.length === 0) return null;
+    const min = sells.reduce((m, o) => Math.min(m, Number(o.price || 0)), Number.POSITIVE_INFINITY);
+    return Number.isFinite(min) ? String(min) : null;
+  } catch (_) { return null; }
+}
+
+async function ensureSufficientBalance({ proposal, proposalId, side, orderType, orderExecution, price, amount, userAddress }) {
+  const provider = getProvider();
+  if (!proposal || !proposal.auctions) {
+    throw new Error('Proposal data missing token addresses. Try again shortly.');
+  }
+
+  const key = sideToKey(side);
+  const tokenAddr = proposal?.auctions?.[key]?.marketToken;
+  const pyusdAddr = proposal?.auctions?.yes?.pyusd || proposal?.auctions?.no?.pyusd;
+
+  if (!tokenAddr || !pyusdAddr) {
+    throw new Error('Token addresses not available for this proposal yet');
+  }
+
+  const token = new ethers.Contract(tokenAddr, ERC20_MIN_ABI, provider);
+  const pyusd = new ethers.Contract(pyusdAddr, ERC20_MIN_ABI, provider);
+
+  const [tokenDec, pyusdDec] = await Promise.all([
+    token.decimals().catch(() => 18),
+    pyusd.decimals().catch(() => 18)
+  ]);
+
+  // SELL: user must have enough market tokens
+  if (orderType === 'sell') {
+    const requiredToken = ethers.parseUnits(String(amount), Number(tokenDec));
+    const userTokenBal = await token.balanceOf(userAddress).catch(() => 0n);
+    if (userTokenBal < requiredToken) {
+      const need = ethers.formatUnits(requiredToken, Number(tokenDec));
+      const have = ethers.formatUnits(userTokenBal, Number(tokenDec));
+      throw new Error(`Insufficient market token balance. Required: ${need}, Available: ${have}`);
+    }
+    return; // sell check done
+  }
+
+  // BUY: user must have enough PYUSD for price*amount
+  // Determine effective price: use provided price; for market order, try best sell price
+  let effectivePrice = price;
+  if ((!effectivePrice || Number(effectivePrice) <= 0) && orderExecution === 'market') {
+    effectivePrice = await getBestSellPrice(proposalId, side);
+  }
+
+  if (!effectivePrice || Number(effectivePrice) <= 0) {
+    // If we still don't have a price (e.g., empty order book), skip strict check
+    // but ensure the user has a positive PYUSD balance
+    const bal = await pyusd.balanceOf(userAddress).catch(() => 0n);
+    if (bal <= 0n) throw new Error('Insufficient PYUSD balance');
+    return;
+  }
+
+  const priceUnits = ethers.parseUnits(String(effectivePrice), Number(pyusdDec));
+  const amountUnits = ethers.parseUnits(String(amount), Number(tokenDec));
+  const scale = 10n ** BigInt(Number(tokenDec));
+  const requiredPyusd = (priceUnits * amountUnits) / scale;
+  const userPyusdBal = await pyusd.balanceOf(userAddress).catch(() => 0n);
+
+  if (userPyusdBal < requiredPyusd) {
+    const need = ethers.formatUnits(requiredPyusd, Number(pyusdDec));
+    const have = ethers.formatUnits(userPyusdBal, Number(pyusdDec));
+    throw new Error(`Insufficient PYUSD balance. Required: ${need}, Available: ${have}`);
+  }
+}
 
 /**
  * @swagger
@@ -416,6 +504,22 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(400).json({ error: 'Amount is required and must be greater than 0' });
     }
 
+    // NEW: Balance checks based on proposal-specific token addresses
+    try {
+      await ensureSufficientBalance({
+        proposal,
+        proposalId,
+        side,
+        orderType,
+        orderExecution,
+        price,
+        amount,
+        userAddress
+      });
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
+
     const order = new Order({
       proposalId,
       side,
@@ -877,6 +981,22 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(400).json({ error: 'Amount is required and must be greater than 0' });
     }
 
+    // NEW: Balance checks based on proposal-specific token addresses
+    try {
+      await ensureSufficientBalance({
+        proposal,
+        proposalId,
+        side,
+        orderType,
+        orderExecution,
+        price,
+        amount,
+        userAddress
+      });
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
+
     const order = new Order({
       proposalId,
       side,
@@ -1336,6 +1456,22 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
 
     if (!amount || parseFloat(amount) <= 0) {
       return res.status(400).json({ error: 'Amount is required and must be greater than 0' });
+    }
+
+    // NEW: Balance checks based on proposal-specific token addresses
+    try {
+      await ensureSufficientBalance({
+        proposal,
+        proposalId,
+        side,
+        orderType,
+        orderExecution,
+        price,
+        amount,
+        userAddress
+      });
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
     }
 
     const order = new Order({
@@ -1728,11 +1864,6 @@ async function executeOrder(order, io) {
     for (const matchingOrder of matchingOrders) {
       if (remainingAmount <= 0) break;
 
-      if(matchingOrder.userAddress === order.userAddress) {
-        console.log(`Skipping matching order ${matchingOrder._id} as it belongs to the same user`);
-        continue;
-      }
-
       const availableAmount = parseFloat(matchingOrder.amount) - parseFloat(matchingOrder.filledAmount || '0');
       const tradeAmount = Math.min(remainingAmount, availableAmount);
 
@@ -1776,6 +1907,29 @@ async function executeOrder(order, io) {
       });
 
       console.log(`Trade executed: ${tradeAmount}, remaining: ${remainingAmount}`);
+
+      // NEW: send on-chain applyBatch per fill (buyer/seller inferred)
+      try {
+        const buyOrder = order.orderType === 'buy' ? order : matchingOrder;
+        const sellOrder = order.orderType === 'sell' ? order : matchingOrder;
+        const tx = await submitFillToChain({
+          proposalId: order.proposalId,
+          side: order.side,
+          buyOrder,
+          sellOrder,
+          price: matchingOrder.price,
+          amount: tradeAmount.toString()
+        });
+        console.log(`[applyBatch] tx sent: ${tx.hash}`);
+        // Save tx hash on both orders
+        try {
+          matchingOrder.txHash = tx.hash;
+          await matchingOrder.save();
+        } catch (_) {}
+        order.txHash = tx.hash; // will be persisted on final save
+      } catch (e) {
+        console.error('[applyBatch] send error:', e.message);
+      }
     }
 
     // Finalize original order

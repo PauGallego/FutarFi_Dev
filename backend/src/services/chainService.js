@@ -1,6 +1,6 @@
 // Simple chain service using ethers v6
 // - Read helpers (contract view calls)
-// - Write helper (internal only)
+// - Write helper (internal only) with retry/fee-bump
 // - Batch execute for future filled orders array
 // - A monitor skeleton to watch filled orders and execute on-chain internally
 // Comments kept simple in English
@@ -43,20 +43,87 @@ async function callView({ address, abi, method, args = [] }) {
   return await contract[method](...args);
 }
 
-async function sendTx({ address, abi, method, args = [], overrides = {} }) {
+// --- Simple in-process tx queue to prevent nonce races ---
+let txQueue = Promise.resolve();
+function enqueueTx(fn) {
+  txQueue = txQueue.then(fn, fn);
+  return txQueue;
+}
+
+// --- Enhanced sendTx with EIP-1559 bumping and explicit pending nonce ---
+async function sendTxInner({ address, abi, method, args = [], overrides = {} }) {
   const signer = getSigner();
   if (!signer) throw new Error('No signer configured');
   const contract = getContract(address, abi, true);
+  const provider = getProvider();
 
-  // Optional gas estimation
+  // Base fee data
+  let fee = await provider.getFeeData().catch(() => ({ }));
+  let maxFeePerGas = overrides.maxFeePerGas || fee.maxFeePerGas || ethers.parseUnits(String(process.env.MAX_FEE_PER_GAS || '30'), 9);
+  let maxPriorityFeePerGas = overrides.maxPriorityFeePerGas || fee.maxPriorityFeePerGas || ethers.parseUnits(String(process.env.MAX_PRIORITY_FEE_PER_GAS || '2'), 9);
+
+  // Estimate gas
   let gasLimit;
   try {
-    gasLimit = await contract[method].estimateGas(...args, overrides);
-  } catch (_) {}
+    gasLimit = await contract[method].estimateGas(...args, { ...overrides, maxFeePerGas, maxPriorityFeePerGas });
+  } catch (_) { /* ignore */ }
 
-  const tx = await contract[method](...args, { ...overrides, gasLimit });
-  const receipt = await tx.wait();
-  return { hash: tx.hash, receipt };
+  // Explicit nonce from pending to avoid collisions and allow replacements
+  const from = await signer.getAddress();
+  let nonce = overrides.nonce;
+  if (nonce === undefined) {
+    try { nonce = await provider.getTransactionCount(from, 'pending'); } catch { /* ignore */ }
+  }
+
+  const maxAttempts = Number(process.env.TX_RETRY_ATTEMPTS || 4);
+  const bumpBps = Number(process.env.TX_BUMP_BPS || 1500); // 15%
+
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const tx = await contract[method](...args, {
+        ...overrides,
+        gasLimit,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+        nonce,
+      });
+      const receipt = await tx.wait();
+      return { hash: tx.hash, receipt };
+    } catch (e) {
+      const msg = e?.message || '';
+      const code = e?.code || '';
+      // If the tx was replaced and mined, surface it as success
+      if (code === 'TRANSACTION_REPLACED' && e?.replacement && e?.receipt) {
+        return { hash: e.replacement.hash, receipt: e.receipt };
+      }
+      // Handle underpriced / replacement fee too low
+      const underpriced = code === 'REPLACEMENT_UNDERPRICED' || msg.includes('replacement transaction underpriced') || msg.includes('fee too low');
+      const nonceExpired = code === 'NONCE_EXPIRED' || msg.includes('nonce has already been used') || msg.includes('nonce too low');
+      if (!(underpriced || nonceExpired) || attempt === maxAttempts) {
+        lastErr = e;
+        break;
+      }
+      // For nonce issues, refresh nonce from pending
+      if (nonceExpired) {
+        try { nonce = await provider.getTransactionCount(from, 'pending'); } catch { /* ignore */ }
+      }
+      // Bump fees and retry same/updated nonce
+      try {
+        const bumpFactor = (10000 + bumpBps) / 10000;
+        maxFeePerGas = (maxFeePerGas ? maxFeePerGas : ethers.parseUnits('30', 9)) * BigInt(Math.floor(bumpFactor * 10000)) / 10000n;
+        maxPriorityFeePerGas = (maxPriorityFeePerGas ? maxPriorityFeePerGas : ethers.parseUnits('2', 9)) * BigInt(Math.floor(bumpFactor * 10000)) / 10000n;
+      } catch { /* ignore */ }
+      await new Promise(r => setTimeout(r, 300));
+      continue;
+    }
+  }
+  // If we exit loop without returning
+  throw lastErr || new Error('sendTx failed');
+}
+
+async function sendTx(params) {
+  return enqueueTx(() => sendTxInner(params));
 }
 
 // Simple poll registry
@@ -128,7 +195,7 @@ async function monitorFilledOrders(buildCallFromOrder) {
       } else {
         await Order.findByIdAndUpdate(pending[i]._id, { status: 'filled-error' });
       }
-    } catch (e) {
+      } catch (e) {
       console.error('monitorFilledOrders post-update error:', e.message);
     }
   }
