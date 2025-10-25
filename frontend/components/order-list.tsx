@@ -30,8 +30,9 @@ export function OrderList({ orders, onCancelOrder, error }: OrderListProps) {
           // Empty state
           <div className="text-sm text-muted-foreground">No orders to display for this market.</div>
         ) : (
-          <div className="space-y-2">
-            {orders.map((order) => {
+          // Show latest first and constrain height to ~4 rows with scroll for more
+          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+            {[...orders].sort((a, b) => b.timestamp - a.timestamp).map((order) => {
               const fillPct = order.amount > 0 ? Math.min(100, Math.max(0, (order.filled / order.amount) * 100)) : 0
               const isFilled = order.status === 'filled' || (order.amount > 0 && order.filled >= order.amount)
               const isPartial = !isFilled && order.filled > 0
@@ -41,7 +42,7 @@ export function OrderList({ orders, onCancelOrder, error }: OrderListProps) {
                 ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200/50'
                 : 'bg-card'
               return (
-                <div key={order.id} className={`flex items-center justify-between p-3 rounded-lg border ${rowBg} ${order.status === 'cancelled' ? 'opacity-60' : ''}`}>
+                <div key={order.id} className={`flex items-center justify-between p-3 rounded-lg border min-h-20 ${rowBg} ${order.status === 'cancelled' ? 'opacity-60' : ''}`}>
                   <div className="flex-1 space-y-2 pr-3">
                     <div className="flex items-center gap-2 flex-wrap">
                       <Badge variant={order.side === "BUY" ? "default" : "secondary"}>{order.side}</Badge>
