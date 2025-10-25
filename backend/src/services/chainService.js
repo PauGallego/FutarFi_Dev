@@ -43,6 +43,17 @@ async function callView({ address, abi, method, args = [] }) {
   return await contract[method](...args);
 }
 
+// Helper: wait for receipt with timeout and polling
+async function waitForReceiptWithTimeout(provider, txHash, { timeoutMs = Number(process.env.TX_WAIT_TIMEOUT_MS || 60000), pollMs = 1500 } = {}) {
+  const start = Date.now();
+  while (true) {
+    const rcpt = await provider.getTransactionReceipt(txHash).catch(() => null);
+    if (rcpt) return rcpt;
+    if (Date.now() - start > timeoutMs) return null; // timeout
+    await new Promise(r => setTimeout(r, pollMs));
+  }
+}
+
 // --- Simple in-process tx queue to prevent nonce races ---
 let txQueue = Promise.resolve();
 function enqueueTx(fn) {
@@ -50,7 +61,7 @@ function enqueueTx(fn) {
   return txQueue;
 }
 
-// --- Enhanced sendTx with EIP-1559 bumping and explicit pending nonce ---
+// --- Enhanced sendTx with EIP-1559 bumping and explicit pending/replaceable nonce ---
 async function sendTxInner({ address, abi, method, args = [], overrides = {} }) {
   const signer = getSigner();
   if (!signer) throw new Error('No signer configured');
@@ -68,15 +79,23 @@ async function sendTxInner({ address, abi, method, args = [], overrides = {} }) 
     gasLimit = await contract[method].estimateGas(...args, { ...overrides, maxFeePerGas, maxPriorityFeePerGas });
   } catch (_) { /* ignore */ }
 
-  // Explicit nonce from pending to avoid collisions and allow replacements
+  // Choose a nonce that can replace oldest pending if any
   const from = await signer.getAddress();
   let nonce = overrides.nonce;
   if (nonce === undefined) {
-    try { nonce = await provider.getTransactionCount(from, 'pending'); } catch { /* ignore */ }
+    try {
+      const [latest, pending] = await Promise.all([
+        provider.getTransactionCount(from, 'latest'),
+        provider.getTransactionCount(from, 'pending'),
+      ]);
+      nonce = pending > latest ? latest : pending; // replace oldest pending when exists
+    } catch {
+      try { nonce = await provider.getTransactionCount(from, 'pending'); } catch { /* ignore */ }
+    }
   }
 
   const maxAttempts = Number(process.env.TX_RETRY_ATTEMPTS || 4);
-  const bumpBps = Number(process.env.TX_BUMP_BPS || 1500); // 15%
+  const bumpBps = Number(process.env.TX_BUMP_BPS || 2000); // 20%
 
   let lastErr;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -88,8 +107,14 @@ async function sendTxInner({ address, abi, method, args = [], overrides = {} }) 
         maxPriorityFeePerGas,
         nonce,
       });
-      const receipt = await tx.wait();
-      return { hash: tx.hash, receipt };
+      // Wait with timeout; if timed out, try to replace
+      const rcpt = await waitForReceiptWithTimeout(provider, tx.hash);
+      if (rcpt) return { hash: tx.hash, receipt: rcpt };
+      // timeout: bump fees and try replacement using same nonce
+      const bumpFactorN = BigInt(10000 + bumpBps);
+      maxFeePerGas = (maxFeePerGas || ethers.parseUnits('30', 9)) * bumpFactorN / 10000n;
+      maxPriorityFeePerGas = (maxPriorityFeePerGas || ethers.parseUnits('2', 9)) * bumpFactorN / 10000n;
+      continue;
     } catch (e) {
       const msg = e?.message || '';
       const code = e?.code || '';
@@ -97,18 +122,23 @@ async function sendTxInner({ address, abi, method, args = [], overrides = {} }) 
       if (code === 'TRANSACTION_REPLACED' && e?.replacement && e?.receipt) {
         return { hash: e.replacement.hash, receipt: e.receipt };
       }
-      // Handle underpriced / replacement fee too low
       const underpriced = code === 'REPLACEMENT_UNDERPRICED' || msg.includes('replacement transaction underpriced') || msg.includes('fee too low');
       const nonceExpired = code === 'NONCE_EXPIRED' || msg.includes('nonce has already been used') || msg.includes('nonce too low');
       if (!(underpriced || nonceExpired) || attempt === maxAttempts) {
         lastErr = e;
         break;
       }
-      // For nonce issues, refresh nonce from pending
+      // Refresh to oldest pending nonce for replacement when nonce-related
       if (nonceExpired) {
-        try { nonce = await provider.getTransactionCount(from, 'pending'); } catch { /* ignore */ }
+        try {
+          const [latest, pending] = await Promise.all([
+            provider.getTransactionCount(from, 'latest'),
+            provider.getTransactionCount(from, 'pending'),
+          ]);
+          nonce = pending > latest ? latest : pending;
+        } catch { /* ignore */ }
       }
-      // Bump fees and retry same/updated nonce
+      // Bump fees and retry
       try {
         const bumpFactor = (10000 + bumpBps) / 10000;
         maxFeePerGas = (maxFeePerGas ? maxFeePerGas : ethers.parseUnits('30', 9)) * BigInt(Math.floor(bumpFactor * 10000)) / 10000n;
@@ -807,28 +837,46 @@ async function attemptFinalizeAuction(auctionAddress) {
 async function canFinalizeAuction(auctionAddress) {
   try {
     const c = getContract(auctionAddress, AUCTION_ABI, false);
-    const [isFinalized, endTimeBn, marketTokenAddr, minToOpenBn] = await Promise.all([
+
+    // Read finalized + end time first
+    const [isFinalized, endTimeBn] = await Promise.all([
       c.isFinalized(),
       c.END_TIME(),
-      c.MARKET_TOKEN(),
-      c.MIN_TO_OPEN()
     ]);
     if (isFinalized) return { can: false, reason: 'already-finalized' };
-    const now = Math.floor(Date.now() / 1000);
+
+    // Chain time (fallback to wall clock if provider fails)
+    let nowTs;
+    try {
+      const block = await getProvider().getBlock('latest');
+      nowTs = Number(block?.timestamp || 0);
+    } catch (_) {
+      nowTs = Math.floor(Date.now() / 1000);
+    }
     const endTime = Number(endTimeBn);
-    const endPassed = now >= endTime;
+    const endPassed = nowTs >= endTime;
 
-    // Early finalize when cap is reached
-    const t = getContract(marketTokenAddr, TOKEN_MIN_ABI, false);
-    const [totalSupplyBn, capBn] = await Promise.all([
-      t.totalSupply(),
-      t.cap()
-    ]);
-    const totalSupply = typeof totalSupplyBn === 'bigint' ? totalSupplyBn : BigInt(totalSupplyBn);
-    const cap = typeof capBn === 'bigint' ? capBn : BigInt(capBn);
-
-    if (totalSupply === cap) return { can: true, reason: 'cap-reached' };
+    // If ended by time, we can finalize regardless of cap
     if (endPassed) return { can: true, reason: 'ended' };
+
+    // Otherwise, check early-finalize threshold: >=99% cap
+    let marketTokenAddr;
+    try { marketTokenAddr = await c.MARKET_TOKEN(); } catch (_) { marketTokenAddr = undefined; }
+    if (!marketTokenAddr) return { can: false, reason: 'not-ready' };
+
+    try {
+      const t = getContract(marketTokenAddr, TOKEN_MIN_ABI, false);
+      const [totalSupplyBn, capBn] = await Promise.all([
+        t.totalSupply(),
+        t.cap()
+      ]);
+      const totalSupply = typeof totalSupplyBn === 'bigint' ? totalSupplyBn : BigInt(totalSupplyBn);
+      const cap = typeof capBn === 'bigint' ? capBn : BigInt(capBn);
+      const earlyThreshold = (cap * 99n) / 100n;
+      if (totalSupply >= earlyThreshold) return { can: true, reason: 'cap-99' };
+    } catch (_) {
+      // ignore cap read errors and treat as not-ready until time end
+    }
 
     return { can: false, reason: 'not-ready' };
   } catch (e) {
@@ -840,10 +888,8 @@ async function canFinalizeAuction(auctionAddress) {
 async function monitorAuctionsToFinalize({ limit = 20 } = {}) {
   const signer = getSigner();
   if (!signer) {
-    // No PRIVATE_KEY configured
     return { tried: 0, finalized: 0 };
   }
-
   const Auction = require('../models/Auction');
   const Proposal = require('../models/Proposal');
   const candidates = await Auction.find({}).sort({ updatedAt: 1 }).limit(limit);
@@ -857,7 +903,6 @@ async function monitorAuctionsToFinalize({ limit = 20 } = {}) {
     const addr = a.auctionAddress;
     if (!addr) continue;
 
-    // Find related proposal and check its on-chain state
     let proposalAddr;
     try {
       const p = await Proposal.findOne({ id: a.proposalId });
@@ -865,7 +910,6 @@ async function monitorAuctionsToFinalize({ limit = 20 } = {}) {
     } catch (_) {}
     if (!proposalAddr) continue;
 
-    // state() -> 0 auction, 1 live, 2 resolved, 3 cancelled
     let stateNum = -1;
     try {
       const pc = getContract(proposalAddr, PROPOSAL_ABI, false);
@@ -876,9 +920,17 @@ async function monitorAuctionsToFinalize({ limit = 20 } = {}) {
       continue;
     }
 
-    if (stateNum !== 0) continue; // only try when proposal is in auction
+    if (stateNum !== 0) continue; // only auction state
 
-    // Log attempt details (proposal is in auction state)
+    // Check readiness before attempting finalize to avoid stuck pending
+    const readiness = await canFinalizeAuction(addr);
+    if (!readiness.can) {
+      if (readiness.reason && readiness.reason !== 'not-ready') {
+        console.log(`[finalize-auction] skip: proposalId=${a.proposalId} auction=${addr} reason=${readiness.reason}`);
+      }
+      continue;
+    }
+
     let signerAddr = 'unknown';
     let nonce = 'unknown';
     try {
@@ -888,9 +940,8 @@ async function monitorAuctionsToFinalize({ limit = 20 } = {}) {
     console.log(`[finalize-auction] attempting finalize: proposalId=${a.proposalId} proposal=${proposalAddr} auction=${addr} by=${signerAddr} nonce=${nonce}`);
     const startTime = Date.now();
     tried++;
-    let res;
     try {
-      res = await attemptFinalizeAuction(addr);
+      const res = await attemptFinalizeAuction(addr);
       const elapsed = Date.now() - startTime;
       if (res.ok) {
         finalizedCount++;

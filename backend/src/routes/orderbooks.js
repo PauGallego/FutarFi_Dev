@@ -33,6 +33,56 @@ function isValidOrderExecution(orderExecution) { return ['limit', 'market'].incl
 function sendError(res, status, message) { return res.status(status).json({ error: message }); }
 function sideToKey(side) { return side === 'approve' ? 'yes' : 'no'; }
 
+// Build and persist a compact order book snapshot for a proposal/side
+async function updateOrderBook(proposalId, side, io) {
+  try {
+    const openOrders = await Order.find({
+      proposalId,
+      side,
+      status: { $in: ['open', 'partial'] }
+    }).select('orderType price amount filledAmount').lean();
+
+    const bidsMap = new Map(); // price -> { amount:number, orderCount:number }
+    const asksMap = new Map();
+
+    for (const o of openOrders) {
+      const remaining = Math.max(0, parseFloat(o.amount || '0') - parseFloat(o.filledAmount || '0'));
+      if (!(remaining > 0)) continue;
+      const priceKey = String(o.price || '0');
+      const map = o.orderType === 'buy' ? bidsMap : asksMap;
+      const cur = map.get(priceKey) || { amount: 0, orderCount: 0 };
+      cur.amount += remaining;
+      cur.orderCount += 1;
+      map.set(priceKey, cur);
+    }
+
+    const toArr = (map, sortDir) => {
+      const arr = Array.from(map.entries()).map(([price, v]) => ({
+        price,
+        amount: String(+v.amount.toFixed(8)),
+        orderCount: v.orderCount
+      }));
+      arr.sort((a, b) => sortDir * (parseFloat(a.price) - parseFloat(b.price)));
+      return arr;
+    };
+
+    const bids = toArr(bidsMap, -1); // high to low
+    const asks = toArr(asksMap, +1); // low to high
+
+    const doc = await OrderBook.findOneAndUpdate(
+      { proposalId, side },
+      { $set: { bids, asks, updatedAt: new Date() }, $setOnInsert: { proposalId, side } },
+      { upsert: true, new: true }
+    );
+
+    try { if (io && typeof notifyOrderBookUpdate === 'function') notifyOrderBookUpdate(io, proposalId, side, doc); } catch (_) {}
+    return doc;
+  } catch (e) {
+    console.error('updateOrderBook error:', e.message);
+    throw e;
+  }
+}
+
 async function getBestSellPrice(proposalId, side) {
   try {
     const sells = await Order.find({
@@ -1952,6 +2002,9 @@ async function executeOrder(order, io) {
       // keep existing behavior (signature mismatch tolerated elsewhere)
       try { notifyOrderMatched(io, order); } catch (e) {}
     }
+
+    // Refresh order book snapshot after execution
+    try { await updateOrderBook(order.proposalId, order.side, io); } catch (e) { console.error('Error updating order book after execution:', e); }
 
   } catch (error) {
     console.error('Error executing order:', error);
