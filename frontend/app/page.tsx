@@ -275,23 +275,19 @@ export default function HomePage() {
                     <Lock className="h-8 w-8 text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-bold">Order Confidentiality</h3>
-                    <p className="text-sm text-muted-foreground">Zero-knowledge matching</p>
+                    <h3 className="text-2xl font-bold">Token Verification</h3>
+                    <p className="text-sm text-muted-foreground">Ensures encrypted data</p>
                   </div>
                 </div>
                 <p className="text-muted-foreground leading-relaxed">
-                  Orders are encrypted and processed inside the secure enclave. No one—not even the operator—can see
-                  order details before execution, eliminating MEV and front-running attacks.
+                   All users must confirm their transaction with their wallet before sending it to the secure enclave (TEE),ensuring consent and security for every operation.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="secondary" className="rounded-full">
                     <EyeOff className="h-3 w-3 mr-1" />
                     Private
                   </Badge>
-                  <Badge variant="secondary" className="rounded-full">
-                    <Shield className="h-3 w-3 mr-1" />
-                    MEV-Protected
-                  </Badge>
+      
                 </div>
               </div>
             </Card>
@@ -320,6 +316,10 @@ export default function HomePage() {
                   <Fingerprint className="h-4 w-4 text-secondary" />
                   <span className="font-mono text-xs text-muted-foreground">SHA256: a3f5...c2d9</span>
                 </div>
+                <Badge variant="secondary" className="rounded-full">
+                    <Shield className="h-3 w-3 mr-1" />
+                    MEV-Protected
+                  </Badge>
               </div>
             </Card>
 
