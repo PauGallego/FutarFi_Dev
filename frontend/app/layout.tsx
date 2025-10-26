@@ -11,7 +11,7 @@ import { Toaster as SonnerToaster } from "sonner"
 import "@/styles/globals.css"
 
 export const metadata: Metadata = {
-  title: "Futarchy for Everyone - Decentralized Governance",
+  title: "FutarFi",
   description: "Create proposals, open prediction markets, and execute outcomes trustlessly",
 }
 
