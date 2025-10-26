@@ -62,7 +62,7 @@ export function MarketBalancesPanel({ proposalId }: { proposalId: string }) {
             <div
               className="flex items-center justify-between rounded-md border px-3 py-2"
               style={{
-                // Use OKLab color-mix with the requested PyUSD blues for better theming support
+                // Blue gradient using color-mix for consistent theming
                 backgroundColor: "color-mix(in oklab, #002991 12%, transparent)",
                 borderColor: "color-mix(in oklab, #61cdff 40%, transparent)",
               }}

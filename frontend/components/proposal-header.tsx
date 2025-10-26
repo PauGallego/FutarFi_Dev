@@ -63,7 +63,7 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
                 {formatDate(proposal.auctionStartTime)} - {formatDate(proposal.auctionEndTime)}
               </span>
               <Badge variant="outline" className={statusColors[proposal.state]}>
-                {`In ${proposal.state}`}
+                {`${proposal.state}`}
               </Badge>
             </div>
           </div>

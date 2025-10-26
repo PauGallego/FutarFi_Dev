@@ -2,11 +2,9 @@
 
 import { useMemo, useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-// import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
-// Removed Tabs in favor of a custom segmented control matching BUY/SELL style
 import { useAccount } from "wagmi"
 import { usePublicClient } from "wagmi"
 import { toast } from "sonner"
@@ -27,7 +25,6 @@ type MarketTradePanelProps = {
   onOrderPlaced?: () => void
 }
 
-// Removed demo button component after integrating the stateful button into the trade form
 
 export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, onOrderPlaced }: MarketTradePanelProps) {
   const { isConnected, address } = useAccount()
@@ -39,7 +36,6 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   const [amount, setAmount] = useState("")
   const [limitPrice, setLimitPrice] = useState("")
   const [amountError, setAmountError] = useState<string | null>(null)
-  // Removed slippage control per request
 
   // Fetch proposal addresses so we can read balances and spender (proposal address)
   const { proposal } = useGetProposalById(proposalId)
@@ -183,7 +179,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
   }, [orderType, tradeAction, limitPrice, top.bestAsk, top.bestBid])
   const estimatedAmount = amount ? Number.parseFloat(amount) : 0
   const estimatedTotal = estimatedPrice * estimatedAmount
-  // Slippage removed; totals are straightforward estimates now
+  // Totals are straightforward estimates (no slippage calculation)
 
   // What the user receives (tokens for BUY, PyUSD for SELL)
   const receiveLabel = tradeAction === "BUY" ? `t${selectedMarket}` : "PyUSD"
@@ -267,7 +263,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
 
           <div>
             <CardTitle className="text-lg">Create Order</CardTitle>
-            {/* Fix broken description */}
+            {/* Adjusted description styling */}
             <CardDescription>Place market or limit orders</CardDescription>
           </div>
         </CardHeader>
@@ -387,7 +383,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
             </div>
           )}
 
-          {/* Slippage controls removed */}
+          {/* Totals shown without slippage controls */}
 
           <div className="rounded-lg border bg-muted/50 p-2 space-y-1 text-sm">
             {orderType === "market" && (
@@ -396,7 +392,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                 <span className="font-mono">${estimatedPrice.toFixed(4)}</span>
               </div>
             )}
-            {/* Removed slippage line and 'You Pay' summary per request */}
+            {/* Simplified summary (no slippage line, no separate "You Pay") */}
             <div className="flex justify-between font-semibold pt-2">
               <span>You Receive:</span>
               <span className="font-mono">{estimatedReceive.toLocaleString(undefined, { maximumFractionDigits: 6 })} {receiveLabel}</span>
@@ -408,10 +404,10 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
               tradeAction === "BUY"
                 ? "bg-primary text-primary-foreground hover:bg-primary/90"
                 : "bg-destructive text-destructive-foreground hover:bg-destructive/90";
-            // Disabled: use same gray as other labels (muted) with subtle border, no hover
+            // Disabled: muted gray with subtle border, no hover
             const variantDisabled = "bg-muted text-muted-foreground border border-border";
             const invalidLimit = orderType === "limit" && (!limitPrice || Number(limitPrice) <= 0);
-            // Disable SELL while approving, and keep existing guards
+            // Disable SELL while approving; keep existing guards
             const isDisabled = !isConnected
               || creating
               || (tradeAction === "SELL" && isApproving)
@@ -424,7 +420,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                 onClick={handleCreateOrder}
                 aria-disabled={isDisabled}
                 onDisabledClick={() => {
-                  // Ignore clicks while a tx is pending (creating or approving)
+                  // Ignore clicks while a tx is pending
                   if (creating || isApproving) return;
                   if (!amount || invalidAmount) {
                     amountInputRef.current?.focus()
@@ -432,9 +428,9 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                   }
                 }}
                 className={cn(
-                  // Base button aesthetics (shadcn-like)
+                  // Base button styles
                   "w-full inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2",
-                  // Color variant or muted when disabled (also affects loader/check via text-current)
+                  // Color variant or muted when disabled (affects loader/check via text-current)
                   isDisabled
                     ? cn(variantDisabled, "opacity-60 cursor-not-allowed hover:ring-0 focus-visible:ring-0", (creating || isApproving) && "pointer-events-none")
                     : cn(variantEnabled, tradeAction === "BUY" ? "hover:ring-green-500" : "hover:ring-red-500"),

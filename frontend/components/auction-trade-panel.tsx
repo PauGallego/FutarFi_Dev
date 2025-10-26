@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/stateful-button"
 import { Input } from "@/components/ui/input"
@@ -154,6 +154,52 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
     }
   }
 
+  // On-chain reads for failed auction balances
+  const [balances, setBalances] = useState<{ tYES: string; tNO: string; treasuryPYUSD: string; pyusdWallet: string } | null>(null)
+  useEffect(() => {
+    if (!isFailed || !isConnected || !address || !proposalAddress) return
+    (async () => {
+      try {
+        const anyWindow = window as any
+        if (!anyWindow?.ethereum) return
+        const provider = new ethers.BrowserProvider(anyWindow.ethereum)
+        const signer = await provider.getSigner()
+        const proposal = new ethers.Contract(proposalAddress, proposal_abi as any, signer)
+        const [yesTokenAddr, noTokenAddr, treasuryAddr, pyusdAddr] = await Promise.all([
+          proposal.yesToken(),
+          proposal.noToken(),
+          proposal.treasury(),
+          proposal.pyUSD(),
+        ])
+        if (!yesTokenAddr || !noTokenAddr || !treasuryAddr || !pyusdAddr) return
+        const yesToken = new ethers.Contract(yesTokenAddr, marketToken_abi as any, signer)
+        const noToken = new ethers.Contract(noTokenAddr, marketToken_abi as any, signer)
+        const treasury = new ethers.Contract(treasuryAddr, treasury_abi as any, signer)
+        const pyusd = new ethers.Contract(pyusdAddr, marketToken_abi as any, signer)
+        const [tYESRaw, tNORaw, yesSupplyRaw, noSupplyRaw, potYesRaw, potNoRaw, decimals, pyusdWalletRaw] = await Promise.all([
+          yesToken.balanceOf(address),
+          noToken.balanceOf(address),
+          yesToken.totalSupply(),
+          noToken.totalSupply(),
+          treasury.potYes(),
+          treasury.potNo(),
+          yesToken.decimals(),
+          pyusd.balanceOf(address),
+        ])
+        const tYES = ethers.formatUnits(tYESRaw, decimals)
+        const tNO = ethers.formatUnits(tNORaw, decimals)
+        // Treasury PYUSD share: proportional from both pots
+        const shareYES = yesSupplyRaw > 0n ? (tYESRaw * potYesRaw) / yesSupplyRaw : 0n
+        const shareNO = noSupplyRaw > 0n ? (tNORaw * potNoRaw) / noSupplyRaw : 0n
+        const treasuryPYUSD = ethers.formatUnits((BigInt(shareYES) + BigInt(shareNO)), 6)
+        const pyusdWallet = ethers.formatUnits(pyusdWalletRaw, 6)
+        setBalances({ tYES, tNO, treasuryPYUSD, pyusdWallet })
+      } catch {
+        setBalances(null)
+      }
+    })()
+  }, [isFailed, isConnected, address, proposalAddress])
+
   if (isFailed) {
     return (
       <Card className={fullHeight ? "h-full flex flex-col" : undefined}>
@@ -162,8 +208,45 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
           <CardDescription>Minimum bid requirement not met</CardDescription>
         </CardHeader>
         <CardContent className={fullHeight ? "flex-1 flex flex-col justify-end" : undefined}>
-          <Button className="w-full" onClick={handleClaim} aria-disabled={!isConnected || isClaiming}>
-            {isClaiming ? "Claiming..." : "Claim Collateral"}
+          {/* Balances block above claim button */}
+          {balances && (
+            <>
+              <div className="mb-2">
+                <span className="text-sm font-semibold text-muted-foreground">
+                  Your PYUSD balance: {Number(balances.pyusdWallet).toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                </span>
+              </div>
+              <div className="mb-4 flex flex-wrap gap-3 items-end">
+                <div className="rounded-md border bg-muted/30 p-3 min-w-[120px]">
+                  <p className="text-xs text-muted-foreground">Your tYES</p>
+                  <p className="text-lg font-semibold">{Number(balances.tYES).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                </div>
+                <div className="rounded-md border bg-muted/30 p-3 min-w-[120px]">
+                  <p className="text-xs text-muted-foreground">Your tNO</p>
+                  <p className="text-lg font-semibold">{Number(balances.tNO).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                </div>
+                <div className="rounded-md border bg-muted/30 p-3 min-w-[140px]">
+                  <p className="text-xs text-muted-foreground">Your PYUSD in Treasury</p>
+                  <p className="text-lg font-semibold">{Number(balances.treasuryPYUSD).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                </div>
+              </div>
+            </>
+          )}
+          <Button
+            className={[
+              "w-full text-base py-5",
+              "rounded-md text-white",
+              "bg-gradient-to-b from-emerald-500 to-emerald-600",
+              "shadow ring-1 ring-emerald-400/40",
+              "transition-all duration-200",
+              "hover:from-emerald-500/90 hover:to-emerald-600/90 hover:shadow-lg hover:shadow-emerald-500/20",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+            ].join(" ")}
+            onClick={handleClaim}
+            aria-disabled={!isConnected || isClaiming}
+          >
+            {isClaiming ? "Claiming..." : "Claim PYUSD Collateral"}
           </Button>
         </CardContent>
       </Card>

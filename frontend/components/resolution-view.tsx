@@ -24,6 +24,10 @@ interface AuctionResolvedProps {
   onClaimWinnings: () => void
   onClaimLosingTokens: () => void
   canClaim: boolean
+  // Optional, formatted values to show above the claim button
+  userPyusdBalanceFormatted?: string
+  claimablePyusdFormatted?: string
+  userTreasuryPyusdFormatted?: string
 }
 
 export function AuctionResolved({
@@ -36,7 +40,11 @@ export function AuctionResolved({
   onClaimWinnings,
   onClaimLosingTokens,
   canClaim,
+  userPyusdBalanceFormatted,
+  claimablePyusdFormatted,
+  userTreasuryPyusdFormatted,
 }: AuctionResolvedProps) {
+  const [isClaiming, setIsClaiming] = useState(false)
   const losingMarket = winningMarket === "YES" ? "NO" : "YES"
   const winningPrice = winningMarket === "YES" ? finalYesPrice : finalNoPrice
   const losingPrice = winningMarket === "YES" ? finalNoPrice : finalYesPrice
@@ -87,9 +95,7 @@ export function AuctionResolved({
             </div>
             <div className="flex items-center gap-2">
               <Badge className="bg-green-600 text-white text-lg px-4 py-2 hover:bg-green-700">{outcomeLabel}</Badge>
-              <Badge variant="outline" className="text-sm px-3 py-1">
-                {winningMarket}
-              </Badge>
+              
             </div>
           </div>
         </CardHeader>
@@ -210,11 +216,6 @@ export function AuctionResolved({
             </ResponsiveContainer>
           </div>
 
-          {/* Price difference between Approved (YES) and Rejected (NO) */}
-          <div className="rounded-md border bg-muted/40 p-3">
-            <p className="text-sm text-muted-foreground">Price Difference (YES - NO)</p>
-            <p className="text-xl font-semibold">${priceDiff.toFixed(4)}</p>
-          </div>
 
           {userWinningTokens > 0 && false && (
             <div className="pt-4 border-t border-border">
@@ -275,15 +276,56 @@ export function AuctionResolved({
                 </div>
                 <Coins className="h-6 w-6 text-muted-foreground" />
               </div>
+              {/* Token amounts and treasury PYUSD + claimable info */}
+              <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="rounded-md border bg-muted/30 p-3">
+                  <p className="text-xs text-muted-foreground">Your tYES</p>
+                  <p className="text-lg font-semibold">{Number(userYesTokens || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                </div>
+                <div className="rounded-md border bg-muted/30 p-3">
+                  <p className="text-xs text-muted-foreground">Your tNO</p>
+                  <p className="text-lg font-semibold">{Number(userNoTokens || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                </div>
+                {userTreasuryPyusdFormatted && (
+                  <div className="rounded-md border bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground">Your PYUSD in Treasury</p>
+                    <p className="text-lg font-semibold">{Number(userTreasuryPyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                  </div>
+                )}
+                {claimablePyusdFormatted && (
+                  <div className="rounded-md border bg-emerald-500/5 p-3">
+                    <p className="text-xs text-muted-foreground">Claimable PYUSD</p>
+                    <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">
+                      {Number(claimablePyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                    </p>
+                  </div>
+                )}
+              </div>
               <Button
-                onClick={onClaimLosingTokens}
-                variant="outline"
-                className="w-full text-base py-5 bg-transparent"
+                onClick={async () => {
+                  if (!canClaim || isClaiming) return
+                  try {
+                    setIsClaiming(true)
+                    await Promise.resolve(onClaimLosingTokens())
+                  } finally {
+                    setIsClaiming(false)
+                  }
+                }}
+                className={[
+                  "w-full text-base py-5",
+                  "rounded-md text-white",
+                  "bg-gradient-to-b from-emerald-500 to-emerald-600",
+                  "shadow ring-1 ring-emerald-400/40",
+                  "transition-all duration-200",
+                  "hover:from-emerald-500/90 hover:to-emerald-600/90 hover:shadow-lg hover:shadow-emerald-500/20",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                ].join(" ")}
                 size="lg"
-                disabled={!canClaim}
+                disabled={!canClaim || isClaiming}
               >
                 <Coins className="mr-2 h-4 w-4" />
-                Claim remaining PYUSD Tokens
+                {isClaiming ? "Claiming..." : "Claim PYUSD Collateral"}
               </Button>
             </div>
           )}
@@ -352,6 +394,11 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
     abi: proposal_abi,
     functionName: "twapPriceTokenNo",
   })
+  const { data: pyUSDAddr } = useReadContract({
+    address: proposalAddress,
+    abi: proposal_abi,
+    functionName: "pyUSD",
+  })
 
   const yesToken = yesTokenAddr as `0x${string}` | undefined
   const noToken = noTokenAddr as `0x${string}` | undefined
@@ -359,6 +406,7 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
 
   const canReadTokens = !!yesToken && !!noToken
   const canReadTreasury = !!treasury
+  const pyUSD = pyUSDAddr as `0x${string}` | undefined
 
   const { data: yesRedeemer } = useReadContract({
     address: yesToken!,
@@ -386,6 +434,19 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
     args: [user ?? ZERO],
     query: { enabled: canReadTokens && !!user },
   })
+  // Read total supplies for claimable computation
+  const { data: yesSupply } = useReadContract({
+    address: yesToken!,
+    abi: marketToken_abi,
+    functionName: "totalSupply",
+    query: { enabled: canReadTokens },
+  })
+  const { data: noSupply } = useReadContract({
+    address: noToken!,
+    abi: marketToken_abi,
+    functionName: "totalSupply",
+    query: { enabled: canReadTokens },
+  })
   const { data: potYes } = useReadContract({
     address: treasury!,
     abi: treasury_abi,
@@ -404,6 +465,20 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
     functionName: "refundsEnabled",
     query: { enabled: canReadTreasury },
   })
+  // PYUSD wallet balance and decimals
+  const { data: userPyUSDBal } = useReadContract({
+    address: pyUSD!,
+    abi: marketToken_abi,
+    functionName: "balanceOf",
+    args: [user ?? ZERO],
+    query: { enabled: !!pyUSD && !!user },
+  })
+  const { data: pyUSDDecimals } = useReadContract({
+    address: pyUSD!,
+    abi: marketToken_abi,
+    functionName: "decimals",
+    query: { enabled: !!pyUSD },
+  })
 
   const yesLost = useMemo(() => !!yesRedeemer && (yesRedeemer as string) !== ZERO, [yesRedeemer])
   const noLost = useMemo(() => !!noRedeemer && (noRedeemer as string) !== ZERO, [noRedeemer])
@@ -419,6 +494,25 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
   const totalVolume = (Number((potYes as bigint) ?? 0n) + Number((potNo as bigint) ?? 0n)) / 1e6
   const userYesTokens = Number((yesBal as bigint) ?? 0n) / 1e18
   const userNoTokens = Number((noBal as bigint) ?? 0n) / 1e18
+  // Compute claimable PYUSD from losing pot proportionally
+  const losingSupply = (winningMarket === "YES" ? (noSupply as bigint | undefined) : (yesSupply as bigint | undefined)) ?? 0n
+  const userLosingBalBig = (winningMarket === "YES" ? (noBal as bigint | undefined) : (yesBal as bigint | undefined)) ?? 0n
+  const potLost = (winningMarket === "YES" ? (potNo as bigint | undefined) : (potYes as bigint | undefined)) ?? 0n
+  const claimablePYUSDBig = losingSupply > 0n ? (userLosingBalBig * potLost) / losingSupply : 0n
+  const pydec = typeof pyUSDDecimals === 'number' ? pyUSDDecimals : Number(pyUSDDecimals ?? 6)
+  // User's theoretical PYUSD share in Treasury across both pots
+  const yesSupplyBig = (yesSupply as bigint | undefined) ?? 0n
+  const noSupplyBig = (noSupply as bigint | undefined) ?? 0n
+  const userYesBalBig = (yesBal as bigint | undefined) ?? 0n
+  const userNoBalBig = (noBal as bigint | undefined) ?? 0n
+  const potYesBig = (potYes as bigint | undefined) ?? 0n
+  const potNoBig = (potNo as bigint | undefined) ?? 0n
+  const shareYesBig = yesSupplyBig > 0n ? (userYesBalBig * potYesBig) / yesSupplyBig : 0n
+  const shareNoBig = noSupplyBig > 0n ? (userNoBalBig * potNoBig) / noSupplyBig : 0n
+  const totalTreasuryShareBig = shareYesBig + shareNoBig
+  const userTreasuryPyusdFormatted = ethers.formatUnits(totalTreasuryShareBig, pydec)
+  const userPyusdBalanceFormatted = ethers.formatUnits((userPyUSDBal as bigint) ?? 0n, pydec)
+  const claimablePyusdFormatted = ethers.formatUnits(claimablePYUSDBig, pydec)
 
   // Ready when wallet connected and on-chain flags/addresses are available and refunds are enabled
   const isReady = isConnected && canReadTokens && canReadTreasury && (refundsEnabled === true)
@@ -500,6 +594,9 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
       onClaimWinnings={onClaimWinnings}
       onClaimLosingTokens={onClaimLosingTokens}
       canClaim={isReady}
+      userPyusdBalanceFormatted={userPyusdBalanceFormatted}
+      claimablePyusdFormatted={claimablePyusdFormatted}
+      userTreasuryPyusdFormatted={userTreasuryPyusdFormatted}
     />
   )
 }

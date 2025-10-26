@@ -17,15 +17,15 @@ import { useRouter } from "next/navigation"
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"
 
 const statusStyles = {
-  Auction: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-  Live: "bg-green-500/10 text-green-500 border-green-500/20",
-  Resolved: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  Cancelled: "bg-red-500/10 text-red-500 border-red-500/20",
+  Auction: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
+  Live: "bg-green-500/10 text-green-600 border-green-500/20",
+  Resolved: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+  Cancelled: "bg-red-500/10 text-red-600 border-red-500/20",
 } as const
 
 const statusLabels = {
   Auction: 'Auction',
-  Live: 'Market Live',
+  Live: 'Live',
   Resolved: 'Resolved',
   Cancelled: 'Cancelled',
 } as const
@@ -109,6 +109,59 @@ export default function ProposalsPage() {
   const formatAddress = (addr: string) => {
     if (!addr) return ""
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`
+  }
+
+  // Inline component to show quorum shortfall details for Cancelled proposals
+  function QuorumShortfall({ proposalAddress, yesAuction, noAuction }: { proposalAddress?: `0x${string}`; yesAuction?: `0x${string}`; noAuction?: `0x${string}` }) {
+    // Lazy import hooks to avoid top-level dependency cycles
+    // We use wagmi hooks locally; safe in client component
+    const { useReadContract } = require('wagmi') as typeof import('wagmi')
+    const { dutchAuction_abi } = require('@/contracts/dutchAuction-abi') as typeof import('@/contracts/dutchAuction-abi')
+    const { marketToken_abi } = require('@/contracts/marketToken-abi') as typeof import('@/contracts/marketToken-abi')
+    const { proposal_abi } = require('@/contracts/proposal-abi') as typeof import('@/contracts/proposal-abi')
+
+    const canReadYes = !!yesAuction
+    const canReadNo = !!noAuction
+    const canReadProposal = !!proposalAddress
+
+    const { data: minYes } = useReadContract({ address: yesAuction!, abi: dutchAuction_abi, functionName: 'MIN_TO_OPEN', query: { enabled: canReadYes } })
+    const { data: minNo }  = useReadContract({ address: noAuction!,  abi: dutchAuction_abi, functionName: 'MIN_TO_OPEN', query: { enabled: canReadNo } })
+    // Read PYUSD address from Proposal, then read current balances held by each auction (raised amount)
+    const { data: pyusdAddr } = useReadContract({ address: proposalAddress!, abi: proposal_abi, functionName: 'pyUSD', query: { enabled: canReadProposal } })
+    const pyusd = pyusdAddr as `0x${string}` | undefined
+    const canReadPyusd = !!pyusd
+    const { data: yesRaised } = useReadContract({ address: pyusd!, abi: marketToken_abi, functionName: 'balanceOf', args: [yesAuction!], query: { enabled: canReadPyusd && canReadYes } })
+    const { data: noRaised }  = useReadContract({ address: pyusd!, abi: marketToken_abi, functionName: 'balanceOf', args: [noAuction!],  query: { enabled: canReadPyusd && canReadNo } })
+
+    const yesMin = Number((minYes as bigint) ?? 0n)
+    const noMin  = Number((minNo as bigint) ?? 0n)
+    const yesAmt = Number((yesRaised as bigint) ?? 0n)
+    const noAmt  = Number((noRaised as bigint) ?? 0n)
+
+    // Values are in 6d PyUSD per other parts of app; compute coverage and missing percent
+    const pct = (num: number, den: number) => den > 0 ? Math.min(100, (num / den) * 100) : 0
+    const short = (num: number, den: number) => Math.max(0, 100 - pct(num, den))
+
+    const yesShort = short(yesAmt, yesMin)
+    const noShort  = short(noAmt, noMin)
+
+    const items: Array<{ label: 'YES' | 'NO'; missing: number }> = []
+    if (yesMin > 0 && yesShort > 0.0001) items.push({ label: 'YES', missing: yesShort })
+    if (noMin  > 0 && noShort  > 0.0001) items.push({ label: 'NO',  missing: noShort })
+
+    if (items.length === 0) return null
+
+    return (
+      <div className="w-full mt-2 text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+        <span className="font-medium">Quorum not reached:</span>{' '}
+        {items.map((it, idx) => (
+          <span key={it.label}>
+            {it.label} − {it.missing.toFixed(1)}%
+            {idx < items.length - 1 ? ', ' : ''}
+          </span>
+        ))}
+      </div>
+    )
   }
 
 
@@ -200,29 +253,30 @@ export default function ProposalsPage() {
 
               <Card key={proposal.id} className="hover:border-primary/50 transition-colors">
                 <CardHeader>
-                  <div className="flex flex-col sm:flex-row justify-between gap-4 overflow-hidden">
-                    <div className="space-y-2 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <CardTitle className="text-2xl">{proposal.title}</CardTitle>
-                        <Badge variant="outline" className={statusStyles[stateKey]}>
-                          {statusLabels[stateKey]}
-                        </Badge>
-                      </div>
-                      <CardDescription className="text-base leading-relaxed">{proposal.description}</CardDescription>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-2 flex-1 min-w-0">
+                      <CardTitle className="text-2xl truncate">{proposal.title}</CardTitle>
+                      <CardDescription className="text-base leading-relaxed line-clamp-2">{proposal.description}</CardDescription>
                     </div>
+                    <Badge variant="outline" className={statusStyles[stateKey]}>
+                      {statusLabels[stateKey]}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                     <div className="flex items-center gap-2">
                       <User className="h-4 w-4" />
                       <span>Created by {formatAddress(proposal.admin)}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4" />
-                      <span>{new Date(proposal.auctionStartTime).toLocaleDateString()}</span>
+                      <span>Started at: {new Date(proposal.auctionStartTime).toLocaleDateString()}</span>
                     </div>
                   </div>
+                  {stateKey === 'Cancelled' && (
+                    <QuorumShortfall proposalAddress={proposal.address} yesAuction={proposal.yesAuction} noAuction={proposal.noAuction} />
+                  )}
                 </CardContent>
               </Card>
             </Link>

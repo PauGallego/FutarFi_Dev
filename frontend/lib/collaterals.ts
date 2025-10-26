@@ -14,7 +14,7 @@ export type Collateral = {
 //  Map of supported collaterals per chainId.
 
 export const SUPPORTED_COLLATERALS: Record<number, Collateral[]> = {
-  // Hedera Testnet (296): 
+  // Hedera Testnet (296):
   296: [
     // { symbol: "AAVE", subjectTokenUrl:"https://aave.com/", pythAddress: "0xa2aa501b19aff244d90cc15a4cf739d2725b5729", pythID: "2b9ab1e972a281585084148ba1389800799bd4be63b957507db1349314e47445", expo: -8 },
     { symbol: "PYTH", subjectTokenUrl:"https://www.pyth.network/", pythAddress: "0xa2aa501b19aff244d90cc15a4cf739d2725b5729", pythID: "0bbf28e9a841a1cc788f6a361b17ca072d0ea3098a1e5df1c3922d06719579ff", expo: -8 },
@@ -24,7 +24,7 @@ export const SUPPORTED_COLLATERALS: Record<number, Collateral[]> = {
     { symbol: "ETH", subjectTokenUrl:"https://ethereum.org/es/", pythAddress: "0xa2aa501b19aff244d90cc15a4cf739d2725b5729", pythID: "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace", expo: -8 },
   ],
 
-  // Hedera Mainnet (295): 
+  // Hedera Mainnet (295):
   295: [
     // { symbol: "AAVE", subjectTokenUrl:"https://aave.com/", pythAddress: "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729", pythID: "2b9ab1e972a281585084148ba1389800799bd4be63b957507db1349314e47445", expo: -8 },
     { symbol: "PYTH", subjectTokenUrl:"https://www.pyth.network/", pythAddress: "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729", pythID: "0bbf28e9a841a1cc788f6a361b17ca072d0ea3098a1e5df1c3922d06719579ff", expo: -8 },
@@ -44,7 +44,7 @@ export const SUPPORTED_COLLATERALS: Record<number, Collateral[]> = {
     { symbol: "ETH", subjectTokenUrl:"https://ethereum.org/es/", pythAddress: "0x4305FB66699C3B2702D4d05CF36551390A4c69C6", pythID: "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace", expo: -8 },
   ],
   
-  // Sepolia (11155111): dev mocks en testnet
+  // Sepolia (11155111): dev mocks on testnet
   11155111: [
     // { symbol: "AAVE", subjectTokenUrl:"https://aave.com/", pythAddress: "0xDd24F84d36BF92C65F92307595335bdFab5Bbd21", pythID: "2b9ab1e972a281585084148ba1389800799bd4be63b957507db1349314e47445", expo: -8 },
     { symbol: "PYTH", subjectTokenUrl:"https://www.pyth.network/", pythAddress: "0xDd24F84d36BF92C65F92307595335bdFab5Bbd21", pythID: "0bbf28e9a841a1cc788f6a361b17ca072d0ea3098a1e5df1c3922d06719579ff", expo: -8 },
