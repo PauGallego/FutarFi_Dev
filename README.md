@@ -1,6 +1,8 @@
 # Futarchy-DeFi-Protocol
 Futarchy-powered DeFi governance: PYUSD payments, Pyth pull oracles, and a TEE-secured private order book on Hedera.
 
+Developers: [Arnau Briet](@bri3t) & [Pau Gallego](@PauGallego)
+
 ---
 
 ## Introduction
