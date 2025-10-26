@@ -13,6 +13,11 @@ import { formatUnits } from "viem"
 import { parseUnits } from "viem"
 import { cn } from "@/lib/utils"
 import { useRef } from "react"
+import { ethers } from "ethers"
+import { proposal_abi } from "@/contracts/proposal-abi"
+import { dutchAuction_abi } from "@/contracts/dutchAuction-abi"
+import { marketToken_abi } from "@/contracts/marketToken-abi"
+import { treasury_abi } from "@/contracts/treasury-abi"
 
 interface AuctionTradePanelProps {
   auctionData: AuctionData
@@ -28,6 +33,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
     useAuctionBuy({ proposalAddress, side: selectedMarket })
   const amountInputRef = useRef<HTMLInputElement | null>(null)
   const [amountError, setAmountError] = useState<string | null>(null)
+  const [isClaiming, setIsClaiming] = useState(false)
 
   // Oracle price is scaled to 6 decimals (PyUSD, 6d)
   const currentPrice = useMemo(() => {
@@ -57,8 +63,95 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
     }
   }
 
-  const handleClaim = () => {
-    toast.success("Collateral claimed!", { description: "Your tokens have been returned" })
+  const handleClaim = async (): Promise<boolean> => {
+    if (!isConnected) { toast.error("Connect wallet"); return false }
+    if (!address) { toast.error("No account"); return false }
+    setIsClaiming(true)
+    try {
+      const anyWindow = window as any
+      if (!anyWindow?.ethereum) { toast.error("No wallet found"); return false }
+      const provider = new ethers.BrowserProvider(anyWindow.ethereum)
+      const signer = await provider.getSigner()
+
+      // Read addresses from Proposal
+      const proposal = new ethers.Contract(proposalAddress, proposal_abi as any, signer)
+      const [yesAuctionAddr, noAuctionAddr, yesTokenAddr, noTokenAddr, treasuryAddr] = await Promise.all([
+        proposal.yesAuction(),
+        proposal.noAuction(),
+        proposal.yesToken(),
+        proposal.noToken(),
+        proposal.treasury(),
+      ])
+
+      if (!yesAuctionAddr || !noAuctionAddr || !yesTokenAddr || !noTokenAddr || !treasuryAddr) {
+        toast.error("Proposal not ready")
+        return false
+      }
+
+      // Preflight: refunds must be enabled
+      const treasury = new ethers.Contract(treasuryAddr as string, treasury_abi as any, signer)
+      const enabled: boolean = await treasury.refundsEnabled().catch(() => false)
+      if (!enabled) {
+        toast.error("Refunds not enabled yet")
+        return false
+      }
+
+      const me = address as string
+      const steps: Array<{ token: string; auction: string; label: string }> = [
+        { token: noTokenAddr as string, auction: noAuctionAddr as string, label: "NO" },
+        { token: yesTokenAddr as string, auction: yesAuctionAddr as string, label: "YES" },
+      ]
+
+      let didAnything = false
+
+      for (const { token, auction, label } of steps) {
+        if (!token || token === ethers.ZeroAddress) continue
+        const erc20 = new ethers.Contract(token, marketToken_abi as any, signer)
+        const bal: bigint = await erc20.balanceOf(me)
+        if (!bal || bal === 0n) continue
+
+        // Ensure allowance to Treasury for token refunds
+        const cur: bigint = await erc20.allowance(me, treasuryAddr)
+        if (cur < bal) {
+          const txA = await erc20.approve(treasuryAddr, bal)
+          await txA.wait(1)
+        }
+
+        const auc = new ethers.Contract(auction, dutchAuction_abi as any, signer)
+        try {
+          const txR = await auc.refundTokens()
+          await txR.wait(1)
+          didAnything = true
+          toast.success(`Refunded t${label}`, { description: `Returned ${(Number(bal) / 1e18).toFixed(6)} t${label}` })
+          // Important: refund transfers full PYUSD balance. Stop after first success to avoid double-payout.
+          break
+        } catch (e: any) {
+          // If it failed, re-check refunds flag to give a clearer message
+          const stillEnabled: boolean = await treasury.refundsEnabled().catch(() => false)
+          if (!stillEnabled) {
+            toast.error("Refunds not enabled yet")
+          } else {
+            const msg = e?.shortMessage || e?.message || "Refund failed"
+            toast.error("Refund failed", { description: msg })
+          }
+          return false
+        }
+      }
+
+      if (!didAnything) {
+        toast.error("No tokens to refund")
+        return false
+      }
+
+      try { window.dispatchEvent(new Event('auction:tx')) } catch {}
+      return true
+    } catch (e: any) {
+      const msg = e?.shortMessage || e?.message || "Refund failed"
+      toast.error("Refund failed", { description: msg })
+      return false
+    } finally {
+      setIsClaiming(false)
+    }
   }
 
   if (isFailed) {
@@ -69,8 +162,8 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
           <CardDescription>Minimum bid requirement not met</CardDescription>
         </CardHeader>
         <CardContent className={fullHeight ? "flex-1 flex flex-col justify-end" : undefined}>
-          <Button className="w-full" onClick={async ()=>{ handleClaim() ; return true }} aria-disabled={!isConnected}>
-            Claim Collateral
+          <Button className="w-full" onClick={handleClaim} aria-disabled={!isConnected || isClaiming}>
+            {isClaiming ? "Claiming..." : "Claim Collateral"}
           </Button>
         </CardContent>
       </Card>
