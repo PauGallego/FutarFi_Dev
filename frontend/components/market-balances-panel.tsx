@@ -69,7 +69,7 @@ export function MarketBalancesPanel({ proposalId }: { proposalId: string }) {
             >
               <span className="text-sm font-medium" style={{ color: "#61cdff" }}>PyUSD</span>
               <span className="font-mono text-base" style={{ color: "#61cdff" }}>
-                {pyusdDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                {pyusdDisplay.toLocaleString(undefined, { maximumFractionDigits: 6 })} $
               </span>
             </div>
 

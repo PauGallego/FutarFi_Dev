@@ -330,7 +330,6 @@ export default function ProposalDetailPage({ params }: PageProps) {
                   proposalId={proposal.id}
                   onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }}
                 />
-                {/* Your Balances directly below the trade panel */}
                 <MarketBalancesPanel proposalId={proposal.id} />
               </div>
               

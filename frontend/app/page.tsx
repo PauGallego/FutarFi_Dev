@@ -35,7 +35,7 @@ export default function HomePage() {
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
         <div className="container relative mx-auto px-4 py-20 md:py-32">
-          <div className="flex flex-col items-center  justify-center text-center space-y-8 max-w-4xl mx-auto">
+          <div className="flex flex-col items-center  justify-center text-center space-y-8 max-w-6xl mx-auto">
 
             <div className="flex justify-center w-full justify-items-center">
               <TypewriterEffectSmooth
@@ -45,7 +45,7 @@ export default function HomePage() {
               />
             </div>
 
-            <p className="text-xl md:text-2xl text-muted-foreground  leading-relaxed w-auto">
+            <p className="text-xl md:text-2xl text-muted-foreground  leading-relaxed w-full max-w-5xl md:max-w-6xl">
               Futarchy combines prediction markets with decentralized governance. Create proposals, open prediction markets, and execute outcomes trustlessly. Let markets decide the future of your organization through decentralized governance
             </p>
 

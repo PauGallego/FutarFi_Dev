@@ -27,7 +27,7 @@ export function MarketDepthAndOrders({ market, orderBook, userOrders, onCancelOr
             aria-pressed={tab === 'book'}
             onClick={() => setTab('book')}
             className={`px-0 py-0 h-auto text-[15px] font-semibold border-b-2 transition-colors ${
-              tab === 'book' ? 'text-white border-white' : 'text-muted-foreground border-transparent'
+              tab === 'book' ? 'text-black dark:text-white border-black dark:border-white' : 'text-muted-foreground border-transparent'
             } bg-transparent hover:bg-transparent focus-visible:outline-none focus-visible:ring-0`}
           >
             Order Book
@@ -37,7 +37,7 @@ export function MarketDepthAndOrders({ market, orderBook, userOrders, onCancelOr
             aria-pressed={tab === 'yours'}
             onClick={() => setTab('yours')}
             className={`px-0 py-0 h-auto text-[15px] font-semibold border-b-2 transition-colors ${
-              tab === 'yours' ? 'text-white border-white' : 'text-muted-foreground border-transparent'
+              tab === 'yours' ? 'text-black dark:text-white border-black dark:border-white' : 'text-muted-foreground border-transparent'
             } bg-transparent hover:bg-transparent focus-visible:outline-none focus-visible:ring-0`}
           >
             Your Orders

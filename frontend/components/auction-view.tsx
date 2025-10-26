@@ -103,9 +103,10 @@ export function AuctionView({ auctionData, userBalance, proposalAddress, mode = 
   const { resolvedTheme } = useTheme()
   const { address } = useAccount()
   const publicClient = usePublicClient()
-  // Force white styling for auction chart line and axes per request
-  const lineColor = "#ffffff"
-  const textColor = "#ffffff"
+  // Theme-aware styling for auction chart line and axes
+  const isDark = (resolvedTheme ?? "dark") === "dark"
+  const lineColor = isDark ? "#ffffff" : "#000000"
+  const textColor = isDark ? "#ffffff" : "#000000"
   // Removed countdown here; will compute after fetching END_TIME
   const totalBids = auctionData.yesTotalBids + auctionData.noTotalBids
 
@@ -333,12 +334,34 @@ export function AuctionView({ auctionData, userBalance, proposalAddress, mode = 
     return pct > 100 ? 100 : pct
   }, [noSupplyForMin, noMinToOpen])
 
-  // Precompute X-axis ticks to avoid odd concatenated labels and control density
+  // Precompute X-axis ticks with proportional days/hours granularity and ensure last tick = auction end
   const xTicks = useMemo(() => {
     if (!startTime || !endTime || endTime <= startTime) return [] as number[]
-    const count = 6 // show up to 6 ticks including ends
     const duration = endTime - startTime
-    return Array.from({ length: count }, (_, i) => Math.round(startTime + (i * duration) / (count - 1)))
+    const day = 24 * 60 * 60
+    const hour = 60 * 60
+    const minute = 60
+    let step = hour
+    if (duration >= 5 * day) step = day
+    else if (duration >= 48 * hour) step = 12 * hour
+    else if (duration >= 24 * hour) step = 6 * hour
+    else if (duration >= 12 * hour) step = 3 * hour
+    else if (duration >= 6 * hour) step = hour
+    else if (duration >= 3 * hour) step = 30 * minute
+    else if (duration >= hour) step = 15 * minute
+    else if (duration >= 10 * minute) step = 5 * minute
+    else step = minute
+
+    const ticks: number[] = []
+    // Start exactly at startTime
+    let t = startTime
+    while (t < endTime) {
+      ticks.push(t)
+      t += step
+    }
+    // Ensure we include the exact end time as the final tick
+    if (ticks[ticks.length - 1] !== endTime) ticks.push(endTime)
+    return ticks
   }, [startTime, endTime])
 
   // Build countdown text (e.g., 1d 03:22:10) and fallback when ended
@@ -372,18 +395,28 @@ export function AuctionView({ auctionData, userBalance, proposalAddress, mode = 
         <div className={fullHeight ? "h-full" : "h-80"}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff" opacity={0.25} />
+                <CartesianGrid strokeDasharray="3 3" stroke={textColor} opacity={isDark ? 0.25 : 0.15} />
                 <XAxis
                   dataKey="time"
                   type="number"
                   scale="linear"
                   domain={startTime && endTime ? [startTime, endTime] : ["auto", "auto"] as any}
                   ticks={xTicks}
-                  tickFormatter={(t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  tickFormatter={(t: number) => {
+                    if (!startTime || !endTime) return ""
+                    const dur = endTime - startTime
+                    const d = new Date(t * 1000)
+                    // For multi-day ranges show day+time; otherwise HH:MM
+                    if (dur >= 24 * 60 * 60) {
+                      return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                    }
+                    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                  }}
                   stroke={textColor}
                   fontSize={12}
                   tick={{ fill: textColor }}
                   minTickGap={48}
+                  axisLine={{ stroke: textColor }}
                   label={{ value: "Time", position: "insideBottom", offset: -5, fill: textColor }}
                 />
                 <YAxis
@@ -397,14 +430,27 @@ export function AuctionView({ auctionData, userBalance, proposalAddress, mode = 
                   label={{ value: "", angle: -90, position: "insideLeft", fill: textColor }}
                 />
                 <Tooltip
-                  contentStyle={{
+                  contentStyle={isDark ? {
                     backgroundColor: "rgba(0,0,0,0.75)",
                     border: "1px solid rgba(255,255,255,0.2)",
                     borderRadius: "8px",
                     color: "#ffffff",
+                  } : {
+                    backgroundColor: "rgba(255,255,255,0.95)",
+                    border: "1px solid rgba(0,0,0,0.15)",
+                    borderRadius: "8px",
+                    color: "#000000",
                   }}
                   formatter={(value: any) => [`$${formatPriceFull(Number(value))}`, "Price"]}
-                  labelFormatter={(label: any) => new Date(Number(label) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  labelFormatter={(label: any) => {
+                    const t = Number(label)
+                    if (!startTime || !endTime) return new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                    const dur = endTime - startTime
+                    const d = new Date(t * 1000)
+                    return dur >= 24 * 60 * 60
+                      ? d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                  }}
                 />
                 <Line
                   type="linear"
@@ -413,7 +459,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress, mode = 
                   strokeWidth={2}
                   dot={(dotProps: any) => {
                     if (dotProps.payload.isCurrent) {
-                      return <AnimatedDot {...dotProps} color="#ffffff" key={`animated-${dotProps.index}`} />
+                      return <AnimatedDot {...dotProps} color={lineColor} key={`animated-${dotProps.index}`} />
                     }
                     return <Dot {...dotProps} r={0} key={`dot-${dotProps.index}`} />
                   }}

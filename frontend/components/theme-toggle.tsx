@@ -3,8 +3,6 @@
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
-import { Switch } from "@/components/switch-theme"
-import { Label } from "@/components/ui/label"
 
 export function ThemeToggle() {
   const [mounted, setMounted] = useState(false)
@@ -25,18 +23,17 @@ export function ThemeToggle() {
   const isDark = theme === "dark"
 
   return (
-    <div className="flex items-center gap-2">
-      <Sun className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-      <Switch
-        id="theme-toggle"
-        checked={isDark}
-        onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
-        aria-label="Toggle theme"
-      />
-      <Moon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-      <Label htmlFor="theme-toggle" className="sr-only">
-        Toggle between light and dark mode
-      </Label>
-    </div>
+    <button
+      type="button"
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      aria-label="Toggle theme"
+      className="inline-flex items-center justify-center rounded-md p-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {isDark ? (
+        <Sun className="h-5 w-5 text-foreground" aria-hidden="true" />
+      ) : (
+        <Moon className="h-5 w-5 text-foreground" aria-hidden="true" />
+      )}
+    </button>
   )
 }
