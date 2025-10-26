@@ -106,7 +106,8 @@ export const Button = ({ className, children, ...props }: ButtonProps) => {
     // Respect aria-disabled without using native disabled to allow custom UX (e.g., toasts)
     const ariaDisabled = (props as any)["aria-disabled"];
     if (ariaDisabled) {
-      props.onDisabledClick?.(event);
+      // call consumer-provided disabled click handler (not forwarded to DOM)
+      ;(props as any).onDisabledClick?.(event);
       return;
     }
     await animateLoading();
@@ -126,13 +127,14 @@ export const Button = ({ className, children, ...props }: ButtonProps) => {
 
   const {
     onClick,
+    onDisabledClick, // strip custom prop so it isn't forwarded to DOM
     onDrag,
     onDragStart,
     onDragEnd,
     onAnimationStart,
     onAnimationEnd,
     ...buttonProps
-  } = props;
+  } = props as ButtonProps & { onDisabledClick?: ButtonProps["onDisabledClick"] };
 
   return (
     <motion.button

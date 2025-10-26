@@ -396,6 +396,8 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                 onClick={handleCreateOrder}
                 aria-disabled={isDisabled}
                 onDisabledClick={() => {
+                  // Ignore clicks while a tx is pending (creating or approving)
+                  if (creating || isApproving) return;
                   if (!amount || invalidAmount) {
                     amountInputRef.current?.focus()
                     setAmountError("Please enter a valid amount.")
@@ -406,7 +408,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                   "w-full inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2",
                   // Color variant or muted when disabled (also affects loader/check via text-current)
                   isDisabled
-                    ? cn(variantDisabled, "opacity-60 cursor-not-allowed hover:ring-0 focus-visible:ring-0")
+                    ? cn(variantDisabled, "opacity-60 cursor-not-allowed hover:ring-0 focus-visible:ring-0", (creating || isApproving) && "pointer-events-none")
                     : cn(variantEnabled, tradeAction === "BUY" ? "hover:ring-green-500" : "hover:ring-red-500"),
                 )}
               >

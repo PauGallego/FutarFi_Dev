@@ -514,6 +514,9 @@ export default function NewProposalPage() {
                 aria-disabled={isDisabled}
                 onClick={handleSubmit}
                 onDisabledClick={() => {
+                  // If disabled due to pending tx, ignore clicks completely
+                  if (isPending) return
+                  // Otherwise show validation guidance
                   const v = validate()
                   setErrors(v)
                   setShowErrors(true)
@@ -522,11 +525,13 @@ export default function NewProposalPage() {
                     const el = document.getElementById(firstKey as string)
                     el?.focus()
                   }
-                  toast({ title: "Incomplete form", description: "Please complete the highlighted fields to continue.", variant: "destructive" })
+                  if (Object.keys(v).length > 0) {
+                    toast({ title: "Incomplete form", description: "Please complete the highlighted fields to continue.", variant: "destructive" })
+                  }
                 }}
                 className={
                   isDisabled
-                    ? "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium h-10 px-4 py-2 bg-muted text-muted-foreground border border-border cursor-not-allowed hover:bg-muted hover:ring-0 focus-visible:ring-0"
+                    ? "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium h-10 px-4 py-2 bg-muted text-muted-foreground border border-border cursor-not-allowed pointer-events-none hover:bg-muted hover:ring-0 focus-visible:ring-0"
                     : "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 h-10 px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 hover:ring-green-500"
                 }
               >
@@ -547,7 +552,7 @@ export default function NewProposalPage() {
             {txHash && <div>Transaction Hash: {txHash}</div>}
             {isConfirming && <div>Waiting for confirmation...</div>}
             {isConfirmed && <div>Transaction confirmed.</div>}
-            {error && <div>Error: {error.message}</div>}
+            {/* {error && <div>Error: {error.message}</div>} */}
           </form>
         </CardContent>
       </Card>
