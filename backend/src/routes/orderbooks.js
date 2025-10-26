@@ -612,9 +612,7 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
     if (!order || !order._id) {
       return res.status(500).json({ error: 'Failed to create order' });
     }
-    
 
-    
     // NEW: notify this user that their orders changed
     try { if (io) notifyUserOrdersUpdate(io, userAddress, { reason: 'order-created', changedOrderId: order._id.toString() }); } catch (e) {}
 
@@ -636,7 +634,6 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
         side: order.side,
         orderType: order.orderType === 'buy' ? 'sell' : 'buy', // Opposite type
         status: 'open',
-        userAddress: { $ne: order.userAddress }, // Exclude same user
         _id: { $ne: order._id } // Exclude the order we just created
       }).sort({ createdAt: 1 }); // Oldest first
       
@@ -1116,8 +1113,7 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
         _id: { $ne: order._id } // Exclude the order we just created
       }).sort({ createdAt: 1 }); // Oldest first
       
-      console.log(`Found ${existingOrders.length} existing orders to re-check for matching`);
-      
+      console.log(`Found ${existingOrders.length} existing orders to re-check for matching`); 
       for (const existingOrder of existingOrders) {
         try {
           await executeOrder(existingOrder, io);
@@ -2249,23 +2245,24 @@ async function executeOrder(order, io) {
     }
 
     // Finalize original order statuses and filledAmount in native units
+    const FILL_THRESHOLD = 0.999; // 99.9%
     if (order.orderType === 'buy') {
       const amt = toUnits(order.amount, pyusdDec);
       const prevFilled = toUnits(order.filledAmount || '0', pyusdDec);
       const newFilled = prevFilled + totalPyusdExecuted;
       order.filledAmount = fmt(newFilled, pyusdDec);
-      order.status = newFilled >= amt ? 'filled' : (newFilled > 0n ? 'partial' : order.status);
+      const fillRatio = amt > 0n ? Number(newFilled) / Number(amt) : 0;
+      order.status = fillRatio >= FILL_THRESHOLD ? 'filled' : (newFilled > 0n ? 'partial' : order.status);
     } else {
       const amt = toUnits(order.amount, tokenDec);
       const prevFilled = toUnits(order.filledAmount || '0', tokenDec);
       const newFilled = prevFilled + totalTokensExecuted;
       order.filledAmount = fmt(newFilled, tokenDec);
-      order.status = newFilled >= amt ? 'filled' : (newFilled > 0n ? 'partial' : order.status);
+      const fillRatio = amt > 0n ? Number(newFilled) / Number(amt) : 0;
+      order.status = fillRatio >= FILL_THRESHOLD ? 'filled' : (newFilled > 0n ? 'partial' : order.status);
     }
     order.updatedAt = new Date();
     await order.save();
-
-    console.log(`Order ${order._id} final status: ${order.status}, filled: ${order.filledAmount}/${order.amount}`);
 
     // NEW: notify original user if anything executed or changed
     try { if (io && (totalTokensExecuted > 0n || totalPyusdExecuted > 0n)) notifyUserOrdersUpdate(io, order.userAddress, { reason: 'order-updated', changedOrderId: order._id.toString() }); } catch (e) {}
