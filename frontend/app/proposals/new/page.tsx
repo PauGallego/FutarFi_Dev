@@ -275,7 +275,8 @@ export default function NewProposalPage() {
     // no-op here; navigation handled after receipt above
   }, [])
 
-  const isDisabled = !isFormValid || isPending
+  const isInvalid = !isFormValid
+  const isBusy = isPending || isConfirming
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
@@ -518,11 +519,13 @@ export default function NewProposalPage() {
             <div className="flex gap-4 pt-4">
               <StatefulButton
                 type="submit"
-                disabled={isDisabled}
-                aria-disabled={isDisabled}
+                // Do NOT use native disabled for invalid form so clicks can reveal inline errors.
+                // Only disable natively when a tx is in-flight to block interaction.
+                disabled={isBusy}
+                aria-disabled={isInvalid || isBusy}
                 onDisabledClick={() => {
                   // If disabled due to pending tx, ignore clicks completely
-                  if (isPending || isConfirming) return
+                  if (isBusy) return
                   // Otherwise show validation guidance
                   const v = validate()
                   setErrors(v)
@@ -537,9 +540,11 @@ export default function NewProposalPage() {
                   }
                 }}
                 className={
-                  isDisabled
-                    ? "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium h-10 px-4 py-2 bg-muted text-muted-foreground border border-border cursor-not-allowed pointer-events-none hover:bg-muted hover:ring-0 focus-visible:ring-0"
-                    : "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 h-10 px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 hover:ring-green-500"
+                  (isInvalid && !isBusy)
+                    ? "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium h-10 px-4 py-2 bg-muted text-muted-foreground border border-border hover:bg-muted hover:ring-0 focus-visible:ring-0"
+                    : isBusy
+                      ? "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium h-10 px-4 py-2 bg-muted text-muted-foreground border border-border cursor-not-allowed pointer-events-none hover:bg-muted hover:ring-0 focus-visible:ring-0"
+                      : "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 h-10 px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 hover:ring-green-500"
                 }
               >
                 {isPending ? "Creating..." : (isConfirming ? "Confirming..." : "Create Proposal")}
@@ -549,7 +554,7 @@ export default function NewProposalPage() {
                 variant="outline"
                 size="lg"
                 onClick={() => router.push("/proposals")}
-                disabled={isPending || isConfirming}
+                disabled={isBusy}
               >
                 Cancel
               </Button>
