@@ -82,283 +82,274 @@ export function AuctionResolved({
         </CardHeader>
       </Card>
 
-      {/* Winning Market */}
-      <Card className="border-green-500/50 shadow-md">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="h-6 w-6 text-green-600 dark:text-green-400" />
-              <div>
-                <CardTitle className="text-2xl">Winning Market</CardTitle>
-                <CardDescription>Final settlement details</CardDescription>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge className="bg-green-600 text-white text-lg px-4 py-2 hover:bg-green-700">{outcomeLabel}</Badge>
-              
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Final Price</p>
-              <p className="text-3xl font-bold text-green-600 dark:text-green-400">${winningPrice.toFixed(4)}</p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Total Volume</p>
-              <p className="text-3xl font-bold text-foreground">${totalVolume.toLocaleString()}</p>
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <h3 className="text-xl font-bold mb-4 text-foreground">Butterfly Option Strategy</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Card 1: Real Skin in the Game */}
-              <div className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-blue-500/10 via-background to-background p-6 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/20 hover:border-blue-500/50">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <div className="relative z-10">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="rounded-full bg-blue-500/20 p-2 group-hover:bg-blue-500/30 transition-colors">
-                      <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <h4 className="font-semibold text-base text-foreground">Real Skin in the Game</h4>
+      {/* Two-column layout: Left = Winning + Chart, Right = Losing + Summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          {/* Winning Market */}
+          <Card className="border-green-500/50 shadow-md">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <TrendingUp className="h-6 w-6 text-green-600 dark:text-green-400" />
+                  <div>
+                    <CardTitle className="text-2xl">Winning Market</CardTitle>
+                    <CardDescription>Final settlement details</CardDescription>
                   </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Participants have genuine commitment when passing proposals through an option-based approach
-                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge className={`text-white text-lg px-4 py-2 ${winningMarket === 'YES' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>{outcomeLabel}</Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Final Price</p>
+                  <p className="text-3xl font-bold text-green-600 dark:text-green-400">${winningPrice.toFixed(4)}</p>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Total Volume</p>
+                  <p className="text-3xl font-bold text-foreground">${totalVolume.toLocaleString()}</p>
                 </div>
               </div>
 
-              {/* Card 2: Proportional Rewards */}
-              <div className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-green-500/10 via-background to-background p-6 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/20 hover:border-green-500/50">
-                <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <div className="relative z-10">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="rounded-full bg-green-500/20 p-2 group-hover:bg-green-500/30 transition-colors">
-                      <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <div className="mb-4">
+                <h3 className="text-xl font-bold mb-4 text-foreground">Butterfly Option Strategy</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Card 1: Real Skin in the Game */}
+                  <div className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-blue-500/10 via-background to-background p-6 transition-all duration-300 hover:shadow-lg hover:shadow-blue-500/20 hover:border-blue-500/50">
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    <div className="relative z-10">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="rounded-full bg-blue-500/20 p-2 group-hover:bg-blue-500/30 transition-colors">
+                          <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <h4 className="font-semibold text-base text-foreground">Real Skin in the Game</h4>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Participants have genuine commitment when passing proposals through an option-based approach
+                      </p>
                     </div>
-                    <h4 className="font-semibold text-base text-foreground">Proportional Rewards</h4>
                   </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Users are rewarded based on how close their prediction is to the actual spot price
-                  </p>
+
+                  {/* Card 2: Proportional Rewards */}
+                  <div className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-green-500/10 via-background to-background p-6 transition-all duration-300 hover:shadow-lg hover:shadow-green-500/20 hover:border-green-500/50">
+                    <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    <div className="relative z-10">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="rounded-full bg-green-500/20 p-2 group-hover:bg-green-500/30 transition-colors">
+                          <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+                        </div>
+                        <h4 className="font-semibold text-base text-foreground">Proportional Rewards</h4>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Users are rewarded based on how close their prediction is to the actual spot price
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Limited Downside Risk */}
+                  <div className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-amber-500/10 via-background to-background p-6 transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/20 hover:border-amber-500/50">
+                    <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    <div className="relative z-10">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="rounded-full bg-amber-500/20 p-2 group-hover:bg-amber-500/30 transition-colors">
+                          <Shield className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <h4 className="font-semibold text-base text-foreground">Limited Downside Risk</h4>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Premium-based betting reflects true conviction while protecting participants from unlimited losses
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Flexible Exercise */}
+                  <div className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-orange-500/10 via-background to-background p-6 transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/20 hover:border-orange-500/50">
+                    <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    <div className="relative z-10">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="rounded-full bg-orange-500/20 p-2 group-hover:bg-orange-500/30 transition-colors">
+                          <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                        </div>
+                        <h4 className="font-semibold text-base text-foreground">Flexible Exercise</h4>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Short-term options can be exercised at any moment, giving users control over their exposure
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Card 3: Limited Downside Risk */}
-              <div className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-amber-500/10 via-background to-background p-6 transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/20 hover:border-amber-500/50">
-                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <div className="relative z-10">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="rounded-full bg-amber-500/20 p-2 group-hover:bg-amber-500/30 transition-colors">
-                      <Shield className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                    </div>
-                    <h4 className="font-semibold text-base text-foreground">Limited Downside Risk</h4>
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Premium-based betting reflects true conviction while protecting participants from unlimited losses
-                  </p>
-                </div>
+              {/* Butterfly Spread Chart */}
+              <div className="flex justify-center items-center mt-10" style={{ minHeight: '420px' }}>
+                <ResponsiveContainer width="100%" height={380}>
+                  <LineChart data={butterflyData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" />
+                    <XAxis dataKey="price" />
+                    <YAxis domain={[-1.5, 2.5]} />
+                    <Tooltip
+                      formatter={(value: number) => {
+                        if (value > 0) return `$${(value * winningPrice).toFixed(2)}`
+                        if (value < 0) return `$${(Math.abs(value) * 1.5 * winningPrice).toFixed(2)}`
+                        if (value === 0) return `$${winningPrice.toFixed(2)}`
+                      }}
+                    />
+
+                    <Line type="linear" dataKey="payoff" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} />
+
+                    <Line
+                      type="linear"
+                      dataKey="payoff"
+                      data={zeroLineData}
+                      stroke="#ef4444"
+                      strokeDasharray="4 2"
+                      dot={false}
+                    />
+
+                    <ReferenceLine
+                      y={10}
+                      stroke="#f59e0b"
+                      strokeDasharray="3 3"
+                      label={{ value: "Start +10", position: "top" }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
 
-              {/* Card 4: Flexible Exercise */}
-              <div className="group relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-orange-500/10 via-background to-background p-6 transition-all duration-300 hover:shadow-lg hover:shadow-orange-500/20 hover:border-orange-500/50">
-                <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <div className="relative z-10">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="rounded-full bg-orange-500/20 p-2 group-hover:bg-orange-500/30 transition-colors">
-                      <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+
+              {userWinningTokens > 0 && false && (
+                <div className="pt-4 border-t border-border">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Your Winning Tokens</p>
+                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                        {userWinningTokens.toFixed(2)} {winningMarket}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Value: ${(userWinningTokens * winningPrice).toFixed(2)}
+                      </p>
                     </div>
-                    <h4 className="font-semibold text-base text-foreground">Flexible Exercise</h4>
+                    <Coins className="h-8 w-8 text-green-600 dark:text-green-400" />
                   </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Short-term options can be exercised at any moment, giving users control over their exposure
-                  </p>
                 </div>
-              </div>
-            </div>
-          </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
-          {/* Butterfly Spread Chart */}
-          <div className="flex justify-center items-center mt-10" style={{ minHeight: '420px' }}>
-            <ResponsiveContainer width="80%" height={380}>
-              <LineChart data={butterflyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" />
-                <XAxis dataKey="price" />
-                <YAxis domain={[-1.5, 2.5]} />
-                <Tooltip
-                  formatter={(value: number) => {
-                    if (value > 0) return `$${(value * winningPrice).toFixed(2)}`
-                    if (value < 0) return `$${(Math.abs(value) * 1.5 * winningPrice).toFixed(2)}`
-                    if (value === 0) return `$${winningPrice.toFixed(2)}`
-                  }}
-                />
-
-                <Line type="linear" dataKey="payoff" stroke="#22c55e" strokeWidth={2} dot={{ r: 4 }} />
-
-                <Line
-                  type="linear"
-                  dataKey="payoff"
-                  data={zeroLineData}
-                  stroke="#ef4444"
-                  strokeDasharray="4 2"
-                  dot={false}
-                />
-
-                <ReferenceLine
-                  y={10}
-                  stroke="#f59e0b"
-                  strokeDasharray="3 3"
-                  label={{ value: "Start +10", position: "top" }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-
-          {userWinningTokens > 0 && false && (
-            <div className="pt-4 border-t border-border">
-              <div className="flex items-center justify-between mb-4">
+        {/* Right column: Losing Market + Market Summary */}
+        <div className="lg:col-span-1 space-y-6">
+          {/* Losing Market */}
+          <Card className="border-border/50 shadow-md">
+            <CardHeader>
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Your Winning Tokens</p>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {userWinningTokens.toFixed(2)} {winningMarket}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Value: ${(userWinningTokens * winningPrice).toFixed(2)}
-                  </p>
+                  <CardTitle className="text-xl">Losing Market</CardTitle>
+                  <CardDescription>Reclaim your tokens from the losing side</CardDescription>
                 </div>
-                <Coins className="h-8 w-8 text-green-600 dark:text-green-400" />
+                <Badge variant="outline" className="text-lg px-4 py-2">
+                  {losingMarket}
+                </Badge>
               </div>
-              {/* Claim Options button removed as per request */}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Losing Market */}
-      <Card className="border-border/50 shadow-md">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-xl">Losing Market</CardTitle>
-              <CardDescription>Reclaim your tokens from the losing side</CardDescription>
-            </div>
-            <Badge variant="outline" className="text-lg px-4 py-2">
-              {losingMarket}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Final Price</p>
-              <p className="text-2xl font-semibold text-muted-foreground">${losingPrice.toFixed(4)}</p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Market Status</p>
-              <Badge variant="secondary" className="text-base">
-                Settled
-              </Badge>
-            </div>
-          </div>
-
-          {userLosingTokens > 0 && (
-            <div className="pt-4 border-t border-border">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Your Tokens</p>
-                  <p className="text-xl font-semibold text-foreground">
-                    {userLosingTokens.toFixed(2)} {losingMarket}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">These tokens can be reclaimed</p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Final Price</p>
+                  <p className="text-2xl font-semibold text-muted-foreground">${losingPrice.toFixed(4)}</p>
                 </div>
-                <Coins className="h-6 w-6 text-muted-foreground" />
               </div>
-              {/* Token amounts and treasury PYUSD + claimable info */}
-              <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="rounded-md border bg-muted/30 p-3">
-                  <p className="text-xs text-muted-foreground">Your tYES</p>
-                  <p className="text-lg font-semibold">{Number(userYesTokens || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
-                </div>
-                <div className="rounded-md border bg-muted/30 p-3">
-                  <p className="text-xs text-muted-foreground">Your tNO</p>
-                  <p className="text-lg font-semibold">{Number(userNoTokens || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
-                </div>
-                {userTreasuryPyusdFormatted && (
-                  <div className="rounded-md border bg-muted/30 p-3">
-                    <p className="text-xs text-muted-foreground">Your PYUSD in Treasury</p>
-                    <p className="text-lg font-semibold">{Number(userTreasuryPyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+              {userLosingTokens > 0 && (
+                <div className="pt-4 border-t border-border">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Your Tokens</p>
+                      <p className="text-xl font-semibold text-foreground">
+                        {userLosingTokens.toFixed(2)} {losingMarket}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">These tokens can be reclaimed</p>
+                    </div>
+                    <Coins className="h-6 w-6 text-muted-foreground" />
                   </div>
-                )}
-                {claimablePyusdFormatted && (
-                  <div className="rounded-md border bg-emerald-500/5 p-3">
-                    <p className="text-xs text-muted-foreground">Claimable PYUSD</p>
-                    <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">
-                      {Number(claimablePyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}
-                    </p>
+                  {/* Token amounts and treasury PYUSD + claimable info */}
+                  <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3">
+                    {userTreasuryPyusdFormatted && (
+                      <div className="rounded-md border bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground">Your PYUSD in Treasury</p>
+                        <p className="text-lg font-semibold">{Number(userTreasuryPyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                      </div>
+                    )}
+                    {claimablePyusdFormatted && (
+                      <div className="rounded-md border bg-emerald-500/5 p-3">
+                        <p className="text-xs text-muted-foreground">Claimable PYUSD</p>
+                        <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">
+                          {Number(claimablePyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <Button
-                onClick={async () => {
-                  if (!canClaim || isClaiming) return
-                  try {
-                    setIsClaiming(true)
-                    await Promise.resolve(onClaimLosingTokens())
-                  } finally {
-                    setIsClaiming(false)
-                  }
-                }}
-                className={[
-                  "w-full text-base py-5",
-                  "rounded-md text-white",
-                  "bg-gradient-to-b from-emerald-500 to-emerald-600",
-                  "shadow ring-1 ring-emerald-400/40",
-                  "transition-all duration-200",
-                  "hover:from-emerald-500/90 hover:to-emerald-600/90 hover:shadow-lg hover:shadow-emerald-500/20",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                ].join(" ")}
-                size="lg"
-                disabled={!canClaim || isClaiming}
-              >
-                <Coins className="mr-2 h-4 w-4" />
-                {isClaiming ? "Claiming..." : "Claim PYUSD Collateral"}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  <Button
+                    onClick={async () => {
+                      if (!canClaim || isClaiming) return
+                      try {
+                        setIsClaiming(true)
+                        await Promise.resolve(onClaimLosingTokens())
+                      } finally {
+                        setIsClaiming(false)
+                      }
+                    }}
+                    className={[
+                      "w-full text-base py-5",
+                      "rounded-md text-white",
+                      "bg-gradient-to-b from-emerald-500 to-emerald-600",
+                      "shadow ring-1 ring-emerald-400/40",
+                      "transition-all duration-200",
+                      "hover:from-emerald-500/90 hover:to-emerald-600/90 hover:shadow-lg hover:shadow-emerald-500/20",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400",
+                      "disabled:opacity-50 disabled:cursor-not-allowed",
+                    ].join(" ")}
+                    size="lg"
+                    disabled={!canClaim || isClaiming}
+                  >
+                    <Coins className="mr-2 h-4 w-4" />
+                    {isClaiming ? "Claiming..." : "Claim PYUSD Collateral"}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* Market Summary */}
-      <Card className="border-border/50">
-        <CardHeader>
-          <CardTitle>Market Summary</CardTitle>
-          <CardDescription>Final statistics for this prediction market</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">YES Final Price</p>
-              <p className="text-xl font-semibold">${finalYesPrice.toFixed(4)}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">NO Final Price</p>
-              <p className="text-xl font-semibold">${finalNoPrice.toFixed(4)}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Price Difference (YES - NO)</p>
-              <p className="text-xl font-semibold">${priceDiff.toFixed(4)}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">Total Volume</p>
-              <p className="text-xl font-semibold">${totalVolume.toLocaleString()}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          {/* Market Summary */}
+          <Card className="border-border/50">
+            <CardHeader>
+              <CardTitle>Market Summary</CardTitle>
+              <CardDescription>Final statistics for this prediction market</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">YES Final Price</p>
+                  <p className="text-xl font-semibold">${finalYesPrice.toFixed(4)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">NO Final Price</p>
+                  <p className="text-xl font-semibold">${finalNoPrice.toFixed(4)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Price Difference (YES - NO)</p>
+                  <p className="text-xl font-semibold">${priceDiff.toFixed(4)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Total Volume</p>
+                  <p className="text-xl font-semibold">${totalVolume.toLocaleString()}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   )
 }
