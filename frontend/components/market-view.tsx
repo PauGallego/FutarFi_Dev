@@ -3,7 +3,8 @@ import React, { useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { MarketDepthAndOrders } from "@/components/market-depth-orders"
 import type { MarketData, MarketOption, OrderBookEntry, UserOrder } from "@/lib/types"
-import { createChart, CandlestickSeries } from "lightweight-charts"
+import { createChart, LineSeries } from "lightweight-charts"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 interface MarketViewProps {
   marketData: MarketData
   userOrders: UserOrder[]
@@ -15,78 +16,9 @@ interface MarketViewProps {
   proposalId?: string
 }
 
-let randomFactor = 25 + Math.random() * 25
-const samplePoint = (i: number): number => (
-  i * (
-    0.5 +
-    Math.sin(i / 1) * 0.2 +
-    Math.sin(i / 2) * 0.4 +
-    Math.sin(i / randomFactor) * 0.8 +
-    Math.sin(i / 50) * 0.5
-  )
-)
-function generateData(numberOfCandles: number, updatesPerCandle: number, startAt: number) {
-  const createCandle = (val: number, time: number) => ({
-    time,
-    open: val,
-    high: val,
-    low: val,
-    close: val,
-  })
-
-  const updateCandle = (candle: any, val: number) => ({
-    time: candle.time,
-    close: val,
-    open: candle.open,
-    low: Math.min(candle.low, val),
-    high: Math.max(candle.high, val),
-  })
-  randomFactor = 25 + Math.random() * 25
-  const date = new Date(Date.UTC(2018, 0, 1, 12, 0, 0, 0))
-  const numberOfPoints = numberOfCandles * updatesPerCandle
-  const initialData: any[] = []
-  const realtimeUpdates: any[] = []
-  let lastCandle: any
-  let previousValue = samplePoint(-1)
-
-  for (let i = 0; i < numberOfPoints; ++i) {
-    if (i % updatesPerCandle === 0) {
-      date.setUTCDate(date.getUTCDate() + 1)
-    }
-    const time = date.getTime() / 1000
-    let value = samplePoint(i)
-    const diff = (value - previousValue) * Math.random()
-    value = previousValue + diff
-    previousValue = value
-    if (i % updatesPerCandle === 0) {
-      const candle = createCandle(value, time)
-      lastCandle = candle
-      if (i >= startAt) {
-        realtimeUpdates.push(candle)
-      }
-    } else {
-      const newCandle = updateCandle(lastCandle, value)
-      lastCandle = newCandle
-      if (i >= startAt) {
-        realtimeUpdates.push(newCandle)
-      } else if ((i + 1) % updatesPerCandle === 0) {
-        initialData.push(newCandle)
-      }
-    }
-  }
-
-  return {
-    initialData,
-    realtimeUpdates,
-  }
-}
-
-function* getNextRealtimeUpdate(realtimeData: any[]) {
-  for (const dataPoint of realtimeData) {
-    yield dataPoint
-  }
-  return null
-}
+// Helper to map backend candle to lightweight-charts format
+type LinePoint = { time: number; value: number }
+const toSecs = (ts: string) => Math.floor(new Date(ts).getTime() / 1000)
 
 export function MarketView({
   marketData,
@@ -121,29 +53,105 @@ export function MarketView({
     } as const
 
     const chart = createChart(container, chartOptions as any)
-    const series = (chart as any).addSeries
-      ? (chart as any).addSeries(CandlestickSeries, {
-        upColor: '#26a69a',
-        downColor: '#ef5350',
-        borderVisible: false,
-        wickUpColor: '#26a69a',
-        wickDownColor: '#ef5350',
-      })
-      : (chart as any).addCandlestickSeries({
-        upColor: '#26a69a',
-        downColor: '#ef5350',
-        borderVisible: false,
-        wickUpColor: '#26a69a',
-        wickDownColor: '#ef5350',
-      })
+    // YES (approve) in green, NO (reject) in red
+    const yesSeries = (chart as any).addSeries
+      ? (chart as any).addSeries(LineSeries, {
+          color: '#16a34a',
+          lineWidth: 2,
+        })
+      : (chart as any).addLineSeries({
+          color: '#16a34a',
+          lineWidth: 2,
+        })
+    const noSeries = (chart as any).addSeries
+      ? (chart as any).addSeries(LineSeries, {
+          color: '#ef4444',
+          lineWidth: 2,
+        })
+      : (chart as any).addLineSeries({
+          color: '#ef4444',
+          lineWidth: 2,
+        })
 
     // Ensure container has enough vertical space
     container.style.height = '420px'
 
-    const data = generateData(2500, 20, 1000)
-    series.setData(data.initialData)
-    chart.timeScale().fitContent()
-    chart.timeScale().scrollToPosition(5, true)
+    // Initial fetch + realtime polling from backend (both markets)
+    const controller = new AbortController()
+    const interval = '1m'
+    const limit = 300
+    let lastYesSec = 0
+    let lastNoSec = 0
+
+    const mapLine = (candles: any[]): LinePoint[] =>
+      candles.map((c: any) => ({
+        time: toSecs(c.timestamp),
+        value: Number(c.close ?? c.open ?? 0),
+      }))
+
+    const loadInitial = async () => {
+      if (!proposalId) return
+      try {
+        const [resYes, resNo] = await Promise.all([
+          fetch(`${API_BASE}/orderbooks/${proposalId}/yes/candles?interval=${interval}&limit=${limit}`, { signal: controller.signal }),
+          fetch(`${API_BASE}/orderbooks/${proposalId}/no/candles?interval=${interval}&limit=${limit}`, { signal: controller.signal }),
+        ])
+        const [jsonYes, jsonNo] = await Promise.all([
+          resYes.ok ? resYes.json().catch(() => null) : null,
+          resNo.ok ? resNo.json().catch(() => null) : null,
+        ])
+        const yes = Array.isArray(jsonYes?.candles) ? mapLine(jsonYes.candles) : []
+        const no = Array.isArray(jsonNo?.candles) ? mapLine(jsonNo.candles) : []
+        if (yes.length > 0) {
+          yesSeries.setData(yes)
+          lastYesSec = yes[yes.length - 1].time
+        }
+        if (no.length > 0) {
+          noSeries.setData(no)
+          lastNoSec = no[no.length - 1].time
+        }
+        chart.timeScale().fitContent()
+        chart.timeScale().scrollToPosition(5, true)
+      } catch (_) { /* ignore */ }
+    }
+
+    const poll = async () => {
+      if (!proposalId) return
+      try {
+        const [resYes, resNo] = await Promise.all([
+          fetch(`${API_BASE}/orderbooks/${proposalId}/yes/candles?interval=${interval}&limit=${limit}`, { signal: controller.signal }),
+          fetch(`${API_BASE}/orderbooks/${proposalId}/no/candles?interval=${interval}&limit=${limit}`, { signal: controller.signal }),
+        ])
+        const [jsonYes, jsonNo] = await Promise.all([
+          resYes.ok ? resYes.json().catch(() => null) : null,
+          resNo.ok ? resNo.json().catch(() => null) : null,
+        ])
+        const yes = Array.isArray(jsonYes?.candles) ? mapLine(jsonYes.candles) : []
+        const no = Array.isArray(jsonNo?.candles) ? mapLine(jsonNo.candles) : []
+        if (yes.length > 0) {
+          const newYes = yes.filter(p => p.time > lastYesSec)
+          if (newYes.length > 0) {
+            for (const p of newYes) { yesSeries.update(p); lastYesSec = p.time }
+          } else {
+            const last = yes[yes.length - 1]
+            if (last && last.time === lastYesSec) yesSeries.update(last)
+          }
+        }
+        if (no.length > 0) {
+          const newNo = no.filter(p => p.time > lastNoSec)
+          if (newNo.length > 0) {
+            for (const p of newNo) { noSeries.update(p); lastNoSec = p.time }
+          } else {
+            const last = no[no.length - 1]
+            if (last && last.time === lastNoSec) noSeries.update(last)
+          }
+        }
+        try { chart.timeScale().scrollToRealTime?.() } catch {}
+      } catch (_) { /* ignore */ }
+    }
+
+    void loadInitial()
+    const intervalID = window.setInterval(() => { void poll() }, 5000)
 
     // Hide TradingView logo/link if present (lightweight-charts branding anchor)
     const hideBranding = () => {
@@ -156,16 +164,6 @@ export function MarketView({
     const mo = new MutationObserver(() => hideBranding())
     mo.observe(container, { childList: true, subtree: true })
 
-    const streamingDataProvider = getNextRealtimeUpdate(data.realtimeUpdates)
-    const intervalID = window.setInterval(() => {
-      const update = streamingDataProvider.next()
-      if ((update as any).done) {
-        clearInterval(intervalID)
-        return
-      }
-      series.update((update as any).value)
-    }, 100)
-
     const onResize = () => {
       chart.applyOptions({ height: 420 })
     }
@@ -173,11 +171,12 @@ export function MarketView({
 
     return () => {
       clearInterval(intervalID)
+      controller.abort()
       window.removeEventListener('resize', onResize)
       mo.disconnect()
       chart.remove()
     }
-  }, [])
+  }, [proposalId])
 
   return (
     <div className="space-y-6">
