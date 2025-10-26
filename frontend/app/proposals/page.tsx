@@ -111,58 +111,7 @@ export default function ProposalsPage() {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`
   }
 
-  // Inline component to show quorum shortfall details for Cancelled proposals
-  function QuorumShortfall({ proposalAddress, yesAuction, noAuction }: { proposalAddress?: `0x${string}`; yesAuction?: `0x${string}`; noAuction?: `0x${string}` }) {
-    // Lazy import hooks to avoid top-level dependency cycles
-    // We use wagmi hooks locally; safe in client component
-    const { useReadContract } = require('wagmi') as typeof import('wagmi')
-    const { dutchAuction_abi } = require('@/contracts/dutchAuction-abi') as typeof import('@/contracts/dutchAuction-abi')
-    const { marketToken_abi } = require('@/contracts/marketToken-abi') as typeof import('@/contracts/marketToken-abi')
-    const { proposal_abi } = require('@/contracts/proposal-abi') as typeof import('@/contracts/proposal-abi')
-
-    const canReadYes = !!yesAuction
-    const canReadNo = !!noAuction
-    const canReadProposal = !!proposalAddress
-
-    const { data: minYes } = useReadContract({ address: yesAuction!, abi: dutchAuction_abi, functionName: 'MIN_TO_OPEN', query: { enabled: canReadYes } })
-    const { data: minNo }  = useReadContract({ address: noAuction!,  abi: dutchAuction_abi, functionName: 'MIN_TO_OPEN', query: { enabled: canReadNo } })
-    // Read PYUSD address from Proposal, then read current balances held by each auction (raised amount)
-    const { data: pyusdAddr } = useReadContract({ address: proposalAddress!, abi: proposal_abi, functionName: 'pyUSD', query: { enabled: canReadProposal } })
-    const pyusd = pyusdAddr as `0x${string}` | undefined
-    const canReadPyusd = !!pyusd
-    const { data: yesRaised } = useReadContract({ address: pyusd!, abi: marketToken_abi, functionName: 'balanceOf', args: [yesAuction!], query: { enabled: canReadPyusd && canReadYes } })
-    const { data: noRaised }  = useReadContract({ address: pyusd!, abi: marketToken_abi, functionName: 'balanceOf', args: [noAuction!],  query: { enabled: canReadPyusd && canReadNo } })
-
-    const yesMin = Number((minYes as bigint) ?? 0n)
-    const noMin  = Number((minNo as bigint) ?? 0n)
-    const yesAmt = Number((yesRaised as bigint) ?? 0n)
-    const noAmt  = Number((noRaised as bigint) ?? 0n)
-
-    // Values are in 6d PyUSD per other parts of app; compute coverage and missing percent
-    const pct = (num: number, den: number) => den > 0 ? Math.min(100, (num / den) * 100) : 0
-    const short = (num: number, den: number) => Math.max(0, 100 - pct(num, den))
-
-    const yesShort = short(yesAmt, yesMin)
-    const noShort  = short(noAmt, noMin)
-
-    const items: Array<{ label: 'YES' | 'NO'; missing: number }> = []
-    if (yesMin > 0 && yesShort > 0.0001) items.push({ label: 'YES', missing: yesShort })
-    if (noMin  > 0 && noShort  > 0.0001) items.push({ label: 'NO',  missing: noShort })
-
-    if (items.length === 0) return null
-
-    return (
-      <div className="w-full mt-2 text-xs sm:text-sm text-amber-600 dark:text-amber-400">
-        <span className="font-medium">Quorum not reached:</span>{' '}
-        {items.map((it, idx) => (
-          <span key={it.label}>
-            {it.label} − {it.missing.toFixed(1)}%
-            {idx < items.length - 1 ? ', ' : ''}
-          </span>
-        ))}
-      </div>
-    )
-  }
+  
 
 
   return (
@@ -219,7 +168,7 @@ export default function ProposalsPage() {
       ) : (
         <div className="flex flex-col gap-1 space-y-4 ">
           {/* Wallet guard modal when trying to enter a proposal without connection */}
-          <Dialog open={guardOpen && !isConnected} onOpenChange={setGuardOpen}>
+          <Dialog open={guardOpen && !isConnected && connectionChecked} onOpenChange={setGuardOpen}>
             <DialogContent
               showCloseButton={true}
               className="bg-transparent border border-black/10 dark:border-white/20"
@@ -231,7 +180,9 @@ export default function ProposalsPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="flex items-center justify-center pt-2">
-                <ConnectWalletButton onBeforeOpen={() => setGuardOpen(false)} />
+                {connectionChecked
+                  ? <ConnectWalletButton onBeforeOpen={() => setGuardOpen(false)} />
+                  : <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />}
               </div>
             </DialogContent>
           </Dialog>
@@ -274,9 +225,6 @@ export default function ProposalsPage() {
                       <span>Started at: {new Date(proposal.auctionStartTime).toLocaleDateString()}</span>
                     </div>
                   </div>
-                  {stateKey === 'Cancelled' && (
-                    <QuorumShortfall proposalAddress={proposal.address} yesAuction={proposal.yesAuction} noAuction={proposal.noAuction} />
-                  )}
                 </CardContent>
               </Card>
             </Link>
