@@ -158,7 +158,10 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
   const [balances, setBalances] = useState<{ tYES: string; tNO: string; treasuryPYUSD: string; pyusdWallet: string } | null>(null)
   useEffect(() => {
     if (!isFailed || !isConnected || !address || !proposalAddress) return
-    (async () => {
+
+    let cancelled = false
+
+    const fetchBalances = async () => {
       try {
         const anyWindow = window as any
         if (!anyWindow?.ethereum) return
@@ -193,11 +196,23 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
         const shareNO = noSupplyRaw > 0n ? (tNORaw * potNoRaw) / noSupplyRaw : 0n
         const treasuryPYUSD = ethers.formatUnits((BigInt(shareYES) + BigInt(shareNO)), 6)
         const pyusdWallet = ethers.formatUnits(pyusdWalletRaw, 6)
-        setBalances({ tYES, tNO, treasuryPYUSD, pyusdWallet })
+        if (!cancelled) setBalances({ tYES, tNO, treasuryPYUSD, pyusdWallet })
       } catch {
-        setBalances(null)
+        if (!cancelled) setBalances(null)
       }
-    })()
+    }
+
+    // Initial load
+    fetchBalances()
+
+    // Refresh on any auction-related tx broadcast
+    const onTx = () => { fetchBalances() }
+    try { window.addEventListener("auction:tx", onTx) } catch {}
+
+    return () => {
+      cancelled = true
+      try { window.removeEventListener("auction:tx", onTx) } catch {}
+    }
   }, [isFailed, isConnected, address, proposalAddress])
 
   if (isFailed) {
