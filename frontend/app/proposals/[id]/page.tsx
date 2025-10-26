@@ -14,6 +14,8 @@ import { MarketTradePanel } from "@/components/market-trade-panel"
 import { MarketBalancesPanel } from "@/components/market-balances-panel"
 import { MarketPriceHeader } from "@/components/market-price-header"
 import { useChainId, useAccount } from "wagmi"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { ConnectWalletButton } from "@/components/connect-wallet-button"
 import type { Proposal, UserOrder, MarketOption, UserBalance } from "@/lib/types"
 import { useGetProposalById } from "@/hooks/use-get-proposalById"
 import { useGetUserOrders } from "@/hooks/use-get-user-orders"
@@ -152,14 +154,11 @@ export default function ProposalDetailPage({ params }: PageProps) {
   const chainId = useChainId()
   const { isConnected, status } = useAccount()
   const router = useRouter()
-
-  // Redirect only when wallet status is definitively disconnected
+  const [showGuard, setShowGuard] = useState(false)
   useEffect(() => {
-    if (status === "disconnected") {
-      router.replace("/proposals")
-      toast.error("Please connect your wallet to view proposals")
-    }
-  }, [status, router])
+    // Open guard when disconnected; allow user to dismiss with the X
+    setShowGuard(!isConnected)
+  }, [isConnected])
 
   const { proposal: hookProposal, isLoading: hookLoading, error: hookError } = useGetProposalById(id)
 
@@ -260,6 +259,24 @@ export default function ProposalDetailPage({ params }: PageProps) {
 
   return (
     <div className="container mx-auto px-4 py-12">
+      {/* Wallet connect required modal */}
+      <Dialog open={showGuard && !isConnected} onOpenChange={setShowGuard}>
+        <DialogContent
+          showCloseButton={true}
+          className="bg-transparent border border-black/10 dark:border-white/20"
+        >
+          <DialogHeader>
+            <DialogTitle>Connect your wallet</DialogTitle>
+            <DialogDescription>
+              To view and interact with this proposal, please connect your wallet.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center pt-2">
+            <ConnectWalletButton onBeforeOpen={() => setShowGuard(false)} />
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Unified grid to align chart/trade and orderbook/balances */}
   <div className="grid lg:grid-cols-3 gap-6 items-start">
         {/* Header spans full width */}
