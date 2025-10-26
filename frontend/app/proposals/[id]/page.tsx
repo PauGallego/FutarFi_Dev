@@ -150,16 +150,16 @@ export default function ProposalDetailPage({ params }: PageProps) {
   const { id } = params
 
   const chainId = useChainId()
-  const { isConnected } = useAccount()
+  const { isConnected, status } = useAccount()
   const router = useRouter()
 
-  // Redirect to list if no wallet connected
+  // Redirect only when wallet status is definitively disconnected
   useEffect(() => {
-    if (!isConnected) {
-      toast.error("Please connect your wallet to view proposals")
+    if (status === "disconnected") {
       router.replace("/proposals")
+      toast.error("Please connect your wallet to view proposals")
     }
-  }, [isConnected, router])
+  }, [status, router])
 
   const { proposal: hookProposal, isLoading: hookLoading, error: hookError } = useGetProposalById(id)
 

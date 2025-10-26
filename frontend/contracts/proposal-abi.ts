@@ -217,5 +217,14 @@ export const proposal_abi = [
       "inputs": [],
       "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
       "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "claimTokens",
+      "inputs": [
+        { "name": "_tokenToClaim", "type": "address", "internalType": "address" }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
     }
 ] as const

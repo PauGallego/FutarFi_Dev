@@ -38,6 +38,14 @@ export default function ProposalsPage() {
   const [apiProposals, setApiProposals] = useState<any[]>([])
   const [apiLoading, setApiLoading] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [connectionChecked, setConnectionChecked] = useState(false)
+
+  useEffect(() => {
+    // Wait for wagmi to determine connection state
+    setConnectionChecked(false)
+    const timer = setTimeout(() => setConnectionChecked(true), 2000)
+    return () => clearTimeout(timer)
+  }, [isConnected])
 
   useEffect(() => {
     if (isConnected) return // use on-chain path when connected
@@ -79,9 +87,9 @@ export default function ProposalsPage() {
   }, [isConnected])
 
   // Choose source based on connection
-  const list = isConnected ? proposals : apiProposals
-  const loading = isConnected ? isLoading : apiLoading
-  const errorToShow = isConnected ? error : apiError
+  const list = connectionChecked ? (isConnected ? proposals : apiProposals) : []
+  const loading = !connectionChecked || (isConnected ? isLoading : apiLoading)
+  const errorToShow = connectionChecked ? (isConnected ? error : apiError) : null
 
   // Helper function to format address
   const formatAddress = (addr: string) => {
@@ -148,6 +156,11 @@ export default function ProposalsPage() {
             return (
             <Link key={proposal.id} href={`/proposals/${proposal.id}`} 
               onClick={(e) => {
+                // Avoid false negative while wallet status is still determining
+                if (!connectionChecked) {
+                  e.preventDefault()
+                  return
+                }
                 if (!isConnected) {
                   e.preventDefault()
                   toast.error("Please connect your wallet to view this proposal")

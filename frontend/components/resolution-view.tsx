@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { CheckCircle2, TrendingUp, Coins, Target, Shield, Clock } from "lucide-react"
 import type { MarketOption } from "@/lib/types"
 import { useAccount, useReadContract } from "wagmi"
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { proposal_abi } from "@/contracts/proposal-abi"
 import { marketToken_abi } from "@/contracts/marketToken-abi"
@@ -23,6 +23,7 @@ interface AuctionResolvedProps {
   userNoTokens: number
   onClaimWinnings: () => void
   onClaimLosingTokens: () => void
+  canClaim: boolean
 }
 
 export function AuctionResolved({
@@ -34,6 +35,7 @@ export function AuctionResolved({
   userNoTokens,
   onClaimWinnings,
   onClaimLosingTokens,
+  canClaim,
 }: AuctionResolvedProps) {
   const losingMarket = winningMarket === "YES" ? "NO" : "YES"
   const winningPrice = winningMarket === "YES" ? finalYesPrice : finalNoPrice
@@ -214,7 +216,7 @@ export function AuctionResolved({
             <p className="text-xl font-semibold">${priceDiff.toFixed(4)}</p>
           </div>
 
-          {userWinningTokens > 0 && (
+          {userWinningTokens > 0 && false && (
             <div className="pt-4 border-t border-border">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -228,14 +230,7 @@ export function AuctionResolved({
                 </div>
                 <Coins className="h-8 w-8 text-green-600 dark:text-green-400" />
               </div>
-              <Button
-                onClick={onClaimWinnings}
-                className="w-full bg-green-600 hover:bg-green-700 text-white text-lg py-6"
-                size="lg"
-              >
-                <CheckCircle2 className="mr-2 h-5 w-5" />
-                Claim Options
-              </Button>
+              {/* Claim Options button removed as per request */}
             </div>
           )}
         </CardContent>
@@ -285,6 +280,7 @@ export function AuctionResolved({
                 variant="outline"
                 className="w-full text-base py-5 bg-transparent"
                 size="lg"
+                disabled={!canClaim}
               >
                 <Coins className="mr-2 h-4 w-4" />
                 Claim remaining PYUSD Tokens
@@ -328,7 +324,7 @@ export function AuctionResolved({
 // ------------------------ AuctionResolvedOnChain ------------------------
 
 export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `0x${string}` }) {
-  const { address: user, isConnected } = useAccount()
+  const { address: user, isConnected, status } = useAccount()
   const ZERO = "0x0000000000000000000000000000000000000000" as const
 
   const { data: yesTokenAddr } = useReadContract({
@@ -376,14 +372,14 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
     functionName: "redeemer",
     query: { enabled: canReadTokens },
   })
-  const { data: yesBal } = useReadContract({
+  const { data: yesBal, refetch: refetchYesBal } = useReadContract({
     address: yesToken!,
     abi: marketToken_abi,
     functionName: "balanceOf",
     args: [user ?? ZERO],
     query: { enabled: canReadTokens && !!user },
   })
-  const { data: noBal } = useReadContract({
+  const { data: noBal, refetch: refetchNoBal } = useReadContract({
     address: noToken!,
     abi: marketToken_abi,
     functionName: "balanceOf",
@@ -424,7 +420,14 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
   const userYesTokens = Number((yesBal as bigint) ?? 0n) / 1e18
   const userNoTokens = Number((noBal as bigint) ?? 0n) / 1e18
 
+  // Ready when wallet connected and on-chain flags/addresses are available and refunds are enabled
+  const isReady = isConnected && canReadTokens && canReadTreasury && (refundsEnabled === true)
+
   const onClaimLosingTokens = useCallback(async () => {
+    if (!isReady) {
+      toast.message("Initializing wallet...", { description: "Please wait a moment" })
+      return
+    }
     if (!isConnected) {
       toast.error("Connect wallet")
       return
@@ -433,23 +436,54 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
       toast.error("Refunds not enabled yet")
       return
     }
+
     const losingToken = winningMarket === "YES" ? noToken : yesToken
+    const losingBal = (winningMarket === "YES" ? (noBal as bigint) : (yesBal as bigint)) ?? 0n
+
     if (!losingToken) return
+    if (losingBal === 0n) {
+      toast.error("No tokens to redeem")
+      return
+    }
+
     try {
       const anyWindow = window as any
       if (!anyWindow?.ethereum) throw new Error("No wallet found")
       const provider = new ethers.BrowserProvider(anyWindow.ethereum)
       const signer = await provider.getSigner()
-      const c = new ethers.Contract(proposalAddress, proposal_abi as any, signer)
-      const tx = await c.claimTokens(losingToken)
-      toast.message("Claiming...", { description: tx.hash })
+
+      // 1) Ensure allowance for Treasury to pull losing tokens
+      if (!treasury) throw new Error("Treasury not available")
+      const losingTokenContract = new ethers.Contract(losingToken, marketToken_abi as any, signer)
+      const userAddr = await signer.getAddress()
+      const currentAllowance: bigint = await losingTokenContract.allowance(userAddr, treasury)
+
+      if (currentAllowance < losingBal) {
+        const approveTx = await losingTokenContract.approve(treasury, losingBal)
+        toast.message("Approving losing tokens...", { description: approveTx.hash })
+        const approveRcpt = await approveTx.wait()
+        if (!approveRcpt || (approveRcpt.status !== 1n && approveRcpt.status !== 1)) throw new Error("Approval failed")
+      }
+
+      // 2) Call Proposal.claimTokens to receive remaining PYUSD
+      const proposalContract = new ethers.Contract(proposalAddress, proposal_abi as any, signer)
+      const tx = await proposalContract.claimTokens(losingToken)
+      toast.message("Claiming PYUSD...", { description: tx.hash })
       const rcpt = await tx.wait()
       if (!rcpt || (rcpt.status !== 1n && rcpt.status !== 1)) throw new Error("Transaction failed")
       toast.success("Claim successful")
+
+      // Refresh balances so UI reflects the claim
+      try {
+        await Promise.allSettled([
+          typeof refetchYesBal === 'function' ? refetchYesBal() : Promise.resolve(null),
+          typeof refetchNoBal === 'function' ? refetchNoBal() : Promise.resolve(null),
+        ])
+      } catch {}
     } catch (e: any) {
       toast.error("Claim failed", { description: e?.shortMessage || e?.message })
     }
-  }, [isConnected, refundsEnabled, winningMarket, yesToken, noToken, proposalAddress])
+  }, [isReady, isConnected, refundsEnabled, winningMarket, yesToken, noToken, proposalAddress, yesBal, noBal, treasury, refetchYesBal, refetchNoBal])
 
   const onClaimWinnings = useCallback(() => {
     toast.info("Winner tokens remain in your wallet. No claim required.")
@@ -465,6 +499,7 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
       userNoTokens={userNoTokens}
       onClaimWinnings={onClaimWinnings}
       onClaimLosingTokens={onClaimLosingTokens}
+      canClaim={isReady}
     />
   )
 }
