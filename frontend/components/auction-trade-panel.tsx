@@ -177,6 +177,8 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
                 onClick={handleBid}
                 aria-disabled={isDisabled}
                 onDisabledClick={() => {
+                  // Ignore clicks during approval/buy pending states
+                  if (isApproving || isBuying) return
                   if (!amount || invalidAmount) {
                     amountInputRef.current?.focus()
                     setAmountError("Please enter a valid amount.")
@@ -185,7 +187,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
                 className={cn(
                   "w-full inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 h-10 px-4 py-2",
                   isDisabled
-                    ? cn(variantDisabled, "opacity-60 cursor-not-allowed hover:ring-0 focus-visible:ring-0")
+                    ? cn(variantDisabled, "opacity-60 cursor-not-allowed hover:ring-0 focus-visible:ring-0", (isApproving || isBuying) && "pointer-events-none")
                     : cn(variantEnabled, selectedMarket === "YES" ? "hover:ring-green-500" : "hover:ring-red-500"),
                 )}
               >
