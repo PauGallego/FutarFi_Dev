@@ -29,7 +29,7 @@ import {
 
 
 function HeroFlipWords() {
-  const words: string[] = ["everyone", "DAO's", "RWAs", "DeFi", "governance", "Insurance", "open source", "L2s"];
+  const words: string[] = ["everyone", "DAO's", "Equity", "DeFi", "governance", "Insurance", "open source", "L2s"];
 
   return (
     <div className="w-full flex items-center  justify-center px-4">
@@ -117,9 +117,9 @@ export default function HomePage() {
             <div className="p-3 rounded-xl bg-primary/10 w-fit">
               <Vote className="h-7 w-7 text-primary" />
             </div>
-            <h3 className="text-2xl font-semibold">Token-Based Voting</h3>
+            <h3 className="text-2xl font-semibold">Voting through Price Discovery</h3>
             <p className="text-muted-foreground leading-relaxed">
-              Democratic governance where token holders have proportional influence over organizational decisions.
+              Democratic governance where token holders have influence over organizational decisions.
             </p>
           </Card>
 
@@ -149,7 +149,7 @@ export default function HomePage() {
             </div>
             <h3 className="text-2xl font-semibold">Real-Time Analytics</h3>
             <p className="text-muted-foreground leading-relaxed">
-              Track market sentiment, price movements, and voting patterns with comprehensive analytics dashboards.
+              Align token holders with real positive value proposals. Track market sentiment, price movements, and voting patterns with comprehensive analytics dashboards.
             </p>
           </Card>
 
@@ -280,7 +280,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <p className="text-muted-foreground leading-relaxed">
-                   All users must confirm their transaction with their wallet before sending it to the secure enclave (TEE),ensuring consent and security for every operation.
+                   All users must confirm their transaction with their wallet before sending it to the secure enclave (TEE), ensuring consent and security for every operation.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="secondary" className="rounded-full">

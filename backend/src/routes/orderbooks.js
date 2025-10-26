@@ -565,7 +565,7 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
 
     // Check if proposal is active
     if (!proposal.isActive) {
-      return res.status(400).json({ error: 'Proposal is not active for trading' });
+      // return res.status(400).json({ error: 'Proposal is not active for trading' });
     }
 
     // For market orders, price is not required but we'll calculate it
@@ -1041,7 +1041,7 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
 
     // Check if proposal is active
     if (!proposal.isActive) {
-      return res.status(400).json({ error: 'Proposal is not active for trading' });
+      // return res.status(400).json({ error: 'Proposal is not active for trading' });
     }
 
     // For market orders, price is not required but we'll calculate it
@@ -1517,7 +1517,7 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
 
     // Check if proposal is active
     if (!proposal.isActive) {
-      return res.status(400).json({ error: 'Proposal is not active for trading' });
+      // return res.status(400).json({ error: 'Proposal is not active for trading' });
     }
 
     // For market orders, price is not required but we'll calculate it

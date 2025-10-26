@@ -78,10 +78,10 @@ export function AuctionResolved({
             </div>
           </div>
           <CardTitle className={isCancelled ? "text-3xl font-bold text-red-600 dark:text-red-400" : "text-3xl font-bold text-green-600 dark:text-green-400"}>
-            {isCancelled ? "Auction Cancelled" : "Auction Resolved"}
+            {isCancelled ? "Market Cancelled" : "Market Resolved"}
           </CardTitle>
           <CardDescription className="text-lg mt-2">
-            {isCancelled ? "This auction was cancelled and no tokens can be claimed." : "The market has been settled and final results are available"}
+            {isCancelled ? "This market was cancelled and no tokens can be claimed." : "The market has been settled and final results are available"}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -96,8 +96,8 @@ export function AuctionResolved({
                 <div className="flex items-center gap-3">
                   <TrendingUp className={isCancelled ? "h-6 w-6 text-red-600 dark:text-red-400" : "h-6 w-6 text-green-600 dark:text-green-400"} />
                   <div>
-                    <CardTitle className="text-2xl">{isCancelled ? "Auction Status" : "Winning Market"}</CardTitle>
-                    <CardDescription>{isCancelled ? "Auction was cancelled" : "Final settlement details"}</CardDescription>
+                    <CardTitle className="text-2xl">{isCancelled ? "Market Status" : "Winning Market"}</CardTitle>
+                    <CardDescription>{isCancelled ? "Market was cancelled" : "Final settlement details"}</CardDescription>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -251,7 +251,7 @@ export function AuctionResolved({
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-xl">Losing Market</CardTitle>
-                  <CardDescription>Reclaim your tokens from the losing side</CardDescription>
+                  <CardDescription>Reclaim your PYUSD tokens from the losing side</CardDescription>
                 </div>
                 <Badge variant="outline" className="text-lg px-4 py-2">
                   {losingMarket}
@@ -265,35 +265,37 @@ export function AuctionResolved({
                   <p className="text-2xl font-semibold text-muted-foreground">${losingPrice.toFixed(4)}</p>
                 </div>
               </div>
-              {userLosingTokens > 0 && (
                 <div className="pt-4 border-t border-border">
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Your Tokens</p>
                       <p className="text-xl font-semibold text-foreground">
-                        {userLosingTokens.toFixed(2)} {losingMarket}
+                        {userLosingTokens.toFixed(2)} t{losingMarket}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">These tokens can be reclaimed</p>
                     </div>
                     <Coins className="h-6 w-6 text-muted-foreground" />
                   </div>
-                  {/* Token amounts and treasury PYUSD + claimable info */}
                   <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3">
                     {userTreasuryPyusdFormatted && (
                       <div className="rounded-md border bg-muted/30 p-3">
-                        <p className="text-xs text-muted-foreground">Your PYUSD in Treasury</p>
-                        <p className="text-lg font-semibold">{Number(userTreasuryPyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                        <p className="text-xs text-muted-foreground">Your total PYUSD in Treasury</p>
+                        <p className="text-lg font-semibold">${Number(userTreasuryPyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
                       </div>
                     )}
                     {claimablePyusdFormatted && (
                       <div className="rounded-md border bg-emerald-500/5 p-3">
-                        <p className="text-xs text-muted-foreground">Claimable PYUSD</p>
+                        <p className="text-xs text-muted-foreground">Claim PYUSD from loser token</p>
                         <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">
-                          {Number(claimablePyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                          ${Number(claimablePyusdFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}
                         </p>
                       </div>
                     )}
                   </div>
+                  {/* User PYUSD balance as plain text between claimable and button */}
+                  {userPyusdBalanceFormatted && (
+                    <p className="text-sm text-muted-foreground mb-2">Your PYUSD balance: <span className="font-semibold">${Number(userPyusdBalanceFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}</span></p>
+                  )}
                   <Button
                     onClick={async () => {
                       if (!canClaim || isClaiming) return
@@ -321,7 +323,6 @@ export function AuctionResolved({
                     {isClaiming ? "Claiming..." : "Claim PYUSD tokens"}
                   </Button>
                 </div>
-              )}
             </CardContent>
           </Card>
 
@@ -461,7 +462,7 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
     query: { enabled: canReadTreasury },
   })
   // PYUSD wallet balance and decimals
-  const { data: userPyUSDBal } = useReadContract({
+  const { data: userPyUSDBal, refetch: refetchUserPyUSDBal } = useReadContract({
     address: pyUSD!,
     abi: marketToken_abi,
     functionName: "balanceOf",
@@ -567,6 +568,7 @@ export function AuctionResolvedOnChain({ proposalAddress }: { proposalAddress: `
         await Promise.allSettled([
           typeof refetchYesBal === 'function' ? refetchYesBal() : Promise.resolve(null),
           typeof refetchNoBal === 'function' ? refetchNoBal() : Promise.resolve(null),
+          typeof refetchUserPyUSDBal === 'function' ? refetchUserPyUSDBal() : Promise.resolve(null),
         ])
       } catch {}
     } catch (e: any) {
