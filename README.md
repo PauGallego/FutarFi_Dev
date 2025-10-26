@@ -1,6 +1,8 @@
 # Futarchy-DeFi-Protocol
 Futarchy-powered DeFi governance: PYUSD payments, Pyth pull oracles, and a TEE-secured private order book on Hedera.
 
+Developers: [Arnau Briet](@bri3t) & [Pau Gallego](@PauGallego)
+
 ---
 
 ## Introduction
@@ -110,8 +112,11 @@ Once live, the market transitions to continuous trading on a TEE-executed order 
 ├── frontend (Next.js + Wagmi + Viem)
 │
 └── Blockend
-       ├── Market.sol            → handles liquidity auction, order book logic, resolution, and claims
-       └── MarketToken.sol       → issues market-specific YES/NO tokens
+       ├── DutchAuction.sol
+       └── Proposal.sol
+       ├── ProposalManager.sol
+       ├── MarketToken.sol
+       ├──Treasury.sol
 ```
 
 ### Frontend/Backend Interaction
