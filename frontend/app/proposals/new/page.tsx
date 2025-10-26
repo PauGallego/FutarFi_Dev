@@ -152,12 +152,18 @@ export default function NewProposalPage() {
   const [isConfirming, setIsConfirming] = useState(false)
   const [isConfirmed, setIsConfirmed] = useState(false)
   const [error, setError] = useState<Error | null>(null)
+  const submittingRef = React.useRef(false)
 
   const handleSubmit = async (e?: React.FormEvent): Promise<boolean>=>{
     e?.preventDefault()
 
+    // Prevent double-submission (double click / Enter spam)
+    if (submittingRef.current || isPending || isConfirming) return false
+    submittingRef.current = true
+
     const fail = (desc: string) => {
       toast({ title: "Validation Error", description: desc, variant: "destructive" })
+      submittingRef.current = false
       return false
     }
 
@@ -202,12 +208,12 @@ export default function NewProposalPage() {
     // Ethers setup
     try {
       setError(null)
-  setIsPending(true)
+      setIsPending(true)
 
       const anyWindow = window as any
       if (!anyWindow?.ethereum) {
         setIsPending(false)
-  return fail("No wallet found. Please open MetaMask or a compatible wallet.")
+        return fail("No wallet found. Please open MetaMask or a compatible wallet.")
       }
 
       const provider = new ethers.BrowserProvider(anyWindow.ethereum)
@@ -261,6 +267,7 @@ export default function NewProposalPage() {
     } finally {
       setIsPending(false)
       setIsConfirming(false)
+      submittingRef.current = false
     }
   }
 
@@ -511,11 +518,11 @@ export default function NewProposalPage() {
             <div className="flex gap-4 pt-4">
               <StatefulButton
                 type="submit"
+                disabled={isDisabled}
                 aria-disabled={isDisabled}
-                onClick={handleSubmit}
                 onDisabledClick={() => {
                   // If disabled due to pending tx, ignore clicks completely
-                  if (isPending) return
+                  if (isPending || isConfirming) return
                   // Otherwise show validation guidance
                   const v = validate()
                   setErrors(v)
@@ -535,14 +542,14 @@ export default function NewProposalPage() {
                     : "flex-1 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 h-10 px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 hover:ring-green-500"
                 }
               >
-                {isPending ? "Creating..." : "Create Proposal"}
+                {isPending ? "Creating..." : (isConfirming ? "Confirming..." : "Create Proposal")}
               </StatefulButton>
               <Button
                 type="button"
                 variant="outline"
                 size="lg"
                 onClick={() => router.push("/proposals")}
-                disabled={isPending}
+                disabled={isPending || isConfirming}
               >
                 Cancel
               </Button>
