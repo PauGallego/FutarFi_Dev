@@ -39,10 +39,7 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
 
       <div className="space-y-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <h1 className="text-4xl font-bold text-balance">{proposal.title}</h1>
-          <Badge variant="outline" className={statusColors[proposal.state]}>
-            {proposal.state}
-          </Badge>
+          <h1 className="text-4xl font-bold text-balance break-words whitespace-normal leading-tight flex-1 min-w-0">{proposal.title}</h1>
         </div>
 
         <div className="flex items-center justify-between flex-wrap gap-4 text-sm text-muted-foreground">
@@ -60,14 +57,17 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
                 <ExternalLink className="h-3 w-3" />
               </a>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Clock className="h-4 w-4" />
               <span>
                 {formatDate(proposal.auctionStartTime)} - {formatDate(proposal.auctionEndTime)}
               </span>
+              <Badge variant="outline" className={statusColors[proposal.state]}>
+                {`In ${proposal.state}`}
+              </Badge>
             </div>
           </div>
-          <div className="prose prose-invert max-w-none">
+          <div className="prose prose-invert max-w-none w-full">
             <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">{proposal.description}</p>
           </div>
           {subjectSymbol && (

@@ -157,7 +157,7 @@ export default function ProposalsPage() {
 
               <Card key={proposal.id} className="hover:border-primary/50 transition-colors">
                 <CardHeader>
-                  <div className="flex flex-col sm:flex-row justify-between gap-4">
+                  <div className="flex flex-col sm:flex-row justify-between gap-4 overflow-hidden">
                     <div className="space-y-2 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <CardTitle className="text-2xl">{proposal.title}</CardTitle>

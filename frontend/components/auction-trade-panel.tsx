@@ -18,9 +18,10 @@ interface AuctionTradePanelProps {
   auctionData: AuctionData
   isFailed: boolean
   proposalAddress: `0x${string}`
+  fullHeight?: boolean
 }
 
-export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: AuctionTradePanelProps) {
+export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, fullHeight = false }: AuctionTradePanelProps) {
   const { isConnected, address } = useAccount()
   const [selectedMarket, setSelectedMarket] = useState<MarketOption>("YES")
   const { amount, setAmount, approveAndBuy, isApproving, isBuying, error, remaining, userTokenBalance, onchainPrice, pyusdBalance } =
@@ -62,12 +63,12 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
 
   if (isFailed) {
     return (
-      <Card>
+      <Card className={fullHeight ? "h-full flex flex-col" : undefined}>
         <CardHeader>
           <CardTitle className="text-destructive">Auction Failed</CardTitle>
           <CardDescription>Minimum bid requirement not met</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className={fullHeight ? "flex-1 flex flex-col justify-end" : undefined}>
           <Button className="w-full" onClick={async ()=>{ handleClaim() ; return true }} aria-disabled={!isConnected}>
             Claim Collateral
           </Button>
@@ -77,8 +78,8 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
+    <div className="h-full">
+      <Card className={fullHeight ? "h-full flex flex-col" : undefined}>
         <CardHeader className="space-y-3">
           {/* Market Selector – full width top, no borders between (match MarketTradePanel) */}
           <div className="relative -mx-6 -mt-6 rounded-t-md bg-muted overflow-hidden">
@@ -113,7 +114,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress }: Au
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-4">
+  <CardContent className={cn("space-y-4", fullHeight && "flex-1 flex flex-col")}> 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="amount">Amount (PyUSD)</Label>

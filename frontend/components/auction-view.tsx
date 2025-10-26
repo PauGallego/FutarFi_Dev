@@ -19,6 +19,10 @@ interface AuctionViewProps {
   auctionData: AuctionData
   userBalance: UserBalance
   proposalAddress?: `0x${string}`
+  // Render mode: full (default), only chart card, or only stats section
+  mode?: "full" | "chart" | "stats"
+  // When showing chart, allow the chart card to stretch to fill available height
+  fullHeight?: boolean
 }
 
 const AnimatedDot = (props: any) => {
@@ -95,13 +99,13 @@ function formatPriceFull(value: number): string {
   return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-export function AuctionView({ auctionData, userBalance, proposalAddress }: AuctionViewProps) {
+export function AuctionView({ auctionData, userBalance, proposalAddress, mode = "full", fullHeight = false }: AuctionViewProps) {
   const { resolvedTheme } = useTheme()
   const { address } = useAccount()
   const publicClient = usePublicClient()
-  const isDark = resolvedTheme === "dark"
-  const lineColor = isDark ? "#22c55e" : "#000000" // green in dark, black in light
-  const textColor = lineColor
+  // Force white styling for auction chart line and axes per request
+  const lineColor = "#ffffff"
+  const textColor = "#ffffff"
   // Removed countdown here; will compute after fetching END_TIME
   const totalBids = auctionData.yesTotalBids + auctionData.noTotalBids
 
@@ -345,36 +349,30 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
     return `${d}${pad2(timeLeft.hours)}:${pad2(timeLeft.minutes)}:${pad2(timeLeft.seconds)}`
   }, [timeLeft])
 
-  return (
-    <div className="space-y-6">
-      <Card className="border-primary/20">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Auction Price Evolution</CardTitle>
-              <CardDescription>Linear price decrease over time</CardDescription>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-               <span title={formatDateTime(effectiveEndTime)}>
-                {countdownText}
-              </span>
-              </div>
-              <Badge
-                variant={isSuccessful ? "default" : "secondary"}
-                className="bg-primary/10 text-primary border-primary/20"
-              >
-                {isSuccessful ? "Minimum Reached" : "In Progress"}
-              </Badge>
-            </div>
+  const ChartCard = (
+    <Card className={fullHeight ? "h-full flex flex-col" : undefined}>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Auction Price Evolution</CardTitle>
+            <CardDescription>Linear price decrease over time</CardDescription>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <span title={formatDateTime(effectiveEndTime)}>{countdownText}</span>
+            </div>
+            <Badge variant={isSuccessful ? "default" : "secondary"} className="bg-primary/10 text-primary border-primary/20">
+              {isSuccessful ? "Minimum Reached" : "In Progress"}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className={fullHeight ? "min-h-[16rem] flex-1" : undefined}>
+        <div className={fullHeight ? "h-full" : "h-80"}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff" opacity={0.25} />
                 <XAxis
                   dataKey="time"
                   type="number"
@@ -400,10 +398,10 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
+                    backgroundColor: "rgba(0,0,0,0.75)",
+                    border: "1px solid rgba(255,255,255,0.2)",
                     borderRadius: "8px",
-                    color: textColor,
+                    color: "#ffffff",
                   }}
                   formatter={(value: any) => [`$${formatPriceFull(Number(value))}`, "Price"]}
                   labelFormatter={(label: any) => new Date(Number(label) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
@@ -415,19 +413,20 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
                   strokeWidth={2}
                   dot={(dotProps: any) => {
                     if (dotProps.payload.isCurrent) {
-                      return <AnimatedDot {...dotProps} color="#22c55e" key={`animated-${dotProps.index}`} />
+                      return <AnimatedDot {...dotProps} color="#ffffff" key={`animated-${dotProps.index}`} />
                     }
                     return <Dot {...dotProps} r={0} key={`dot-${dotProps.index}`} />
                   }}
                 />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  )
 
-      {/* Token Prices and Remaining Info */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  const StatsSection = (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* YES Token Card */}
         <Card className="border-primary/30 bg-primary/5">
           <CardHeader className="pb-3">
@@ -504,6 +503,15 @@ export function AuctionView({ auctionData, userBalance, proposalAddress }: Aucti
           </CardContent>
         </Card>
       </div>
+  )
+
+  if (mode === "chart") return ChartCard
+  if (mode === "stats") return StatsSection
+
+  return (
+    <div className="space-y-6">
+      {ChartCard}
+      {StatsSection}
     </div>
   )
 }

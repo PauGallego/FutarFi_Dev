@@ -261,7 +261,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
   return (
     <div className="container mx-auto px-4 py-12">
       {/* Unified grid to align chart/trade and orderbook/balances */}
-      <div className="grid lg:grid-cols-3 gap-8 items-start">
+  <div className="grid lg:grid-cols-3 gap-6 items-start">
         {/* Header spans full width */}
         <div className="lg:col-span-3">
           <ProposalHeader proposal={proposal} chainId={chainId} />
@@ -273,8 +273,36 @@ export default function ProposalDetailPage({ params }: PageProps) {
           </div>
         ) : ((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") ? (
           <>
-            <div className="lg:col-span-3">
-              <AuctionView proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} userBalance={(userBalance as any)} />
+            {/* Top row: Chart (left) and Trade panel (right) with matched heights */}
+            <div className="lg:col-span-2 h-full">
+              <div className="h-full">
+                <AuctionView
+                  mode="chart"
+                  fullHeight
+                  proposalAddress={(proposal as any).address}
+                  auctionData={(proposal as any).auctionData}
+                  userBalance={(userBalance as any)}
+                />
+              </div>
+            </div>
+            <div className="lg:col-span-1 h-full">
+              <div className="h-full">
+                <AuctionTradePanel
+                  fullHeight
+                  proposalAddress={(proposal as any).address}
+                  auctionData={(proposal as any).auctionData}
+                  isFailed={(proposal as any).state === "Cancelled"}
+                />
+              </div>
+            </div>
+            {/* Bottom row: Stats under the chart */}
+            <div className="lg:col-span-2">
+              <AuctionView
+                mode="stats"
+                proposalAddress={(proposal as any).address}
+                auctionData={(proposal as any).auctionData}
+                userBalance={(userBalance as any)}
+              />
             </div>
           </>
         ) : (
