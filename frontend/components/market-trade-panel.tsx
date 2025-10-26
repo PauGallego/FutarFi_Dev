@@ -290,10 +290,13 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                   BUY
                 </button>
                 <button
-                  onClick={() => setTradeAction("SELL")}
-                  className={`${
-                    tradeAction === "SELL" ? "text-black" : "text-muted-foreground hover:text-foreground"
-                  } w-1/2 py-2 font-semibold text-sm text-center`}
+                  onClick={() => { if (creating || isApproving) return; setTradeAction("SELL") }}
+                  disabled={creating || isApproving}
+                  aria-disabled={creating || isApproving}
+                  className={cn(
+                    `${tradeAction === "SELL" ? "text-black" : "text-muted-foreground hover:text-foreground"} w-1/2 py-2 font-semibold text-sm text-center`,
+                    (creating || isApproving) && "cursor-not-allowed opacity-60 hover:text-muted-foreground"
+                  )}
                 >
                   SELL
                 </button>
@@ -408,7 +411,14 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
             // Disabled: use same gray as other labels (muted) with subtle border, no hover
             const variantDisabled = "bg-muted text-muted-foreground border border-border";
             const invalidLimit = orderType === "limit" && (!limitPrice || Number(limitPrice) <= 0);
-            const isDisabled = !isConnected || creating || !amount || invalidAmount || invalidLimit || insufficientBalance;
+            // Disable SELL while approving, and keep existing guards
+            const isDisabled = !isConnected
+              || creating
+              || (tradeAction === "SELL" && isApproving)
+              || !amount
+              || invalidAmount
+              || invalidLimit
+              || insufficientBalance;
             return (
               <Button
                 onClick={handleCreateOrder}
@@ -430,7 +440,7 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
                     : cn(variantEnabled, tradeAction === "BUY" ? "hover:ring-green-500" : "hover:ring-red-500"),
                 )}
               >
-                {creating ? (isApproving ? "Approving..." : "Creating...") : `${tradeAction} ${orderType === "market" ? "at Market" : "with Limit"}`}
+                {isApproving ? "Approving..." : (creating ? "Creating..." : `${tradeAction} ${orderType === "market" ? "at Market" : "with Limit"}`)}
               </Button>
             )
           })()}
