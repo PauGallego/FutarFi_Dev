@@ -10,6 +10,7 @@ import { useGetAllProposals } from "@/hooks/use-get-all-proposals"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAccount } from "wagmi"
 import { useEffect, useMemo, useState } from "react"
+import { toast } from "sonner"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"
 
@@ -145,7 +146,14 @@ export default function ProposalsPage() {
           {list.map((proposal: any) => {
             const stateKey = (proposal.state ?? 'Auction') as StatusKey
             return (
-            <Link key={proposal.id} href={`/proposals/${proposal.id}`} >
+            <Link key={proposal.id} href={`/proposals/${proposal.id}`} 
+              onClick={(e) => {
+                if (!isConnected) {
+                  e.preventDefault()
+                  toast.error("Please connect your wallet to view this proposal")
+                }
+              }}
+            >
 
               <Card key={proposal.id} className="hover:border-primary/50 transition-colors">
                 <CardHeader>
