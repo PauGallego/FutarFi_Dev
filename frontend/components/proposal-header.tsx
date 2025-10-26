@@ -14,7 +14,7 @@ const statusColors = {
   Auction: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
   Live: "bg-green-500/10 text-green-500 border-green-500/20",
   Resolved: "bg-muted text-muted-foreground border-border",
-  Cancelled: "bg-primary/10 text-primary border-primary/20",
+  Cancelled: "bg-red-500/10 text-red-600 border-red-500/20",
 }
 
 export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {

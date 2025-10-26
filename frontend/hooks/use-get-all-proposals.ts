@@ -11,10 +11,6 @@ export function useGetAllProposals() {
   const contractAddress = getContractAddress(chainId, 'PROPOSAL_MANAGER')
   const publicClient = usePublicClient()
 
-  // Add debug logging
-  console.log('useGetAllProposals - chainId:', chainId)
-  console.log('useGetAllProposals - contractAddress:', contractAddress)
-  console.log('useGetAllProposals - publicClient:', !!publicClient)
 
   // Fetch all proposal addresses - this doesn't require user to be connected
   const { data: proposalAddresses, isLoading: isLoadingAddresses, error } = useReadContract({
@@ -25,10 +21,6 @@ export function useGetAllProposals() {
       enabled: !!contractAddress,
     },
   })
-
-  console.log('useGetAllProposals - proposalAddresses:', proposalAddresses)
-  console.log('useGetAllProposals - isLoadingAddresses:', isLoadingAddresses)
-  console.log('useGetAllProposals - error:', error)
 
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [isLoadingProposals, setIsLoadingProposals] = useState(false)

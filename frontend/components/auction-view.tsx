@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Dot } from "recharts"
 import type { AuctionData, UserBalance } from "@/lib/types"
 import { formatUnits } from "viem"
-import { useEffect, useMemo, useState, useCallback } from "react"
+import { useEffect, useMemo, useState, useCallback, use } from "react"
 import { Clock } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useAccount, useReadContract, usePublicClient } from "wagmi"
@@ -14,6 +14,8 @@ import { proposal_abi } from "@/contracts/proposal-abi"
 import { marketToken_abi } from "@/contracts/marketToken-abi"
 import { dutchAuction_abi } from "@/contracts/dutchAuction-abi"
 import { treasury_abi } from "@/contracts/treasury-abi"
+import { ProposalStatus } from "@/lib/types"
+
 
 interface AuctionViewProps {
   auctionData: AuctionData
@@ -120,6 +122,9 @@ export function AuctionView({ auctionData, userBalance, proposalAddress, mode = 
   // Onchain minimum required to open (PyUSD, 6d or 18d per contract). Here it's uint256, represents PyUSD amount.
   const { data: minToOpen } = useReadContract({ address: proposalAddress, abi: proposal_abi, functionName: "minToOpen" })
   const minimumRequired = (typeof minToOpen === "bigint" ? minToOpen : auctionData.minimumRequired)
+  const { data: isCancelled } = useReadContract({ address: proposalAddress, abi: proposal_abi, functionName: "state" })
+  const proposalState = isCancelled === 3 ? "Cancelled" : (isCancelled === 2 ? "Resolved" : (isCancelled === 1 ? "Live" : "Auction")) as ProposalStatus
+
   // Per-auction minimum token supply to consider market valid (18 decimals, token units)
   const { data: yesMinToOpen } = useReadContract({ address: yesAuctionAddr as `0x${string}` | undefined, abi: dutchAuction_abi, functionName: "MIN_TO_OPEN" })
   const { data: noMinToOpen } = useReadContract({ address: noAuctionAddr as `0x${string}` | undefined, abi: dutchAuction_abi, functionName: "MIN_TO_OPEN" })
@@ -385,7 +390,7 @@ export function AuctionView({ auctionData, userBalance, proposalAddress, mode = 
               <Clock className="h-4 w-4 text-muted-foreground" />
               <span title={formatDateTime(effectiveEndTime)}>{countdownText}</span>
             </div>
-            <Badge variant={isSuccessful ? "default" : "secondary"} className="bg-primary/10 text-primary border-primary/20">
+            <Badge variant={isSuccessful ? "default" : "secondary"} className={proposalState === "Cancelled" ?  "bg-red-500/10 text-red-600 border-red-500/20" : "bg-primary/10 text-primary border-primary/20" }>
               {isSuccessful ? "Minimum Reached" : "In Progress"}
             </Badge>
           </div>

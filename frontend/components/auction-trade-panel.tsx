@@ -216,7 +216,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
                   Your PYUSD balance: {Number(balances.pyusdWallet).toLocaleString(undefined, { maximumFractionDigits: 6 })}
                 </span>
               </div>
-              <div className="mb-4 flex flex-wrap gap-3 items-end">
+              <div className="mb-4 flex flex-wrap gap-3 justify-between">
                 <div className="rounded-md border bg-muted/30 p-3 min-w-[120px]">
                   <p className="text-xs text-muted-foreground">Your tYES</p>
                   <p className="text-lg font-semibold">{Number(balances.tYES).toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
@@ -244,7 +244,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
               "disabled:opacity-50 disabled:cursor-not-allowed",
             ].join(" ")}
             onClick={handleClaim}
-            aria-disabled={!isConnected || isClaiming}
+            aria-disabled={!isConnected || isClaiming || balances?.tYES === "0.0" && balances?.tNO === "0.0"}
           >
             {isClaiming ? "Claiming..." : "Claim PYUSD Collateral"}
           </Button>
@@ -285,7 +285,7 @@ export function AuctionTradePanel({ auctionData, isFailed, proposalAddress, full
           </div>
 
           <div>
-            <CardTitle className="text-lg">Add Liquidity</CardTitle>
+            <CardTitle className="text-lg">Buy Liquidity</CardTitle>
             <CardDescription>Buy {selectedMarket} tokens at current auction price</CardDescription>
           </div>
         </CardHeader>

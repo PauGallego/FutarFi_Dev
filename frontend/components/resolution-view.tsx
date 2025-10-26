@@ -50,7 +50,9 @@ export function AuctionResolved({
   const losingPrice = winningMarket === "YES" ? finalNoPrice : finalYesPrice
   const userWinningTokens = winningMarket === "YES" ? userYesTokens : userNoTokens
   const userLosingTokens = winningMarket === "YES" ? userNoTokens : userYesTokens
-  const outcomeLabel = winningMarket === "YES" ? "Approved" : "Rejected"
+  // Detect cancelled state (prop or context, aquí ejemplo por tokens = 0)
+  const isCancelled = userYesTokens === 0 && userNoTokens === 0
+  const outcomeLabel = isCancelled ? "Cancelled" : (winningMarket === "YES" ? "Approved" : "Rejected")
   const priceDiff = Math.abs(finalYesPrice - finalNoPrice)
 
   // Data for Butterfly Spread (flat segment at payoff -0.5 between midpoints)
@@ -68,16 +70,18 @@ export function AuctionResolved({
   return (
     <div className="space-y-6">
       {/* Final Results Header */}
-      <Card className="border-green-500/50 bg-green-500/5 shadow-lg">
+      <Card className={isCancelled ? "border-red-500/50 bg-red-500/5 shadow-lg" : "border-green-500/50 bg-green-500/5 shadow-lg"}>
         <CardHeader className="text-center pb-4">
           <div className="flex justify-center mb-4">
-            <div className="rounded-full bg-green-500/20 p-4">
-              <CheckCircle2 className="h-12 w-12 text-green-600 dark:text-green-400" />
+            <div className={isCancelled ? "rounded-full bg-red-500/20 p-4" : "rounded-full bg-green-500/20 p-4"}>
+              <CheckCircle2 className={isCancelled ? "h-12 w-12 text-red-600 dark:text-red-400" : "h-12 w-12 text-green-600 dark:text-green-400"} />
             </div>
           </div>
-          <CardTitle className="text-3xl font-bold text-green-600 dark:text-green-400">Auction Resolved</CardTitle>
+          <CardTitle className={isCancelled ? "text-3xl font-bold text-red-600 dark:text-red-400" : "text-3xl font-bold text-green-600 dark:text-green-400"}>
+            {isCancelled ? "Auction Cancelled" : "Auction Resolved"}
+          </CardTitle>
           <CardDescription className="text-lg mt-2">
-            The market has been settled and final results are available
+            {isCancelled ? "This auction was cancelled and no tokens can be claimed." : "The market has been settled and final results are available"}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -86,18 +90,18 @@ export function AuctionResolved({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           {/* Winning Market */}
-          <Card className="border-green-500/50 shadow-md">
+          <Card className={isCancelled ? "border-red-500/50 shadow-md" : "border-green-500/50 shadow-md"}>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <TrendingUp className="h-6 w-6 text-green-600 dark:text-green-400" />
+                  <TrendingUp className={isCancelled ? "h-6 w-6 text-red-600 dark:text-red-400" : "h-6 w-6 text-green-600 dark:text-green-400"} />
                   <div>
-                    <CardTitle className="text-2xl">Winning Market</CardTitle>
-                    <CardDescription>Final settlement details</CardDescription>
+                    <CardTitle className="text-2xl">{isCancelled ? "Auction Status" : "Winning Market"}</CardTitle>
+                    <CardDescription>{isCancelled ? "Auction was cancelled" : "Final settlement details"}</CardDescription>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge className={`text-white text-lg px-4 py-2 ${winningMarket === 'YES' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>{outcomeLabel}</Badge>
+                  <Badge className={`text-white text-lg px-4 py-2 ${isCancelled ? 'bg-red-600 hover:bg-red-700' : (winningMarket === 'YES' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700')}`}>{outcomeLabel}</Badge>
                 </div>
               </div>
             </CardHeader>
@@ -314,7 +318,7 @@ export function AuctionResolved({
                     disabled={!canClaim || isClaiming}
                   >
                     <Coins className="mr-2 h-4 w-4" />
-                    {isClaiming ? "Claiming..." : "Claim PYUSD Collateral"}
+                    {isClaiming ? "Claiming..." : "Claim PYUSD tokens"}
                   </Button>
                 </div>
               )}

@@ -1,6 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import "../styles/scrollbar-hide.css"
 import type { OrderBookEntry, MarketOption } from "@/lib/types"
 import { useState, useMemo, useEffect, useRef } from "react"
 
@@ -11,9 +12,8 @@ interface OrderBookProps {
 }
 
 export function OrderBook({ orderBook, market, variant = 'card' }: OrderBookProps) {
-  // Default to 10 so the component's max height equals the height when showing 10 operations
+  // Default to 10, show up to 10 without scroll, scroll only for extras
   const [limit, setLimit] = useState<number>(10)
-  // Measure and lock the max height based on the layout with 10 operations
   const gridRef = useRef<HTMLDivElement | null>(null)
   const [maxHeightPx, setMaxHeightPx] = useState<number | null>(null)
   // Compute live proportions using counts of total orders per side
@@ -26,17 +26,17 @@ export function OrderBook({ orderBook, market, variant = 'card' }: OrderBookProp
   const buyOrders = useMemo(() => orderBook.filter((o) => o.side === "buy").slice(0, limit), [orderBook, limit])
   const sellOrders = useMemo(() => orderBook.filter((o) => o.side === "sell").slice(0, limit), [orderBook, limit])
 
-  // Measure the scroll container height once (with the initial 10 operations) and lock it as max height
+  // Measure the height of 10 operations and lock as fixed height for all cases
   useEffect(() => {
     if (maxHeightPx != null) return // already measured
-    const el = gridRef.current
-    if (!el) return
-    // Defer measurement to next frame to ensure layout is ready
+    // Always measure with 10 operations for height lock
+    const el = gridRef.current;
+    if (!el) return;
     const raf = requestAnimationFrame(() => {
-      setMaxHeightPx(el.clientHeight)
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [maxHeightPx, orderBook])
+      setMaxHeightPx(el.clientHeight);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [orderBook, maxHeightPx])
 
   const Row = ({ order, align }: { order: OrderBookEntry; align: "left" | "right" }) => {
     const filled = typeof order.filled === 'number' ? order.filled : 0
@@ -63,7 +63,7 @@ export function OrderBook({ orderBook, market, variant = 'card' }: OrderBookProp
   }
 
   const Inner = (
-    <div className="space-y-4">
+  <div className="space-y-4">
       {/* Proportional bar */}
       <div className="h-2 w-full rounded bg-muted overflow-hidden flex">
         <div className="h-full bg-primary" style={{ width: `${bidPct}%` }} />
@@ -85,8 +85,8 @@ export function OrderBook({ orderBook, market, variant = 'card' }: OrderBookProp
       </div>
       <div
         ref={gridRef}
-        className="grid grid-cols-2 gap-4 overflow-y-auto"
-        style={{ scrollbarGutter: 'stable', maxHeight: maxHeightPx ? `${maxHeightPx}px` : undefined }}
+        className={`grid grid-cols-2 gap-4${limit > 10 ? ' overflow-y-auto scrollbar-hide' : ''}`}
+        style={maxHeightPx ? { scrollbarGutter: 'stable', maxHeight: `${maxHeightPx}px`, minHeight: `${maxHeightPx}px` } : {}}
       >
         {/* Buy Orders */}
         <div className="space-y-2">
