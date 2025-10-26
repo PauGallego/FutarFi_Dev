@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import { Providers } from "./providers"
 import { Navigation } from "@/components/navigation"
+import { SiteFooter } from "@/components/site-footer"
 import { Toaster } from "@/components/ui/toaster"
 import { Suspense } from "react"
 import { Toaster as SonnerToaster } from "sonner"
@@ -27,6 +28,7 @@ export default function RootLayout({
             <Suspense fallback={<div>Loading...</div>}>
               <Navigation />
               <main className="flex-1">{children}</main>
+              <SiteFooter />
             </Suspense>
           </div>
           <Suspense fallback={<div>Loading...</div>}>

@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TypewriterEffectSmooth } from "@/components/ui/typewriter-effect"
+import { FlipWords } from "@/components/ui/flip-words";
+
 
 import {
   ArrowRight,
@@ -18,17 +20,30 @@ import {
   Target,
   Lock,
   Rocket,
+  Cpu,
+  ShieldCheck,
+  EyeOff,
+  Fingerprint,
+  Send
 } from "lucide-react"
 
 
+function HeroFlipWords() {
+  const words: string[] = ["everyone", "DAO's", "RWAs", "DeFi", "governance", "Insurance", "open source", "L2s"];
+
+  return (
+    <div className="w-full flex items-center  justify-center px-4">
+      <div className="relative inline-block  md:text-6xl font-normal text-neutral-600 dark:text-neutral-400 leading-tight translate-x-0 sm:-translate-x-6 md:-translate-x-16 lg:-translate-x-24 xl:-translate-x-32">
+        <span className="whitespace-nowrap xl:text-8xl md:text-6xl sm:text-4xl">Futarchy for</span>
+        <span className="absolute left-full xl:text-8xl md:text-6xl sm:text-4xl top-0 ml-2 whitespace-nowrap">
+          <FlipWords words={words} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
-  const heroWords = [
-    { text: "Futarchy",
-      className: "text-primary",
-    },
-    { text: "for" },
-    { text: "everyone" },
-  ]
 
   return (
     <div className="relative">
@@ -37,16 +52,12 @@ export default function HomePage() {
         <div className="container relative mx-auto px-4 py-20 md:py-32">
           <div className="flex flex-col items-center  justify-center text-center space-y-8 max-w-6xl mx-auto">
 
-            <div className="flex justify-center w-full justify-items-center">
-              <TypewriterEffectSmooth
-                words={heroWords}
-                className="text-9xl md:text-7xl font-bold"
-                cursorClassName="bg-primary"
-              />
+            <div className="flex justify-center w-full">
+              <HeroFlipWords />
             </div>
 
-            <p className="text-xl md:text-2xl text-muted-foreground  leading-relaxed w-full max-w-5xl md:max-w-6xl">
-              Futarchy combines prediction markets with decentralized governance. Create proposals, open prediction markets, and execute outcomes trustlessly. Let markets decide the future of your organization through decentralized governance
+            <p className="text-xl mt-16 mb-10 md:text-2xl text-muted-foreground  leading-relaxed w-full  md:max-w-6xl">
+              FutarFi combines prediction markets with decentralized governance. Create proposals, open prediction markets, and execute outcomes trustlessly. Let markets decide the future of your organization through decentralized governance
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 pt-6">
@@ -80,12 +91,12 @@ export default function HomePage() {
         </div>
       </section>
 
-     
+
       {/* Features Grid */}
       <section className="container mx-auto px-4 py-20">
         <div className="text-center space-y-4 mb-16">
           <h2 className="text-3xl md:text-5xl font-bold">Why Futarchy?</h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-xl text-muted-foreground w-full mx-auto">
             Market-driven governance that aligns incentives and reveals true preferences
           </p>
         </div>
@@ -148,7 +159,7 @@ export default function HomePage() {
             </div>
             <h3 className="text-2xl font-semibold">Multi-Token Support</h3>
             <p className="text-muted-foreground leading-relaxed">
-              Support for multiple collateral tokens including PYUSD, USDC, and DAI for maximum flexibility.
+              Support for multiple subject tokens including ETH, BTC, PYTH, HBAR, and more.
             </p>
           </Card>
         </div>
@@ -237,6 +248,123 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section className="py-20">
+        <div className="max-w-7xl mx-auto space-y-8">
+          {/* Header */}
+          <div className="text-center space-y-4 max-w-3xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/30 bg-primary/5">
+              <Shield className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">Powered by TEE Technology</span>
+            </div>
+            <h2 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
+              Hardware-Level Security
+            </h2>
+            <p className="text-lg text-muted-foreground w-max">
+              Our orderbook runs in a Trusted Execution Environment, combining CEX speed with DEX security
+            </p>
+          </div>
+
+          {/* Bento Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-12">
+            {/* Large Feature Card - Spans 2 columns */}
+            <Card className="md:col-span-2 lg:col-span-2 p-8 relative overflow-hidden group hover:border-primary/50 transition-all duration-300">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 border border-primary/30">
+                    <Lock className="h-8 w-8 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold">Order Confidentiality</h3>
+                    <p className="text-sm text-muted-foreground">Zero-knowledge matching</p>
+                  </div>
+                </div>
+                <p className="text-muted-foreground leading-relaxed">
+                  Orders are encrypted and processed inside the secure enclave. No one—not even the operator—can see
+                  order details before execution, eliminating MEV and front-running attacks.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="rounded-full">
+                    <EyeOff className="h-3 w-3 mr-1" />
+                    Private
+                  </Badge>
+                  <Badge variant="secondary" className="rounded-full">
+                    <Shield className="h-3 w-3 mr-1" />
+                    MEV-Protected
+                  </Badge>
+                </div>
+              </div>
+            </Card>
+
+           
+           
+
+            {/* Attestation Card */}
+            <Card className="md:col-span-2 p-6 relative overflow-hidden group hover:border-secondary/50 transition-all duration-300">
+              <div className="absolute inset-0 bg-gradient-to-br from-secondary/10 via-transparent to-accent/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-secondary/20 to-accent/20 border border-secondary/30">
+                    <ShieldCheck className="h-7 w-7 text-secondary" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold">Hardware Attestation</h3>
+                    <p className="text-sm text-muted-foreground">Cryptographic proof of integrity</p>
+                  </div>
+                </div>
+                <p className="text-muted-foreground">
+                  The TEE hardware signs an attestation proving the exact binary running inside. Anyone can verify the
+                  matching engine hasn't been tampered with.
+                </p>
+                <div className="flex items-center gap-2 text-sm">
+                  <Fingerprint className="h-4 w-4 text-secondary" />
+                  <span className="font-mono text-xs text-muted-foreground">SHA256: a3f5...c2d9</span>
+                </div>
+              </div>
+            </Card>
+
+
+            <Card className="md:col-span-3 lg:col-span-4 p-8 bg-gradient-to-r from-card via-primary/5 to-card border-2 border-primary/20">
+              <div className="space-y-6">
+                <div className="text-center">
+                  <h3 className="text-2xl font-bold">TEE Orderbook Flow</h3>
+                  <p className="text-sm text-muted-foreground mt-1">From order submission to on-chain settlement</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {[
+                    { icon: Send, title: "Submit Order", desc: "User places buy/sell", step: "01" },
+                    { icon: ShieldCheck, title: "Verify wallet", desc: "Verify integrity of the user's wallet", step: "02" },
+                    { icon: Users, title: "TEE Processing", desc: "Confidential batching orders", step: "03" },
+                    { icon: Rocket, title: "Settlement", desc: "On-chain execution", step: "04" },
+                  ].map((item, i) => (
+                    <div key={i} className="relative">
+                      <div className="flex flex-col items-center text-center space-y-3 p-4 rounded-xl bg-background/50 border border-border/50 hover:border-primary/50 transition-colors">
+                        <div className="relative">
+                          <div className="p-3 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20">
+                            <item.icon className="h-6 w-6 text-primary" />
+                          </div>
+                          <div className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
+                            {item.step}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-semibold">{item.title}</div>
+                          <p className="text-xs text-muted-foreground mt-1">{item.desc}</p>
+                        </div>
+                      </div>
+                      {i < 3 && (
+                        <div className="hidden lg:block absolute top-1/2 -right-2 w-4 h-0.5 bg-gradient-to-r from-primary/50 to-transparent" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </section>
+
       {/* Benefits */}
       <section className="container mx-auto px-4 py-20">
         <div className="grid lg:grid-cols-2 gap-12 items-center max-w-6xl mx-auto">
@@ -304,7 +432,9 @@ export default function HomePage() {
                   <div className="text-sm text-muted-foreground">Trustless</div>
                 </div>
                 <div className="space-y-2">
-      
+                  <div className="p-3 rounded-lg bg-primary/10 w-fit">
+                    <Sparkles className="h-6 w-6 text-primary" />
+                  </div>
                   <div className="text-2xl font-bold">24/7</div>
                   <div className="text-sm text-muted-foreground">Global Access</div>
                 </div>
@@ -328,7 +458,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/** Final CTA removed per request */}
     </div>
   )
 }
