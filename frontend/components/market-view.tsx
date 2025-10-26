@@ -1,5 +1,5 @@
 "use client"
-import React, { useEffect, useRef } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { MarketDepthAndOrders } from "@/components/market-depth-orders"
 import type { MarketData, MarketOption, OrderBookEntry, UserOrder } from "@/lib/types"
@@ -30,6 +30,7 @@ export function MarketView({
   orderBookEntries,
   proposalId,
 }: MarketViewProps) {
+  const [interval, setInterval] = useState<'1m' | '5m' | '15m' | '1h' | '4h' | '1d'>('1m')
   const fallbackOrderBook = selectedMarket === "YES" ? marketData.yesOrderBook : marketData.noOrderBook
   const orderBook = orderBookEntries && orderBookEntries.length > 0 ? orderBookEntries : fallbackOrderBook
   const baseOrders = userOrders ?? []
@@ -49,6 +50,10 @@ export function MarketView({
         vertLines: { color: '#444' },
         horzLines: { color: '#444' },
       },
+      timeScale: {
+        rightOffset: 0,
+        shiftVisibleRangeOnNewBar: true,
+      },
       height: 420,
     } as const
 
@@ -58,19 +63,31 @@ export function MarketView({
       ? (chart as any).addSeries(LineSeries, {
           color: '#16a34a',
           lineWidth: 2,
+          lastValueVisible: true,
+          priceLineVisible: true,
+          title: 'tYES',
         })
       : (chart as any).addLineSeries({
           color: '#16a34a',
           lineWidth: 2,
+          lastValueVisible: true,
+          priceLineVisible: true,
+          title: 'tYES',
         })
     const noSeries = (chart as any).addSeries
       ? (chart as any).addSeries(LineSeries, {
           color: '#ef4444',
           lineWidth: 2,
+          lastValueVisible: true,
+          priceLineVisible: true,
+          title: 'tNO',
         })
       : (chart as any).addLineSeries({
           color: '#ef4444',
           lineWidth: 2,
+          lastValueVisible: true,
+          priceLineVisible: true,
+          title: 'tNO',
         })
 
     // Ensure container has enough vertical space
@@ -78,16 +95,44 @@ export function MarketView({
 
     // Initial fetch + realtime polling from backend (both markets)
     const controller = new AbortController()
-    const interval = '1m'
-    const limit = 300
-    let lastYesSec = 0
-    let lastNoSec = 0
+  const limit = 300
 
     const mapLine = (candles: any[]): LinePoint[] =>
       candles.map((c: any) => ({
         time: toSecs(c.timestamp),
         value: Number(c.close ?? c.open ?? 0),
       }))
+
+    // Build union time grid and carry forward last value so both lines extend to the latest time
+    const padLines = (yes: LinePoint[], no: LinePoint[]): { yes: LinePoint[]; no: LinePoint[] } => {
+      const timesSet = new Set<number>()
+      for (const p of yes) timesSet.add(p.time)
+      for (const p of no) timesSet.add(p.time)
+      const times = Array.from(timesSet).sort((a, b) => a - b)
+
+      const yesByTime = new Map(yes.map(p => [p.time, p.value]))
+      const noByTime = new Map(no.map(p => [p.time, p.value]))
+
+      const firstYes = yes.length > 0 ? yes[0].time : undefined
+      const firstNo = no.length > 0 ? no[0].time : undefined
+
+      const outYes: LinePoint[] = []
+      const outNo: LinePoint[] = []
+      let lastYes: number | undefined = undefined
+      let lastNo: number | undefined = undefined
+
+      for (const t of times) {
+        const y = yesByTime.get(t)
+        const n = noByTime.get(t)
+        if (y !== undefined) lastYes = y
+        if (n !== undefined) lastNo = n
+
+        // Only start output after the first known value exists for each series
+        if (firstYes !== undefined && t >= firstYes && lastYes !== undefined) outYes.push({ time: t, value: lastYes })
+        if (firstNo !== undefined && t >= firstNo && lastNo !== undefined) outNo.push({ time: t, value: lastNo })
+      }
+      return { yes: outYes, no: outNo }
+    }
 
     const loadInitial = async () => {
       if (!proposalId) return
@@ -102,16 +147,11 @@ export function MarketView({
         ])
         const yes = Array.isArray(jsonYes?.candles) ? mapLine(jsonYes.candles) : []
         const no = Array.isArray(jsonNo?.candles) ? mapLine(jsonNo.candles) : []
-        if (yes.length > 0) {
-          yesSeries.setData(yes)
-          lastYesSec = yes[yes.length - 1].time
-        }
-        if (no.length > 0) {
-          noSeries.setData(no)
-          lastNoSec = no[no.length - 1].time
-        }
-        chart.timeScale().fitContent()
-        chart.timeScale().scrollToPosition(5, true)
+        const padded = padLines(yes, no)
+        yesSeries.setData(padded.yes)
+        noSeries.setData(padded.no)
+  chart.timeScale().fitContent()
+  try { chart.timeScale().scrollToRealTime?.() } catch {}
       } catch (_) { /* ignore */ }
     }
 
@@ -128,30 +168,24 @@ export function MarketView({
         ])
         const yes = Array.isArray(jsonYes?.candles) ? mapLine(jsonYes.candles) : []
         const no = Array.isArray(jsonNo?.candles) ? mapLine(jsonNo.candles) : []
-        if (yes.length > 0) {
-          const newYes = yes.filter(p => p.time > lastYesSec)
-          if (newYes.length > 0) {
-            for (const p of newYes) { yesSeries.update(p); lastYesSec = p.time }
-          } else {
-            const last = yes[yes.length - 1]
-            if (last && last.time === lastYesSec) yesSeries.update(last)
-          }
-        }
-        if (no.length > 0) {
-          const newNo = no.filter(p => p.time > lastNoSec)
-          if (newNo.length > 0) {
-            for (const p of newNo) { noSeries.update(p); lastNoSec = p.time }
-          } else {
-            const last = no[no.length - 1]
-            if (last && last.time === lastNoSec) noSeries.update(last)
-          }
-        }
+        const padded = padLines(yes, no)
+        yesSeries.setData(padded.yes)
+        noSeries.setData(padded.no)
         try { chart.timeScale().scrollToRealTime?.() } catch {}
       } catch (_) { /* ignore */ }
     }
 
     void loadInitial()
-    const intervalID = window.setInterval(() => { void poll() }, 5000)
+    const pollMsMap: Record<typeof interval, number> = {
+      '1m': 5000,
+      '5m': 15000,
+      '15m': 30000,
+      '1h': 60000,
+      '4h': 120000,
+      '1d': 300000,
+    }
+    const pollEvery = pollMsMap[interval] ?? 10000
+    const intervalID = window.setInterval(() => { void poll() }, pollEvery)
 
     // Hide TradingView logo/link if present (lightweight-charts branding anchor)
     const hideBranding = () => {
@@ -176,12 +210,26 @@ export function MarketView({
       mo.disconnect()
       chart.remove()
     }
-  }, [proposalId])
+  }, [proposalId, interval])
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
+          <div className="flex items-center justify-between pb-2">
+            <div className="text-sm text-slate-400">Timeframe</div>
+            <div className="flex gap-2">
+              {(['1m','5m','15m','1h','4h','1d'] as const).map((iv) => (
+                <button
+                  key={iv}
+                  onClick={() => setInterval(iv)}
+                  className={`px-2 py-1 rounded text-sm border transition-colors ${interval === iv ? 'bg-slate-700 text-white border-slate-600' : 'bg-transparent text-slate-300 border-slate-600 hover:bg-slate-800'}`}
+                >
+                  {iv}
+                </button>
+              ))}
+            </div>
+          </div>
           <div id="chartContainer" ref={chartContainerRef} className="flex tv-chart-container h-[420px] w-auto" />
         </CardHeader>
       </Card>
