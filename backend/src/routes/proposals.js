@@ -132,16 +132,22 @@ router.get('/:id', async (req, res) => {
 router.post('/', verifyWalletSignature, validateProposal, async (req, res) => {
   try {
     const io = req.app.get('io');
-    const now = Math.floor(Date.now() / 1000);
+
+    // Do not fabricate start/end times here. Only honor explicit values if provided.
     const proposalData = {
       ...req.body,
       creator: req.userAddress,
-      startTime: req.body.startTime || now,
-      endTime: req.body.endTime || (now + (req.body.duration || 86400))
     };
-    if (!proposalData.duration) {
-      proposalData.duration = proposalData.endTime - proposalData.startTime;
+
+    if (req.body.startTime != null && req.body.endTime != null) {
+      proposalData.startTime = req.body.startTime;
+      proposalData.endTime = req.body.endTime;
+      // Compute duration if not included
+      if (proposalData.duration == null) {
+        proposalData.duration = Number(req.body.endTime) - Number(req.body.startTime);
+      }
     }
+
     const proposal = new Proposal(proposalData);
     await proposal.save();
 
@@ -259,6 +265,13 @@ router.get('/:id/stats', async (req, res) => {
     const approveLastPrice = await getLastTradePrice(req.params.id, 'approve');
     const rejectLastPrice = await getLastTradePrice(req.params.id, 'reject');
 
+    // Derive a safe end timestamp for activity/time remaining
+    const yesEnd = Number(proposal?.auctions?.yes?.endTime || 0);
+    const noEnd = Number(proposal?.auctions?.no?.endTime || 0);
+    const derivedEndTs = proposal.endTime != null ? Number(proposal.endTime) : Math.max(yesEnd, noEnd, 0);
+    const endMs = Number.isFinite(derivedEndTs) ? derivedEndTs * 1000 : 0;
+    const nowMs = Date.now();
+
     res.json({
       proposal,
       statistics: {
@@ -279,8 +292,8 @@ router.get('/:id/stats', async (req, res) => {
           spread: rejectBook ? calculateSpread(rejectBook.bids, rejectBook.asks) : '0'
         },
         totalVolume24h: (BigInt(approveVolume24h || '0') + BigInt(rejectVolume24h || '0')).toString(),
-        isActive: proposal.isActive && Date.now() < proposal.endTime * 1000,
-        timeRemaining: Math.max(0, proposal.endTime * 1000 - Date.now())
+        isActive: Boolean(proposal.isActive) && nowMs < endMs,
+        timeRemaining: Math.max(0, endMs - nowMs)
       },
       timestamp: new Date().toISOString()
     });
@@ -308,6 +321,10 @@ router.get('/with-market-data', async (req, res) => {
         const approveVolume24h = await get24hVolume(proposal.id, 'approve');
         const rejectVolume24h = await get24hVolume(proposal.id, 'reject');
 
+        const yesEnd = Number(proposal?.auctions?.yes?.endTime || 0);
+        const noEnd = Number(proposal?.auctions?.no?.endTime || 0);
+        const endTs = proposal.endTime != null ? Number(proposal.endTime) : Math.max(yesEnd, noEnd, 0);
+
         return {
           ...proposal.toObject(),
           marketData: {
@@ -324,7 +341,7 @@ router.get('/with-market-data', async (req, res) => {
               askCount: rejectBook ? rejectBook.asks.length : 0
             },
             totalVolume24h: (BigInt(approveVolume24h || '0') + BigInt(rejectVolume24h || '0')).toString(),
-            isActive: proposal.isActive && Date.now() < proposal.endTime * 1000
+            isActive: Boolean(proposal.isActive) && Date.now() < Number(endTs) * 1000
           }
         };
       })
@@ -536,7 +553,7 @@ router.delete('/:id', verifyWalletSignature, async (req, res) => {
 router.post('/:id/webhook/auctions', async (req, res) => {
   try {
     const id = req.params.id;
-    const proposal = await Proposal.findOne({ id });
+    let proposal = await Proposal.findOne({ id });
     if (!proposal) return res.status(404).json({ error: 'Proposal not found' });
 
     const allowed = [
@@ -563,11 +580,45 @@ router.post('/:id/webhook/auctions', async (req, res) => {
     }
 
     // Update Proposal snapshot
-    const updatedProposal = await Proposal.findOneAndUpdate(
+    proposal = await Proposal.findOneAndUpdate(
       { id },
       { $set: updates },
       { new: true }
     );
+
+    // Derive proposal-level start/end from auction snapshots when available
+    const yesSnap = proposal?.auctions?.yes || {};
+    const noSnap = proposal?.auctions?.no || {};
+    const startCandidates = [Number(yesSnap.startTime), Number(noSnap.startTime)].filter(n => Number.isFinite(n) && n > 0);
+    const endCandidates = [Number(yesSnap.endTime), Number(noSnap.endTime)].filter(n => Number.isFinite(n) && n > 0);
+    const derivedStart = startCandidates.length ? Math.min(...startCandidates) : undefined;
+    const derivedAuctionEnd = endCandidates.length ? Math.max(...endCandidates) : undefined;
+
+    const setDerived = {};
+    if (derivedStart !== undefined && (!proposal.startTime || proposal.startTime !== derivedStart)) {
+      setDerived.startTime = derivedStart;
+    }
+    // While in auction, use auction end as proposal end fallback
+    if (derivedAuctionEnd !== undefined) {
+      if (!proposal.endTime || proposal.state === 'auction') {
+        setDerived.endTime = derivedAuctionEnd;
+      }
+      // Also refresh duration if both times are known
+      if (setDerived.startTime != null || proposal.startTime != null) {
+        const s = setDerived.startTime != null ? setDerived.startTime : proposal.startTime;
+        if (s != null && Number.isFinite(derivedAuctionEnd)) {
+          setDerived.duration = Number(derivedAuctionEnd) - Number(s);
+        }
+      }
+    }
+
+    if (Object.keys(setDerived).length) {
+      proposal = await Proposal.findOneAndUpdate(
+        { id },
+        { $set: setDerived },
+        { new: true }
+      );
+    }
 
     // Also persist to Auction model per side and broadcast real-time updates
     const io = req.app.get('io');
@@ -635,9 +686,9 @@ router.post('/:id/webhook/auctions', async (req, res) => {
     ]);
 
     // Broadcast proposal update
-    if (io) notifyProposalUpdate(io, updatedProposal);
+    if (io) notifyProposalUpdate(io, proposal);
 
-    res.json({ id: updatedProposal.id, auctions: updatedProposal.auctions, timestamp: new Date().toISOString() });
+    res.json({ id: proposal.id, auctions: proposal.auctions, timestamp: new Date().toISOString() });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

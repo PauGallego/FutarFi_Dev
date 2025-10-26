@@ -28,6 +28,30 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
   const subjectSymbol = subjectMeta?.symbol || ''
   const subjectUrl = subjectMeta?.subjectTokenUrl
 
+  // Normalize state for coloring and label
+  const stateRaw = String((proposal as any).state || '').toLowerCase()
+  const stateLabel = stateRaw ? (stateRaw[0].toUpperCase() + stateRaw.slice(1)) : 'Auction'
+  const badgeClass = (statusColors as any)[stateLabel] || statusColors.Auction
+
+  // Derive the most accurate timeframe depending on state, with robust fallbacks
+  const pAny = proposal as any
+  const auctionStart: number | undefined = pAny.auctionStartTime ?? pAny.startTime ?? pAny?.auctions?.yes?.startTime ?? pAny?.auctions?.no?.startTime
+  const auctionEndCandidate = Math.max(
+    Number(pAny?.auctions?.yes?.endTime || 0),
+    Number(pAny?.auctions?.no?.endTime || 0)
+  )
+  const auctionEnd: number | undefined = pAny.auctionEndTime ?? (auctionEndCandidate > 0 ? auctionEndCandidate : undefined) ?? pAny.endTime
+
+  const liveStart: number | undefined = pAny.liveStart ?? pAny.startTime ?? auctionEnd
+  // If liveEnd not present yet, try computing from liveStart + liveDuration
+  const liveDurationSec: number | undefined = typeof pAny.liveDuration === 'number' ? pAny.liveDuration : undefined
+  const liveStartMs: number | undefined = typeof liveStart === 'number' ? (liveStart > 1e12 ? liveStart : liveStart * 1000) : undefined
+  const computedLiveEndMs: number | undefined = (liveStartMs && liveDurationSec) ? (liveStartMs + liveDurationSec * 1000) : undefined
+  const liveEnd: number | undefined = pAny.liveEnd ?? (computedLiveEndMs !== undefined ? computedLiveEndMs : undefined) ?? pAny.endTime ?? auctionEnd
+
+  const windowStart = stateRaw === 'live' ? liveStart : auctionStart
+  const windowEnd = stateRaw === 'live' ? liveEnd : auctionEnd
+
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" asChild>
@@ -60,10 +84,10 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
             <div className="flex items-center gap-2 flex-wrap">
               <Clock className="h-4 w-4" />
               <span>
-                {formatDate(proposal.auctionStartTime)} - {formatDate(proposal.auctionEndTime)}
+                {formatDate(windowStart)} - {formatDate(windowEnd)}
               </span>
-              <Badge variant="outline" className={statusColors[proposal.state]}>
-                {`${proposal.state}`}
+              <Badge variant="outline" className={badgeClass}>
+                {stateLabel}
               </Badge>
             </div>
           </div>
@@ -118,6 +142,7 @@ function formatAddress(address: string): string {
 function formatDate(timestamp: number | bigint | undefined): string {
   if (!timestamp && timestamp !== 0) return 'N/A'
   const tsNum = typeof timestamp === 'bigint' ? Number(timestamp) : Number(timestamp)
+  if (!Number.isFinite(tsNum) || tsNum <= 0) return 'N/A'
   // If timestamp looks like milliseconds already (>= 1e12), use as-is; otherwise treat as seconds
   const ms = tsNum > 1e12 ? tsNum : tsNum * 1000
   return new Date(ms).toLocaleDateString()
