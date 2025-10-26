@@ -44,6 +44,9 @@ FutarFi achieves this by combining an initial liquidity auction, an open order b
 
 
 
+## Contracts flow
+![System Flow](https://github.com/user-attachments/assets/738b7a25-923b-4f21-bfc8-13e9ac591e9f)
+
 
 1. **Proposal Creation**
 
@@ -80,21 +83,17 @@ FutarFi achieves this by combining an initial liquidity auction, an open order b
 
 ---
 
-## Contracts flow
-![System Flow](https://github.com/user-attachments/assets/738b7a25-923b-4f21-bfc8-13e9ac591e9f)
-
 ## Technical Architecture
 
 ```text
-frontend (Next.js + Wagmi + Viem)
+
+├──Backend
 │
-├── interacts with → smart contracts (Hedera EVM)
-│       ├── MarketFactory.sol     → creates proposals and markets with params (minSupply, maxCap, callData)
-│       ├── Market.sol            → handles liquidity auction, order book logic, resolution, and claims
-│       └── MarketToken.sol       → issues market-specific YES/NO tokens
+├──frontend (Next.js + Wagmi + Viem)
 │
-└── backend (API / indexing layer)
-        └── indexes markets and interacts with the TEE endpoint for secure resolution
+└── Blockend
+       ├── Market.sol            → handles liquidity auction, order book logic, resolution, and claims
+       └── MarketToken.sol       → issues market-specific YES/NO tokens
 ```
 
 ### Frontend/Backend Interaction
