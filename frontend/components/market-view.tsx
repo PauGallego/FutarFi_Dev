@@ -1,6 +1,5 @@
 "use client"
 import React, { useEffect, useRef, useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { MarketDepthAndOrders } from "@/components/market-depth-orders"
 import type { MarketData, MarketOption, OrderBookEntry, UserOrder } from "@/lib/types"
 import { createChart, LineSeries } from "lightweight-charts"
@@ -14,6 +13,8 @@ interface MarketViewProps {
   userOrdersError?: string | null
   orderBookEntries?: OrderBookEntry[]
   proposalId?: string
+  // When provided, allows rendering only the chart block or only the orders block for grid alignment
+  mode?: 'both' | 'chart' | 'orders'
 }
 
 // Helper to map backend candle to lightweight-charts format
@@ -29,6 +30,7 @@ export function MarketView({
   userOrdersError,
   orderBookEntries,
   proposalId,
+  mode = 'both',
 }: MarketViewProps) {
   const [interval, setInterval] = useState<'1m' | '5m' | '15m' | '1h' | '4h' | '1d'>('1m')
   const fallbackOrderBook = selectedMarket === "YES" ? marketData.yesOrderBook : marketData.noOrderBook
@@ -37,6 +39,7 @@ export function MarketView({
   const marketOrders = baseOrders.filter((order) => order.market === selectedMarket)
 
   const chartContainerRef = useRef<HTMLDivElement | null>(null)
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     const container = chartContainerRef.current
     if (!container) return
@@ -44,15 +47,27 @@ export function MarketView({
     const chartOptions = {
       layout: {
         textColor: '#94a3b8',
-        background: { type: 'solid', color: '#1a1a1a' },
-      },
+        background: { type: 'solid', color: 'rgba(0,0,0,0)' },
+// -        background: { type: 'solid', color: '#1a1a1a'
+    },
       grid: {
-        vertLines: { color: '#444' },
-        horzLines: { color: '#444' },
+        vertLines: { color: 'rgba(68,68,68,0.1)' },
+        horzLines: { color: 'rgba(68,68,68,0.1)' },
       },
       timeScale: {
         rightOffset: 0,
         shiftVisibleRangeOnNewBar: true,
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: (time: any) => {
+          try {
+            const ts = typeof time === 'number' ? time : Number(time)
+            const d = new Date(ts * 1000)
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          } catch {
+            return ''
+          }
+        },
       },
       height: 420,
     } as const
@@ -90,8 +105,7 @@ export function MarketView({
           title: 'tNO',
         })
 
-    // Ensure container has enough vertical space
-    container.style.height = '420px'
+  // Ensure the chart fills its wrapper (absolute inset-0 via CSS)
 
     // Initial fetch + realtime polling from backend (both markets)
     const controller = new AbortController()
@@ -108,29 +122,48 @@ export function MarketView({
       const timesSet = new Set<number>()
       for (const p of yes) timesSet.add(p.time)
       for (const p of no) timesSet.add(p.time)
-      const times = Array.from(timesSet).sort((a, b) => a - b)
+      let times = Array.from(timesSet).sort((a, b) => a - b)
+
+      // If both series empty, synthesize a single timestamp "now" so we render zeros
+      if (times.length === 0) {
+        const now = Math.floor(Date.now() / 1000)
+        times = [now]
+      }
 
       const yesByTime = new Map(yes.map(p => [p.time, p.value]))
       const noByTime = new Map(no.map(p => [p.time, p.value]))
 
-      const firstYes = yes.length > 0 ? yes[0].time : undefined
-      const firstNo = no.length > 0 ? no[0].time : undefined
-
       const outYes: LinePoint[] = []
       const outNo: LinePoint[] = []
-      let lastYes: number | undefined = undefined
-      let lastNo: number | undefined = undefined
 
-      for (const t of times) {
-        const y = yesByTime.get(t)
-        const n = noByTime.get(t)
-        if (y !== undefined) lastYes = y
-        if (n !== undefined) lastNo = n
-
-        // Only start output after the first known value exists for each series
-        if (firstYes !== undefined && t >= firstYes && lastYes !== undefined) outYes.push({ time: t, value: lastYes })
-        if (firstNo !== undefined && t >= firstNo && lastNo !== undefined) outNo.push({ time: t, value: lastNo })
+      // If a side has no data at all, output zeros across all times
+      if (yes.length === 0) {
+        for (const t of times) outYes.push({ time: t, value: 0 })
       }
+      if (no.length === 0) {
+        for (const t of times) outNo.push({ time: t, value: 0 })
+      }
+
+      // Carry-forward last known values for sides that do have data
+      if (yes.length > 0) {
+        let last: number | undefined
+        const firstT = yes[0].time
+        for (const t of times) {
+          const v = yesByTime.get(t)
+          if (v !== undefined) last = v
+          if (t >= firstT && last !== undefined) outYes.push({ time: t, value: last })
+        }
+      }
+      if (no.length > 0) {
+        let last: number | undefined
+        const firstT = no[0].time
+        for (const t of times) {
+          const v = noByTime.get(t)
+          if (v !== undefined) last = v
+          if (t >= firstT && last !== undefined) outNo.push({ time: t, value: last })
+        }
+      }
+
       return { yes: outYes, no: outNo }
     }
 
@@ -199,48 +232,74 @@ export function MarketView({
     mo.observe(container, { childList: true, subtree: true })
 
     const onResize = () => {
-      chart.applyOptions({ height: 420 })
+      const wrap = wrapperRef.current
+      if (!wrap) return
+      const rect = wrap.getBoundingClientRect()
+      if ((chart as any).resize) {
+        (chart as any).resize(Math.max(0, Math.floor(rect.width)), Math.max(0, Math.floor(rect.height)))
+      } else {
+        chart.applyOptions({ width: Math.max(0, Math.floor(rect.width)), height: Math.max(0, Math.floor(rect.height)) })
+      }
     }
     window.addEventListener('resize', onResize)
+    // Observe wrapper size changes too
+  const RO = (window as any).ResizeObserver
+  const ro = RO ? new RO(() => onResize()) : null
+  if (ro && wrapperRef.current) ro.observe(wrapperRef.current)
+    // Initial size sync (next tick)
+    setTimeout(onResize, 0)
 
     return () => {
       clearInterval(intervalID)
       controller.abort()
       window.removeEventListener('resize', onResize)
+  if (ro && wrapperRef.current) ro.unobserve(wrapperRef.current)
       mo.disconnect()
       chart.remove()
     }
   }, [proposalId, interval])
 
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between pb-2">
-            <div className="text-sm text-slate-400">Timeframe</div>
-            <div className="flex gap-2">
-              {(['1m','5m','15m','1h','4h','1d'] as const).map((iv) => (
-                <button
-                  key={iv}
-                  onClick={() => setInterval(iv)}
-                  className={`px-2 py-1 rounded text-sm border transition-colors ${interval === iv ? 'bg-slate-700 text-white border-slate-600' : 'bg-transparent text-slate-300 border-slate-600 hover:bg-slate-800'}`}
-                >
-                  {iv}
-                </button>
-              ))}
-            </div>
+  const ChartBlock = (
+      <div ref={wrapperRef} className="relative w-full h-[420px] rounded-md border overflow-hidden">
+        <div className="absolute top-2 left-2 z-10 font-sans ">
+          <select
+            aria-label="Timeframe"
+            value={interval}
+            onChange={(e) => setInterval(e.target.value as any)}
+            className="text-sm rounded border bg-muted text-foreground px-2 py-1 focus:outline-none focus:ring-1 focus:ring-foreground/30 font-sans appearance-none"
+            style={{ fontFamily: 'var(--font-sans, var(--font-geist-sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol))' }}
+          >
+  
+            <option className="" value="1m">1m</option>
+            <option className="" value="5m">5m</option>
+            <option className="" value="15m">15m</option>
+            <option className="" value="1h">1h</option>
+            <option className="" value="4h">4h</option>
+            <option className="" value="1d">1d</option>
+          </select>
           </div>
-          <div id="chartContainer" ref={chartContainerRef} className="flex tv-chart-container h-[420px] w-auto" />
-        </CardHeader>
-      </Card>
+          <div id="chartContainer" ref={chartContainerRef} className="absolute inset-0" />
+      </div>
+  )
 
-      <MarketDepthAndOrders
-        market={selectedMarket}
-        orderBook={orderBook}
-        userOrders={marketOrders}
-        onCancelOrder={onCancelOrder}
-        userOrdersError={userOrdersError}
-      />
+  const OrdersBlock = (
+    <MarketDepthAndOrders
+      compact
+      market={selectedMarket}
+      orderBook={orderBook}
+      userOrders={marketOrders}
+      onCancelOrder={onCancelOrder}
+      userOrdersError={userOrdersError}
+    />
+  )
+
+  if (mode === 'chart') return ChartBlock
+  if (mode === 'orders') return OrdersBlock
+
+  return (
+    <div className="space-y-8">
+      {ChartBlock}
+      {OrdersBlock}
     </div>
   )
 }

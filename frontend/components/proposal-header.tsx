@@ -67,6 +67,9 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
               </span>
             </div>
           </div>
+          <div className="prose prose-invert max-w-none">
+            <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">{proposal.description}</p>
+          </div>
           {subjectSymbol && (
             subjectUrl ? (
               <a
@@ -99,11 +102,9 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
               </span>
             )
           )}
+       
         </div>
 
-        <div className="prose prose-invert max-w-none">
-          <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">{proposal.description}</p>
-        </div>
       </div>
     </div>
   )

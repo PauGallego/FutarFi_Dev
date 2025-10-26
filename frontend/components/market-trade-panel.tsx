@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+// Removed Tabs in favor of a custom segmented control matching BUY/SELL style
 import { useAccount } from "wagmi"
 import { usePublicClient } from "wagmi"
 import { toast } from "sonner"
@@ -301,12 +301,30 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
             </div>
           </div>
 
-          <Tabs value={orderType} onValueChange={(v) => setOrderType(v as OrderType)}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="market">Market</TabsTrigger>
-              <TabsTrigger value="limit">Limit</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Order Type</Label>
+            <div className="relative rounded-md bg-muted overflow-hidden">
+              <div
+                className={`absolute inset-y-0 w-1/2 transition-all duration-300 ease-out ${
+                  orderType === "market" ? "left-0" : "left-1/2"
+                } bg-blue-500`}
+              />
+              <div className="relative z-10 flex w-full">
+                <button
+                  onClick={() => setOrderType("market")}
+                  className={`${orderType === "market" ? "text-black" : "text-muted-foreground hover:text-foreground"} w-1/2 py-2 font-semibold text-sm text-center`}
+                >
+                  Market
+                </button>
+                <button
+                  onClick={() => setOrderType("limit")}
+                  className={`${orderType === "limit" ? "text-black" : "text-muted-foreground hover:text-foreground"} w-1/2 py-2 font-semibold text-sm text-center`}
+                >
+                  Limit
+                </button>
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">

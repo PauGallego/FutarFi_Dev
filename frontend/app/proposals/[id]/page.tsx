@@ -260,19 +260,30 @@ export default function ProposalDetailPage({ params }: PageProps) {
 
   return (
     <div className="container mx-auto px-4 py-12">
-      <div className="grid lg:grid-cols-3 gap-8">
-        {/* Left/Main Content */}
-        <div className={`${isResolvedView ? "lg:col-span-3" : "lg:col-span-2"} space-y-6`}>
+      {/* Unified grid to align chart/trade and orderbook/balances */}
+      <div className="grid lg:grid-cols-3 gap-8 items-start">
+        {/* Header spans full width */}
+        <div className="lg:col-span-3">
           <ProposalHeader proposal={proposal} chainId={chainId} />
+        </div>
 
-          {isResolvedView ? (
+        {isResolvedView ? (
+          <div className="lg:col-span-3">
             <AuctionResolvedOnChain proposalAddress={(proposal as any).address} />
-          ) : (
-            ((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") ? (
+          </div>
+        ) : ((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") ? (
+          <>
+            <div className="lg:col-span-3">
               <AuctionView proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} userBalance={(userBalance as any)} />
-            ) : (
-              (proposal as any).marketData && (
+            </div>
+          </>
+        ) : (
+          (proposal as any).marketData && (
+            <>
+              {/* Left: Chart with selector below and chosen content immediately under */}
+              <div className="lg:col-span-2">
                 <MarketView
+                  // default mode renders chart + tabs + chosen content
                   marketData={(proposal as any).marketData}
                   userOrders={userOrders}
                   selectedMarket={selectedMarket}
@@ -282,27 +293,21 @@ export default function ProposalDetailPage({ params }: PageProps) {
                   orderBookEntries={liveOrderbook}
                   proposalId={proposal.id}
                 />
-              )
-            )
-          )}
-        </div>
-
-        {/* Right Sidebar */}
-        {!isResolvedView && (
-          <div className="lg:sticky lg:top-4 lg:self-start">
-            {((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") && (proposal as any).auctionData ? (
-              <AuctionTradePanel proposalAddress={(proposal as any).address} auctionData={(proposal as any).auctionData} isFailed={(proposal as any).state === "Cancelled"} />
-            ) : (
-              <>
-                {/* Current prices for YES/NO shown above trade panel */}
+              </div>
+              <div className="lg:col-span-1 space-y-4">
                 <MarketPriceHeader proposalId={proposal.id} />
-                <MarketTradePanel selectedMarket={selectedMarket} onMarketChange={setSelectedMarket} proposalId={proposal.id} onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }} />
-                <div className="mt-4">
-                  <MarketBalancesPanel proposalId={proposal.id} />
-                </div>
-              </>
-            )}
-          </div>
+                <MarketTradePanel
+                  selectedMarket={selectedMarket}
+                  onMarketChange={setSelectedMarket}
+                  proposalId={proposal.id}
+                  onOrderPlaced={() => { refetchUserOrders(); refetchOrderbook(); }}
+                />
+                {/* Your Balances directly below the trade panel */}
+                <MarketBalancesPanel proposalId={proposal.id} />
+              </div>
+              
+            </>
+          )
         )}
       </div>
     </div>
