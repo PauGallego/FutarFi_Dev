@@ -32,10 +32,10 @@ function HeroFlipWords() {
   const words: string[] = ["everyone", "DAO's", "Equity", "DeFi", "governance", "Insurance", "open source", "L2s"];
 
   return (
-    <div className="w-full flex items-center  justify-center px-4">
-      <div className="relative inline-block  md:text-6xl font-normal text-neutral-600 dark:text-neutral-400 leading-tight translate-x-0 sm:-translate-x-6 md:-translate-x-16 lg:-translate-x-24 xl:-translate-x-32">
-        <span className="whitespace-nowrap xl:text-8xl md:text-6xl sm:text-4xl">Futarchy for</span>
-        <span className="absolute left-full xl:text-8xl md:text-6xl sm:text-4xl top-0 ml-2 whitespace-nowrap">
+    <div className="w-full flex flex-col items-center justify-center px-4">
+      <div className="relative inline-block text-center w-full text-5xl sm:text-6xl xl:text-8xl font-normal text-neutral-600 dark:text-neutral-400 leading-tight">
+        <span className="whitespace-nowrap block">Futarchy for</span>
+        <span className="block mt-2">
           <FlipWords words={words} />
         </span>
       </div>
