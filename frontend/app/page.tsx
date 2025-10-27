@@ -259,7 +259,7 @@ export default function HomePage() {
             <h2 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
               Hardware-Level Security
             </h2>
-            <p className="text-lg text-muted-foreground w-max">
+            <p className="text-lg text-muted-foreground w-full break-words">
               Our orderbook runs in a Trusted Execution Environment, combining CEX speed with DEX security
             </p>
           </div>
@@ -291,9 +291,6 @@ export default function HomePage() {
                 </div>
               </div>
             </Card>
-
-           
-           
 
             {/* Attestation Card */}
             <Card className="md:col-span-2 p-6 relative overflow-hidden group hover:border-secondary/50 transition-all duration-300">

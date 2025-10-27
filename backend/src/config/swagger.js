@@ -6,12 +6,12 @@ const options = {
     info: {
       title: 'FutarFi DeFi Protocol API',
       version: '1.0.0',
-      description: 'Backend API for the FutarFi DeFi Protocol with real-time WebSocket support, limit/market orders, and comprehensive market data.'
+      description: 'Backend API (TEE) for the FutarFi DeFi Protocol with real-time WebSocket support, limit/market orders, and comprehensive market data.'
     },
     servers: [
       {
-        url: 'http://localhost:3001',
-        description: 'Development server'
+        url: 'https://api.futarfi.com',
+        description: 'Production server'
       }
     ],
     components: {

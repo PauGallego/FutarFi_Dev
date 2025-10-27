@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ConnectWalletButton } from "@/components/connect-wallet-button"
 import { useRouter } from "next/navigation"
+import { useCreateOrder } from "@/hooks/use-mintPublic"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"
 
@@ -36,6 +37,7 @@ export default function ProposalsPage() {
   const { proposals, isLoading, error } = useGetAllProposals()
   const { isConnected } = useAccount()
   const router = useRouter()
+  const { mintPublic, pyUSDBalance, error: mintError } = useCreateOrder()
 
   // Backend proposals when wallet is NOT connected
   const [apiProposals, setApiProposals] = useState<any[]>([])
@@ -111,7 +113,7 @@ export default function ProposalsPage() {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`
   }
 
-  
+
 
 
   return (
@@ -121,12 +123,24 @@ export default function ProposalsPage() {
           <h1 className="text-4xl font-bold mb-2">Proposals</h1>
           <p className="text-muted-foreground">Browse and vote on active governance proposals</p>
         </div>
-        <Button asChild size="lg">
-          <Link href="/proposals/new">
-            <Plus className="mr-2 h-5 w-5" />
-            Create Proposal
-          </Link>
-        </Button>
+        <div className="flex gap-2 items-center">
+          {isConnected ? (
+            <>
+              <p className="text-base text-muted-foreground m-2" id="pyusd-balance">
+                PYUSD balance: {Number(pyUSDBalance) / 1e6}
+              </p>
+              <Button size="lg" className="bg-blue-600" variant="default" onClick={mintPublic}>
+                Claim some PYUSD
+              </Button>
+            </>
+          ) : null}
+          <Button asChild size="lg">
+            <Link href="/proposals/new">
+              <Plus className="mr-2 h-5 w-5" />
+              Create Proposal
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {errorToShow && (
@@ -189,45 +203,45 @@ export default function ProposalsPage() {
           {list.map((proposal: any) => {
             const stateKey = (proposal.state ?? 'Auction') as StatusKey
             return (
-            <Link
-              key={proposal.id}
-              href={`/proposals/${proposal.id}`}
-              onClick={(e) => {
-                if (!connectionChecked) return
-                if (!isConnected) {
-                  e.preventDefault()
-                  setTargetHref(`/proposals/${proposal.id}`)
-                  setGuardOpen(true)
-                }
-              }}
-            >
+              <Link
+                key={proposal.id}
+                href={`/proposals/${proposal.id}`}
+                onClick={(e) => {
+                  if (!connectionChecked) return
+                  if (!isConnected) {
+                    e.preventDefault()
+                    setTargetHref(`/proposals/${proposal.id}`)
+                    setGuardOpen(true)
+                  }
+                }}
+              >
 
-              <Card key={proposal.id} className="hover:border-primary/50 transition-colors">
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-2 flex-1 min-w-0">
-                      <CardTitle className="text-2xl truncate">{proposal.title}</CardTitle>
-                      <CardDescription className="text-base leading-relaxed line-clamp-2">{proposal.description}</CardDescription>
+                <Card key={proposal.id} className="hover:border-primary/50 transition-colors">
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-4 overflow-auto">
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <CardTitle className="text-2xl truncate">{proposal.title}</CardTitle>
+                        <CardDescription className="text-base leading-relaxed line-clamp-2">{proposal.description}</CardDescription>
+                      </div>
+                      <Badge variant="outline" className={statusStyles[stateKey]}>
+                        {statusLabels[stateKey]}
+                      </Badge>
                     </div>
-                    <Badge variant="outline" className={statusStyles[stateKey]}>
-                      {statusLabels[stateKey]}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      <span>Created by {formatAddress(proposal.admin)}</span>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        <span>Created by {formatAddress(proposal.admin)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        <span>Started at: {new Date(proposal.auctionStartTime).toLocaleDateString()}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      <span>Started at: {new Date(proposal.auctionStartTime).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
+                  </CardContent>
+                </Card>
+              </Link>
             )
           })}
         </div>
