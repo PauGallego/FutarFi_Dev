@@ -31,13 +31,13 @@ export function Navigation() {
             className="hidden dark:block"
             priority
           />
-          <span className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">
+          <span className="text-xl font-bold text-foreground group-hover:text-primary transition-colors sm:mr-2">
             FutarFi
           </span>
         </Link>
 
         <div className="flex items-center gap-4">
-          <ThemeToggle />
+          <ThemeToggle  />
           {mounted && <ConnectButton />}</div>
       </div>
     </nav>
