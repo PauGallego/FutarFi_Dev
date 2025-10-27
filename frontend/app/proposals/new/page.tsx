@@ -186,11 +186,6 @@ export default function NewProposalPage() {
       return fail("Connect your wallet to submit a proposal.")
     }
 
-    // Strongly encourage using the Anvil chain when developing locally
-    if (chainId !== 31337) {
-      return fail("Wrong network. Please switch your wallet to Anvil (31337).")
-    }
-
     if (useTarget === "YES") {
       if (!formData.targetAddress.trim() || !isAddress(formData.targetAddress)) {
         return fail("Please provide a valid target contract address.")

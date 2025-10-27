@@ -4,8 +4,9 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IPyUSD} from "../interfaces/IPyUSD.sol";
 
-contract PyUSD is ERC20Burnable, ERC20Permit, Ownable {
+contract PyUSD is ERC20Burnable, ERC20Permit, Ownable, IPyUSD {
     string constant TOKEN_NAME = "PayPal USD";
     string constant TOKEN_SYMBOL = "PYUSD";
 
