@@ -105,8 +105,9 @@ export default function ProposalsPage() {
   // Refresh PYUSD balance every 5 seconds if connected
   useEffect(() => {
     if (!isConnected) return;
+    refetchOnchain(); // Fetch balance immediately on mount
     const interval = setInterval(() => {
-      refetchOnchain && refetchOnchain();
+      refetchOnchain();
     }, 5000); // Actualiza cada 5 segundos
     return () => clearInterval(interval);
   }, [isConnected, refetchOnchain]);
