@@ -12,11 +12,11 @@ if (projectId.length !== 32) {
 }
 
 const chains = [
-  mainnet,
-  sepolia,
-  hederaWithIcon as unknown as Chain,
+  // mainnet,
+  // sepolia,
+  // hederaWithIcon as unknown as Chain,
   hederaTestnetWithIcon as unknown as Chain,
-  anvil as unknown as Chain,
+  // anvil as unknown as Chain,
 ] as [Chain, ...Chain[]]
 
 // Always show MetaMask + Rabby; allow others via injected + WalletConnect
@@ -46,11 +46,11 @@ const connectors = connectorsForWallets(
 export const config = createConfig({
   chains,
   transports: {
-    [mainnet.id]: http(),
-    [sepolia.id]: http(),
-    [hederaWithIcon.id]: http(),
+    // [mainnet.id]: http(),
+    // [sepolia.id]: http(),
+    // [hederaWithIcon.id]: http(),
     [hederaTestnetWithIcon.id]: http(),
-    [anvil.id]: http(),
+    // [anvil.id]: http(),
   },
   connectors,
   ssr: true,

@@ -36,7 +36,7 @@ export function Navigation() {
           </span>
         </Link>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 sm:ml-2">
           <ThemeToggle  />
           {mounted && <ConnectButton />}</div>
       </div>

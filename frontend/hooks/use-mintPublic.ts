@@ -39,6 +39,7 @@ export function useCreateOrder() {
     }
   }, [publicClient, address, pyusdAddress])
 
+
   const anyWindow = window as any
   const mintPublic = useCallback(async () => {
     if (!pyusdAddress) return
@@ -63,8 +64,14 @@ export function useCreateOrder() {
       await refetchOnchain()
       setError(null)
     } catch (err) {
-      console.error('Error minting:', err)
-      setError('Error minting')
+      let errorMsg = 'Error minting';
+      if (err instanceof Error && err.message) {
+        errorMsg = err.message;
+      } else if (typeof err === 'string') {
+        errorMsg = err;
+      }
+      setError(errorMsg);
+      console.error('Error minting:', err);
     } finally {
     }
   }, [pyusdAddress, refetchOnchain])
