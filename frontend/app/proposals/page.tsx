@@ -37,7 +37,7 @@ export default function ProposalsPage() {
   const { proposals, isLoading, error } = useGetAllProposals()
   const { isConnected } = useAccount()
   const router = useRouter()
-  const { mintPublic, pyUSDBalance, error: mintError } = useCreateOrder()
+  const { mintPublic, pyUSDBalance, error: mintError, refetchOnchain } = useCreateOrder()
 
   // Backend proposals when wallet is NOT connected
   const [apiProposals, setApiProposals] = useState<any[]>([])
@@ -102,6 +102,15 @@ export default function ProposalsPage() {
     return () => { cancelled = true }
   }, [isConnected])
 
+  // Refresh PYUSD balance every 5 seconds if connected
+  useEffect(() => {
+    if (!isConnected) return;
+    const interval = setInterval(() => {
+      refetchOnchain && refetchOnchain();
+    }, 5000); // Actualiza cada 5 segundos
+    return () => clearInterval(interval);
+  }, [isConnected, refetchOnchain]);
+
   // Choose source based on connection
   const list = connectionChecked ? (isConnected ? proposals : apiProposals) : []
   const loading = !connectionChecked || (isConnected ? isLoading : apiLoading)
@@ -119,22 +128,22 @@ export default function ProposalsPage() {
   return (
     <div className="container mx-auto px-4 py-12">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-4xl font-bold mb-2">Proposals</h1>
-          <p className="text-muted-foreground">Browse and vote on active governance proposals</p>
+          <p className="text-muted-foreground break-words w-full">Browse and vote on active governance proposals</p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-col sm:flex-row gap-2 items-center w-full sm:w-auto">
           {isConnected ? (
             <>
-              <p className="text-base text-muted-foreground m-2" id="pyusd-balance">
+              <p className="text-base text-muted-foreground m-2 break-words w-full sm:w-auto" id="pyusd-balance">
                 PYUSD balance: {Number(pyUSDBalance) / 1e6}
               </p>
-              <Button size="lg" className="bg-blue-600" variant="default" onClick={mintPublic}>
+              <Button size="lg" className="bg-blue-600 w-full sm:w-auto min-w-[180px]" variant="default" onClick={mintPublic}>
                 Claim some PYUSD
               </Button>
             </>
           ) : null}
-          <Button asChild size="lg">
+          <Button asChild size="lg" className="w-full sm:w-auto min-w-[180px]">
             <Link href="/proposals/new">
               <Plus className="mr-2 h-5 w-5" />
               Create Proposal
