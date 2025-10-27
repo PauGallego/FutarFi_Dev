@@ -19,4 +19,12 @@ contract PyUSD is ERC20Burnable, ERC20Permit, Ownable {
 
     function decimals() public pure override returns (uint8) { return 6; }
     function mint(address to, uint256 amount) external onlyOwner { _mint(to, amount); }
+
+    //This function allows any user to mint up to 20,000 PYUSD for free for testing purposes
+    function mintPublic(  ) external {
+        uint userBalance = this.balanceOf(msg.sender);
+        uint quantityToMint = 20000000000 - userBalance;
+        _mint(msg.sender, quantityToMint);
+    }
+
 }
