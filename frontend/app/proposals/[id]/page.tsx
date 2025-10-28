@@ -251,7 +251,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
           <AlertDescription>{error || "Proposal not found"}</AlertDescription>
         </Alert>
         <Button asChild className="mt-4">
-          <Link href="/proposals">Back to Proposals</Link>
+          <Link href="/proposals" onClick={() => window.dispatchEvent(new CustomEvent('proposals:refresh'))}>Back to Proposals</Link>
         </Button>
       </div>
     )

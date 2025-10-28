@@ -13,7 +13,7 @@ export type WalletAuth = {
 }
 
 const STORAGE_KEY = "futarfi:walletAuth"
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL 
 // Reverification TTL set to 59 minutes
 const AUTH_TTL_MS = 59 * 60 * 1000
 

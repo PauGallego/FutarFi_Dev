@@ -55,7 +55,7 @@ export function ProposalHeader({ proposal, chainId }: ProposalHeaderProps) {
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" asChild>
-        <Link href="/proposals">
+        <Link href="/proposals" onClick={() => window.dispatchEvent(new CustomEvent('proposals:refresh'))}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Proposals
         </Link>

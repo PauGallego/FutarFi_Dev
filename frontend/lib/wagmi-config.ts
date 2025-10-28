@@ -43,13 +43,14 @@ const connectors = connectorsForWallets(
   { appName: 'FutarFi', projectId }
 )
 
+
 export const config = createConfig({
   chains,
   transports: {
     // [mainnet.id]: http(),
     // [sepolia.id]: http(),
     // [hederaWithIcon.id]: http(),
-    [hederaTestnetWithIcon.id]: http(),
+    [hederaTestnetWithIcon.id]: http(process.env.NEXT_PUBLIC_RPC_URL),
     // [anvil.id]: http(),
   },
   connectors,

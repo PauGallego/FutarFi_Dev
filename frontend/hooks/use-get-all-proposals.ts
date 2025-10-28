@@ -24,6 +24,7 @@ export function useGetAllProposals() {
 
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [isLoadingProposals, setIsLoadingProposals] = useState(false)
+  const [reloadCounter, setReloadCounter] = useState(0)
 
   useEffect(() => {
     async function fetchProposalDetails() {
@@ -153,7 +154,7 @@ export function useGetAllProposals() {
     }
 
     fetchProposalDetails()
-  }, [proposalAddresses, publicClient])
+  }, [proposalAddresses, publicClient, reloadCounter])
 
   console.log('useGetAllProposals - returning:', { 
     proposals, 
@@ -167,8 +168,8 @@ export function useGetAllProposals() {
     isLoading: isLoadingAddresses || isLoadingProposals,
     error,
     refetch: () => {
-      // This would trigger a refetch of the proposal addresses
-      // The useEffect will handle refetching the details
+      // Incrementing reloadCounter will trigger the useEffect to run again
+      setReloadCounter((r) => r + 1)
     }
   }
 }

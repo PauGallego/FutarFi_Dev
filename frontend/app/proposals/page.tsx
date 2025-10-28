@@ -12,10 +12,12 @@ import { useAccount } from "wagmi"
 import { useEffect, useMemo, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ConnectWalletButton } from "@/components/connect-wallet-button"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { useCreateOrder } from "@/hooks/use-mintPublic"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL 
+console.log('Using RPC URL:', process.env.NEXT_PUBLIC_API_URL)
+  console.log('Using RPC URL:', process.env.NEXT_PUBLIC_RPC_URL)
 
 const statusStyles = {
   Auction: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
@@ -34,7 +36,7 @@ const statusLabels = {
 type StatusKey = keyof typeof statusStyles
 
 export default function ProposalsPage() {
-  const { proposals, isLoading, error } = useGetAllProposals()
+  const { proposals, isLoading, error, refetch } = useGetAllProposals()
   const { isConnected } = useAccount()
   const router = useRouter()
   const { mintPublic, pyUSDBalance, error: mintError, refetchOnchain } = useCreateOrder()
@@ -112,10 +114,62 @@ export default function ProposalsPage() {
     return () => clearInterval(interval);
   }, [isConnected, refetchOnchain]);
 
+  // Ensure proposals are refetched when returning to this page (back navigation, bfcache, or tab visibility)
+  useEffect(() => {
+    if (!refetch) return
+
+    const onPop = () => {
+      try { refetch() } catch (e) { /* ignore */ }
+    }
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        try { refetch() } catch (e) { /* ignore */ }
+      }
+    }
+
+    const onPageShow = (ev: PageTransitionEvent) => {
+      try {
+        // pageshow persisted indicates bfcache navigation restore
+        if ((ev as any)?.persisted) refetch()
+      } catch (e) { /* ignore */ }
+    }
+
+    window.addEventListener('popstate', onPop)
+    window.addEventListener('pageshow', onPageShow as EventListener)
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      window.removeEventListener('pageshow', onPageShow as EventListener)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [refetch])
+
+
+  // Listen for explicit refresh events dispatched by detail pages when navigating back
+  useEffect(() => {
+    if (!refetch) return
+    const handler = () => {
+      try { refetch() } catch (e) { /* ignore */ }
+    }
+    window.addEventListener('proposals:refresh', handler as EventListener)
+    return () => window.removeEventListener('proposals:refresh', handler as EventListener)
+  }, [refetch])
+
   // Choose source based on connection
   const list = connectionChecked ? (isConnected ? proposals : apiProposals) : []
   const loading = !connectionChecked || (isConnected ? isLoading : apiLoading)
   const errorToShow = connectionChecked ? (isConnected ? error : apiError) : null
+
+  // Filter out proposals with the disallowed title
+  const filteredList = useMemo(() => {
+    try {
+      return (list || []).filter((p: any) => String(p?.title ?? '').trim() !== 'Phat Nickher')
+    } catch (e) {
+      return list || []
+    }
+  }, [list])
 
   // Helper function to format address
   const formatAddress = (addr: string) => {
@@ -172,7 +226,7 @@ export default function ProposalsPage() {
             </div>
           </div>
         </Card>
-      ) : list.length === 0 ? (
+  ) : filteredList.length === 0 ? (
         <Card className="p-12">
           <div className="flex flex-col items-center text-center space-y-4">
             <div className="p-4 rounded-full bg-muted">
@@ -210,7 +264,7 @@ export default function ProposalsPage() {
               </div>
             </DialogContent>
           </Dialog>
-          {list.map((proposal: any) => {
+          {filteredList.map((proposal: any) => {
             const stateKey = (proposal.state ?? 'Auction') as StatusKey
             return (
               <Link
