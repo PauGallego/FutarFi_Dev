@@ -53,15 +53,17 @@ contract ProposalManagerBasicTest is Test {
         assertEq(id, 1);
         assertEq(pm.nextId(), 1);
 
-        address proposalAddrBob = pm.getProposalById(1);
-        assertTrue(proposalAddrBob != address(0));
 
-        address[] memory all = pm.getAllProposals();
+        ProposalManager.ProposalInfo memory info = pm.getProposalById(1);
+
+        ProposalManager.ProposalInfo[] memory proposalsByAdmin = pm.getProposalsByAdmin(bob);
+        assertEq(proposalsByAdmin.length, 1);
+        assertEq(proposalsByAdmin[0].id, 1);
+
+        ProposalManager.ProposalInfo[] memory all = pm.getAllProposals();
         assertEq(all.length, 1);
 
-        address[] memory byBob = pm.getProposalsByAdmin(bob);
-        assertEq(byBob.length, 1);
-        assertEq(byBob[0], proposalAddrBob);
+       
 
         vm.prank(alice);
         uint256 id2 = pm.createProposal(
@@ -81,14 +83,75 @@ contract ProposalManagerBasicTest is Test {
         assertEq(id2, 2);
         assertEq(pm.nextId(), 2);
 
-        address proposalAddrAlice = pm.getProposalById(2);
-        assertTrue(proposalAddrAlice != address(0));
+        ProposalManager.ProposalInfo memory proposalInfoAlice = pm.getProposalById(2);
+        assertTrue(proposalInfoAlice.id != 0);
 
         all = pm.getAllProposals();
         assertEq(all.length, 2);
 
-        address[] memory byAlice = pm.getProposalsByAdmin(alice);
+        ProposalManager.ProposalInfo[] memory byAlice = pm.getProposalsByAdmin(alice);
         assertEq(byAlice.length, 1);
-        assertEq(byAlice[0], proposalAddrAlice);
+        assertEq(byAlice[0].id, 2);
+    }
+
+
+    function test_DeleteProposal_ByAdminOrOwner() public {
+        vm.prank(bob);
+        uint256 id = pm.createProposal(
+            "Title",
+            "Description",
+            100,            // auctionDuration
+            200,            // liveDuration
+            "Subject Token",     // subjectToken
+            1,              // minToOpen
+            1000e18,        // maxCap
+            address(0),     // target
+            "",            // data
+            PYTH_CONTRACT,     // pythAddr
+            PYTH_ID      // pythId
+        );
+
+        ProposalManager.ProposalInfo memory info = pm.getProposalById(id);
+        assertEq(info.id, id);
+        assertTrue(info.admin == bob);
+
+        // Attempt delete by non-admin/non-owner should fail
+        vm.prank(alice);
+        vm.expectRevert("PM:not-authorized");
+        pm.deleteProposal(info.proposalAddress);
+
+        // Delete by admin should succeed
+        vm.prank(bob);
+        pm.deleteProposal(info.proposalAddress);
+        vm.expectRevert("PM:unknown-id");
+        ProposalManager.ProposalInfo memory fetched = pm.getProposalById(id);
+
+        // Re-create proposal
+        vm.prank(bob);
+        id = pm.createProposal(
+            "Title",
+            "Description",
+            100,            
+            200,            
+            "Subject Token",     
+            1,              
+            1000e18,        
+            address(0),     
+            "",            
+            PYTH_CONTRACT,    
+            PYTH_ID     
+        );
+
+        ProposalManager.ProposalInfo memory info2 = pm.getProposalById(id);
+        assertEq(info2.id, id);
+        assertTrue(info2.admin == bob);
+
+
+        // Delete by owner should succeed
+        vm.prank(pm.owner());
+        pm.deleteProposal(info2.proposalAddress);
+        vm.expectRevert("PM:unknown-id");
+        fetched = pm.getProposalById(id);
+       
     }
 }

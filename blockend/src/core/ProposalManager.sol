@@ -97,24 +97,116 @@ contract ProposalManager is Ownable, IProposalManager {
     }
 
     // --- Views (ABI compatibility with frontend) ---
-    function getProposalById(uint256 _proposalId) external view returns (address proposal) {
-        proposal = proposals[_proposalId];
+    function getProposalById(uint256 _proposalId) external view returns (ProposalInfo memory) {
+        address proposal = proposals[_proposalId];
+        if (proposal == address(0)) revert ("PM:unknown-id");
+        return ProposalInfo({
+            id: IProposal(proposal).id(),
+            admin: IProposal(proposal).admin(),
+            title: IProposal(proposal).title(),
+            description: IProposal(proposal).description(),
+            state: IProposal(proposal).state(),
+            auctionStartTime: IProposal(proposal).auctionStartTime(),
+            auctionEndTime: IProposal(proposal).auctionEndTime(),
+            liveStart: IProposal(proposal).liveStart(),
+            liveEnd: IProposal(proposal).liveEnd(),
+            liveDuration: IProposal(proposal).liveDuration(),
+            subjectToken: IProposal(proposal).subjectToken(),
+            minToOpen: IProposal(proposal).minToOpen(),
+            maxCap: IProposal(proposal).maxCap(),
+            yesAuction: address(IProposal(proposal).yesAuction()),
+            noAuction: address(IProposal(proposal).noAuction()),
+            yesToken: address(IProposal(proposal).yesToken()),
+            noToken: address(IProposal(proposal).noToken()),
+            treasury: address(IProposal(proposal).treasury()),
+            target: address(IProposal(proposal).target()),
+            data: IProposal(proposal).data(),
+            proposalAddress: proposal
+        });
+        
     }
 
-    function getAllProposals() external view returns (address[] memory proposals_) {
-        proposals_ = allProposals;
+    function getAllProposals() external view returns (ProposalInfo[] memory _proposals) {
+        _proposals = new ProposalInfo[](allProposals.length);
+        for (uint256 i = 0; i < allProposals.length; i++) {
+            address proposal = allProposals[i];
+            _proposals[i] = ProposalInfo({
+                id: IProposal(proposal).id(),
+                admin: IProposal(proposal).admin(),
+                title: IProposal(proposal).title(),
+                description: IProposal(proposal).description(),
+                state: IProposal(proposal).state(),
+                auctionStartTime: IProposal(proposal).auctionStartTime(),
+                auctionEndTime: IProposal(proposal).auctionEndTime(),
+                liveStart: IProposal(proposal).liveStart(),
+                liveEnd: IProposal(proposal).liveEnd(),
+                liveDuration: IProposal(proposal).liveDuration(),
+                subjectToken: IProposal(proposal).subjectToken(),
+                minToOpen: IProposal(proposal).minToOpen(),
+                maxCap: IProposal(proposal).maxCap(),
+                yesAuction: address(IProposal(proposal).yesAuction()),
+                noAuction: address(IProposal(proposal).noAuction()),
+                yesToken: address(IProposal(proposal).yesToken()),
+                noToken: address(IProposal(proposal).noToken()),
+                treasury: address(IProposal(proposal).treasury()),
+                target: address(IProposal(proposal).target()),
+                data: IProposal(proposal).data(),
+                proposalAddress: proposal
+            });
+        }
     }
 
-    function getProposalsByAdmin(address _admin) external view returns (address[] memory) {
+    // only the creator of the proposal or the owner of the ProposalManager can delete a proposal from the index
+    function deleteProposal(address _proposal) external {
+        require(_proposal != address(0), "PM:zero-address");
+        if (msg.sender != IProposal(_proposal).admin() && msg.sender != owner()) revert ("PM:not-authorized");
+
+        uint256 proposalId = IProposal(_proposal).id();
+        require(proposals[proposalId] == _proposal, "PM:invalid-proposal");
+        delete proposals[proposalId];
+
+        // Remove from allProposals array
+        for (uint256 i = 0; i < allProposals.length; i++) {
+            if (allProposals[i] == _proposal) {
+                allProposals[i] = allProposals[allProposals.length - 1];
+                allProposals.pop();
+                break;
+            }
+        }
+    }
+
+    function getProposalsByAdmin(address _admin) external view returns (ProposalInfo[] memory) {
         uint256 count = 0;
         for (uint256 i = 0; i < allProposals.length; i++) {
             if (IProposal(allProposals[i]).admin() == _admin) count++;
         }
-        address[] memory result = new address[](count);
+        ProposalInfo[] memory result = new ProposalInfo[](count);
         uint256 j = 0;
         for (uint256 i = 0; i < allProposals.length; i++) {
             address p = allProposals[i];
-            if (IProposal(p).admin() == _admin) result[j++] = p;
+            if (IProposal(p).admin() == _admin) result[j++] = ProposalInfo({
+                id: IProposal(p).id(),
+                admin: IProposal(p).admin(),
+                title: IProposal(p).title(),
+                description: IProposal(p).description(),
+                state: IProposal(p).state(),
+                auctionStartTime: IProposal(p).auctionStartTime(),
+                auctionEndTime: IProposal(p).auctionEndTime(),
+                liveStart: IProposal(p).liveStart(),
+                liveEnd: IProposal(p).liveEnd(),
+                liveDuration: IProposal(p).liveDuration(),
+                subjectToken: IProposal(p).subjectToken(),
+                minToOpen: IProposal(p).minToOpen(),
+                maxCap: IProposal(p).maxCap(),
+                yesAuction: address(IProposal(p).yesAuction()),
+                noAuction: address(IProposal(p).noAuction()),
+                yesToken: address(IProposal(p).yesToken()),
+                noToken: address(IProposal(p).noToken()),
+                treasury: address(IProposal(p).treasury()),
+                target: address(IProposal(p).target()),
+                data: IProposal(p).data(),
+                proposalAddress: p
+            });
         }
         return result;
     }

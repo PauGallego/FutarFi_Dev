@@ -24,7 +24,7 @@ export interface Proposal {
 
   // Token / treasury / auctions
   subjectToken: string;
-  pyUSD: `0x${string}`;
+  // pyUSD: `0x${string}`;
   minToOpen: string; // uint256 kept as string to avoid precision loss in JS
   maxCap: string;    // uint256 kept as string
   yesAuction: `0x${string}`;
@@ -38,7 +38,8 @@ export interface Proposal {
   data: string; // raw bytes (hex string)
 
   // Contract address (proposal instance)
-  address: `0x${string}`;
+  proposalAddress: `0x${string}`
+
   auctionData?: AuctionData
   marketData?: MarketData
 }

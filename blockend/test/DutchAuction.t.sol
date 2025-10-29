@@ -53,7 +53,10 @@ contract DutchAuctionTest is Test {
             PYTH_CONTRACT,     // pythAddr
             PYTH_ID      // pythId
         );
-        proposal = Proposal(pm.getProposalById(1));
+
+        ProposalManager.ProposalInfo memory info;
+        info = pm.getProposalById(1);
+        proposal = Proposal(info.proposalAddress);
 
         // vm.startPrank(address(proposal));
         // Create auctions: duration 100s, priceStart = 1_000_000 (6 decimals), minToOpen = 500_000e18, admin = admin

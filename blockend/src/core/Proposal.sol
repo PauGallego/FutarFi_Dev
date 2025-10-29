@@ -103,7 +103,7 @@ contract Proposal is Ownable, IProposal {
 
     function initialize(
         uint256 _id,
-        address _admin,
+        address _admin, // creator/admin of the proposal
         string memory _title,
         string memory _description,
         uint256 _auctionDuration,

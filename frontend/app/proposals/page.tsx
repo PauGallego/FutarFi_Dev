@@ -9,16 +9,13 @@ import { Plus, Clock, User, Loader2, AlertCircle } from "lucide-react"
 import { useGetAllProposals } from "@/hooks/use-get-all-proposals"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAccount } from "wagmi"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo } from "react"
 // Remove guard modal imports
 // import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 // import { ConnectWalletButton } from "@/components/connect-wallet-button"
 // import { useRouter, usePathname } from "next/navigation"
 import { useCreateOrder } from "@/hooks/use-mintPublic"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL 
-console.log('Using RPC URL:', process.env.NEXT_PUBLIC_API_URL)
-  console.log('Using RPC URL:', process.env.NEXT_PUBLIC_RPC_URL)
 
 const statusStyles = {
   Auction: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
@@ -42,69 +39,7 @@ export default function ProposalsPage() {
   // const router = useRouter()
   const { mintPublic, pyUSDBalance, error: mintError, refetchOnchain } = useCreateOrder()
 
-  // Backend proposals when wallet is NOT connected
-  const [apiProposals, setApiProposals] = useState<any[]>([])
-  const [apiLoading, setApiLoading] = useState(false)
-  const [apiError, setApiError] = useState<string | null>(null)
-  const [connectionChecked, setConnectionChecked] = useState(false)
-  // Removed guard state
-  // const [guardOpen, setGuardOpen] = useState(false)
-  // const [targetHref, setTargetHref] = useState<string | null>(null)
-
-  useEffect(() => {
-    // Wait for wagmi to determine connection state
-    setConnectionChecked(false)
-    const timer = setTimeout(() => setConnectionChecked(true), 2000)
-    return () => clearTimeout(timer)
-  }, [isConnected])
-
-  // If user connects from the guard, continue to the desired proposal
-  // useEffect(() => {
-  //   if (isConnected && guardOpen && targetHref) {
-  //     router.push(targetHref)
-  //     setGuardOpen(false)
-  //     setTargetHref(null)
-  //   }
-  // }, [isConnected, guardOpen, targetHref, router])
-
-  useEffect(() => {
-    if (isConnected) return // use on-chain path when connected
-
-    let cancelled = false
-    const fetchApi = async () => {
-      setApiLoading(true)
-      setApiError(null)
-      try {
-        const res = await fetch(`${API_BASE}/proposals`)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        if (cancelled) return
-        // Map backend shape -> UI shape
-        const stateMap: Record<string, 'Auction' | 'Live' | 'Resolved' | 'Cancelled'> = {
-          auction: 'Auction',
-          live: 'Live',
-          resolved: 'Resolved',
-          cancelled: 'Cancelled',
-        }
-        const mapped = Array.isArray(data) ? data.map((p: any) => ({
-          id: String(p.id ?? p._id ?? ''),
-          title: p.title || 'Untitled Proposal',
-          description: p.description || '',
-          state: stateMap[(String(p.state || 'auction')).toLowerCase()] || 'Auction',
-          admin: p.admin || '',
-          auctionStartTime: Number(p.startTime || 0) * 1000,
-        })) : []
-        setApiProposals(mapped)
-      } catch (e) {
-        if (!cancelled) setApiError(e instanceof Error ? e.message : 'Failed to fetch proposals')
-      } finally {
-        if (!cancelled) setApiLoading(false)
-      }
-    }
-
-    fetchApi()
-    return () => { cancelled = true }
-  }, [isConnected])
+  // Always fetch proposals on-chain via hook (works with or without a connected wallet)
 
   // Refresh PYUSD balance every 5 seconds if connected
   useEffect(() => {
@@ -148,7 +83,6 @@ export default function ProposalsPage() {
     }
   }, [refetch])
 
-
   // Listen for explicit refresh events dispatched by detail pages when navigating back
   useEffect(() => {
     if (!refetch) return
@@ -159,10 +93,10 @@ export default function ProposalsPage() {
     return () => window.removeEventListener('proposals:refresh', handler as EventListener)
   }, [refetch])
 
-  // Choose source based on connection
-  const list = connectionChecked ? (isConnected ? proposals : apiProposals) : []
-  const loading = !connectionChecked || (isConnected ? isLoading : apiLoading)
-  const errorToShow = connectionChecked ? (isConnected ? error : apiError) : null
+  // Always use on-chain proposals
+  const list = proposals || []
+  const loading = isLoading
+  const errorToShow = error as any
 
   // Filter out proposals with the disallowed title
   const filteredList = useMemo(() => {
@@ -276,7 +210,7 @@ export default function ProposalsPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4" />
-                        <span>Started at: {new Date(proposal.auctionStartTime).toLocaleDateString()}</span>
+                        <span>Started at: {new Date((proposal.auctionStartTime || 0) * 1000).toLocaleDateString()}</span>
                       </div>
                     </div>
                   </CardContent>

@@ -57,7 +57,10 @@ contract ProposalBasicTest is Test {
             PYTH_CONTRACT,     // pythAddr
             PYTH_ID      // pythId
         );
-        proposal = Proposal(pm.getProposalById(1));
+
+        ProposalManager.ProposalInfo memory info;
+        info = pm.getProposalById(1);
+        proposal = Proposal(info.proposalAddress);
 
         DutchAuction yes = proposal.yesAuction();
         MarketToken yesToken = proposal.yesToken();
@@ -132,7 +135,10 @@ contract ProposalBasicTest is Test {
             PYTH_CONTRACT,   // pythAddr (mock)
             PYTH_ID    // pythId (unused by mock)
         );
-        proposal = Proposal(pm.getProposalById(1));
+
+        ProposalManager.ProposalInfo memory info;
+        info = pm.getProposalById(1);
+        proposal = Proposal(info.proposalAddress);
 
         DutchAuction yes = proposal.yesAuction();
         DutchAuction no = proposal.noAuction();
