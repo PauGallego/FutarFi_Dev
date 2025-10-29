@@ -15,6 +15,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ConnectWalletButton } from "@/components/connect-wallet-button"
 
 import { getSupportedCollaterals, type Collateral } from "@/lib/collaterals"
 import { 
@@ -154,11 +156,21 @@ export default function NewProposalPage() {
   const [error, setError] = useState<Error | null>(null)
   const submittingRef = React.useRef(false)
 
+  // Guard dialog when not connected
+  const [guardOpen, setGuardOpen] = useState(false)
+
   const handleSubmit = async (e?: React.FormEvent): Promise<boolean>=>{
     e?.preventDefault()
 
     // Prevent double-submission (double click / Enter spam)
     if (submittingRef.current || isPending || isConfirming) return false
+
+    // If wallet not connected -> open guard modal and exit
+    if (!isConnected || !account) {
+      setGuardOpen(true)
+      return false
+    }
+
     submittingRef.current = true
 
     const fail = (desc: string) => {
@@ -182,10 +194,6 @@ export default function NewProposalPage() {
 
     toast({ title: "Submitting", description: "Validating inputs and preparing transaction..." })
 
-    if (!isConnected || !account) {
-      return fail("Connect your wallet to submit a proposal.")
-    }
-
     if (useTarget === "YES") {
       if (!formData.targetAddress.trim() || !isAddress(formData.targetAddress)) {
         return fail("Please provide a valid target contract address.")
@@ -208,7 +216,10 @@ export default function NewProposalPage() {
       const anyWindow = window as any
       if (!anyWindow?.ethereum) {
         setIsPending(false)
-        return fail("No wallet found. Please open MetaMask or a compatible wallet.")
+        submittingRef.current = false
+        // Open guard if no wallet available
+        setGuardOpen(true)
+        return false
       }
 
       const provider = new ethers.BrowserProvider(anyWindow.ethereum)
@@ -275,6 +286,24 @@ export default function NewProposalPage() {
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-3xl">
+      {/* Wallet guard modal when trying to submit without connection */}
+      <Dialog open={guardOpen && !isConnected} onOpenChange={setGuardOpen}>
+        <DialogContent
+          showCloseButton={true}
+          className="bg-transparent border border-black/10 dark:border-white/20"
+        >
+          <DialogHeader>
+            <DialogTitle>Connect your wallet</DialogTitle>
+            <DialogDescription>
+              You need to connect your wallet to create a proposal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center pt-2">
+            <ConnectWalletButton onBeforeOpen={() => setGuardOpen(false)} />
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Button asChild variant="ghost" className="mb-6">
         <Link href="/proposals">
           <ArrowLeft className="mr-2 h-4 w-4" />

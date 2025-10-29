@@ -595,6 +595,10 @@ async function syncProposalsFromManager({ manager }) {
   const c = getContract(manager, PM_ABI, false);
   const addrs = await c.getAllProposals();
   const results = [];
+  console.log("Proposals:");
+    addrs.forEach((address, index) => {
+      console.log(`Proposal ${index + 1}: ${address}`);
+  });
   for (const addr of addrs) {
     try {
       const r = await syncProposalByAddress(addr);

@@ -10,8 +10,8 @@ const options = {
     },
     servers: [
       {
-        url: 'https://api.futarfi.com',
-        description: 'Production server'
+        url: process.env.SWAGGER_SERVER_URL || '/',
+        description: process.env.SWAGGER_SERVER_DESCRIPTION || 'API server'
       }
     ],
     components: {
