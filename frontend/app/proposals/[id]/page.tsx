@@ -14,8 +14,9 @@ import { MarketTradePanel } from "@/components/market-trade-panel"
 import { MarketBalancesPanel } from "@/components/market-balances-panel"
 import { MarketPriceHeader } from "@/components/market-price-header"
 import { useChainId, useAccount } from "wagmi"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { ConnectWalletButton } from "@/components/connect-wallet-button"
+// Removed blocking dialog imports
+// import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+// import { ConnectWalletButton } from "@/components/connect-wallet-button"
 import type { Proposal, UserOrder, MarketOption, UserBalance } from "@/lib/types"
 import { useGetProposalById } from "@/hooks/use-get-proposalById"
 import { useGetUserOrders } from "@/hooks/use-get-user-orders"
@@ -23,10 +24,10 @@ import { useCancelOrder } from "@/hooks/use-cancel-order"
 import { toast } from "sonner"
 import { useGetOrderbookOrders } from "@/hooks/use-get-orderbook-orders"
 import { AuctionResolvedOnChain } from "@/components/resolution-view"
-import { useRouter } from "next/navigation"
+// import { useRouter } from "next/navigation"
 
 interface PageProps {
-  params: {id: string}
+  params: { id: string }
 }
 
 function generateProposalData(id: string, hookProposal: any): Proposal {
@@ -59,62 +60,62 @@ function generateProposalData(id: string, hookProposal: any): Proposal {
   }))
 
   return {
-      id: hookProposal.id,
-      admin: hookProposal.admin || zero,
-      title: hookProposal.title || '',
-      description: hookProposal.description || '',
+    id: hookProposal.id,
+    admin: hookProposal.admin || zero,
+    title: hookProposal.title || '',
+    description: hookProposal.description || '',
 
-      // state already matches the frontend `Proposal.state` union from the hook
-      state: (hookProposal.state as 'Auction' | 'Live' | 'Resolved' | 'Cancelled') || 'Auction',
+    // state already matches the frontend `Proposal.state` union from the hook
+    state: (hookProposal.state as 'Auction' | 'Live' | 'Resolved' | 'Cancelled') || 'Auction',
 
-      // Auction / live times (seconds)
-      auctionStartTime: Number(hookProposal.auctionStartTime || 0),
-      auctionEndTime: Number(hookProposal.auctionEndTime || 0),
-      liveStart: Number(hookProposal.liveStart || hookProposal.auctionEndTime || 0),
-      liveEnd: Number(hookProposal.liveEnd || hookProposal.auctionEndTime || 0),
-      liveDuration: Number(hookProposal.liveDuration || 0),
+    // Auction / live times (seconds)
+    auctionStartTime: Number(hookProposal.auctionStartTime || 0),
+    auctionEndTime: Number(hookProposal.auctionEndTime || 0),
+    liveStart: Number(hookProposal.liveStart || hookProposal.auctionEndTime || 0),
+    liveEnd: Number(hookProposal.liveEnd || hookProposal.auctionEndTime || 0),
+    liveDuration: Number(hookProposal.liveDuration || 0),
 
-      // Token / treasury / auctions (use zero-address fallbacks)
-      subjectToken: (hookProposal.subjectToken as `0x${string}`) || zero,
-      pyUSD: (hookProposal.pyUSD as `0x${string}`) || zero,
-      minToOpen: hookProposal.minToOpen ? String(hookProposal.minToOpen) : '0',
-      maxCap: hookProposal.maxCap ? String(hookProposal.maxCap) : '0',
-      yesAuction: (hookProposal.yesAuction as `0x${string}`) || zero,
-      noAuction: (hookProposal.noAuction as `0x${string}`) || zero,
-      yesToken: (hookProposal.yesToken as `0x${string}`) || zero,
-      noToken: (hookProposal.noToken as `0x${string}`) || zero,
-      treasury: (hookProposal.treasury as `0x${string}`) || zero,
+    // Token / treasury / auctions (use zero-address fallbacks)
+    subjectToken: (hookProposal.subjectToken as `0x${string}`) || zero,
+    pyUSD: (hookProposal.pyUSD as `0x${string}`) || zero,
+    minToOpen: hookProposal.minToOpen ? String(hookProposal.minToOpen) : '0',
+    maxCap: hookProposal.maxCap ? String(hookProposal.maxCap) : '0',
+    yesAuction: (hookProposal.yesAuction as `0x${string}`) || zero,
+    noAuction: (hookProposal.noAuction as `0x${string}`) || zero,
+    yesToken: (hookProposal.yesToken as `0x${string}`) || zero,
+    noToken: (hookProposal.noToken as `0x${string}`) || zero,
+    treasury: (hookProposal.treasury as `0x${string}`) || zero,
 
-      // Execution target and calldata
-      target: (hookProposal.target as `0x${string}`) || zero,
-      data: hookProposal.data || '0x',
+    // Execution target and calldata
+    target: (hookProposal.target as `0x${string}`) || zero,
+    data: hookProposal.data || '0x',
 
-      // Proposal contract instance address
-      address: (hookProposal.address as `0x${string}`) || zero,
+    // Proposal contract instance address
+    address: (hookProposal.address as `0x${string}`) || zero,
 
-      auctionData:
-      hookProposal.state === "Auction" || hookProposal.state === "Cancelled" 
+    auctionData:
+      hookProposal.state === "Auction" || hookProposal.state === "Cancelled"
         ? {
-            yesCurrentPrice: 0.52,
-            noCurrentPrice: 0.48,
-            yesTotalBids: BigInt(hookProposal.state === "Cancelled" ? 5000000 : 15000000),
-            noTotalBids: BigInt(hookProposal.state === "Cancelled" ? 3000000 : 12000000),
-            minimumRequired: BigInt(10000000),
-            auctionEndTime: BigInt(Math.floor((now + 1 * 24 * 60 * 60 * 1000) / 1000)),
-            priceHistory: auctionHistory,
-            yesRemainingMintable: BigInt(5000000000000000000000),
-            noRemainingMintable: BigInt(5000000000000000000000)
-          }
+          yesCurrentPrice: 0.52,
+          noCurrentPrice: 0.48,
+          yesTotalBids: BigInt(hookProposal.state === "Cancelled" ? 5000000 : 15000000),
+          noTotalBids: BigInt(hookProposal.state === "Cancelled" ? 3000000 : 12000000),
+          minimumRequired: BigInt(10000000),
+          auctionEndTime: BigInt(Math.floor((now + 1 * 24 * 60 * 60 * 1000) / 1000)),
+          priceHistory: auctionHistory,
+          yesRemainingMintable: BigInt(5000000000000000000000),
+          noRemainingMintable: BigInt(5000000000000000000000)
+        }
         : undefined,
 
-      marketData:
-      hookProposal.state === "Live" || hookProposal.state === "Resolved" 
+    marketData:
+      hookProposal.state === "Live" || hookProposal.state === "Resolved"
         ? {
-            yesOrderBook: [],
-            noOrderBook: [],
-            twapHistory,
-            // volumeDistribution,
-          }
+          yesOrderBook: [],
+          noOrderBook: [],
+          twapHistory,
+          // volumeDistribution,
+        }
         : undefined,
   }
 }
@@ -152,13 +153,13 @@ export default function ProposalDetailPage({ params }: PageProps) {
   const { id } = params
 
   const chainId = useChainId()
-  const { isConnected, status } = useAccount()
-  const router = useRouter()
-  const [showGuard, setShowGuard] = useState(false)
-  useEffect(() => {
-    // Open guard when disconnected; allow user to dismiss with the X
-    setShowGuard(!isConnected)
-  }, [isConnected])
+  const { isConnected } = useAccount()
+  // const router = useRouter()
+  // Remove blocking guard state/effect
+  // const [showGuard, setShowGuard] = useState(false)
+  // useEffect(() => {
+  //   setShowGuard(!isConnected)
+  // }, [isConnected])
 
   const { proposal: hookProposal, isLoading: hookLoading, error: hookError } = useGetProposalById(id)
 
@@ -185,18 +186,15 @@ export default function ProposalDetailPage({ params }: PageProps) {
       return
     }
 
-
     const proposalData = generateProposalData(id, hookProposal)
 
     setUserBalance(generateMockUserBalance())
     setProposal(proposalData)
     setError(null)
     setIsLoading(hookLoading)
-
-
   }, [hookProposal, hookLoading, hookError])
 
-  console.log("treasury address:", proposal?.treasury);
+  console.log("treasury address:", proposal?.treasury)
   // Map hook orders -> UI orders
   useEffect(() => {
     if (!rawUserOrders || !Array.isArray(rawUserOrders)) {
@@ -223,7 +221,6 @@ export default function ProposalDetailPage({ params }: PageProps) {
   }
 
   const isResolvedView = (proposal as any)?.state === "Resolved"
-  // On-chain reads for resolved UI are handled inside AuctionResolvedOnChain
 
   if (isLoading) {
     return (
@@ -259,27 +256,22 @@ export default function ProposalDetailPage({ params }: PageProps) {
 
   return (
     <div className="container mx-auto px-4 py-12">
-      {/* Wallet connect required modal */}
+      {/* Removed blocking Connect Wallet dialog to allow full read-only view when disconnected */}
+      {/*
       <Dialog open={showGuard && !isConnected} onOpenChange={setShowGuard}>
-        <DialogContent
-          showCloseButton={true}
-          className="bg-transparent border border-black/10 dark:border-white/20"
-        >
+        <DialogContent showCloseButton className="bg-transparent border border-black/10 dark:border-white/20">
           <DialogHeader>
             <DialogTitle>Connect your wallet</DialogTitle>
-            <DialogDescription>
-              To view and interact with this proposal, please connect your wallet.
-            </DialogDescription>
+            <DialogDescription>To view and interact with this proposal, please connect your wallet.</DialogDescription>
           </DialogHeader>
           <div className="flex items-center justify-center pt-2">
             <ConnectWalletButton onBeforeOpen={() => setShowGuard(false)} />
           </div>
         </DialogContent>
       </Dialog>
+      */}
 
-      {/* Unified grid to align chart/trade and orderbook/balances */}
-  <div className="grid lg:grid-cols-3 gap-6 items-start">
-        {/* Header spans full width */}
+      <div className="grid lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-3">
           <ProposalHeader proposal={proposal} chainId={chainId} />
         </div>
@@ -290,7 +282,6 @@ export default function ProposalDetailPage({ params }: PageProps) {
           </div>
         ) : ((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") ? (
           <>
-            {/* Top row: Chart (left) and Trade panel (right) with matched heights */}
             <div className="lg:col-span-2 h-full">
               <div className="h-full">
                 <AuctionView
@@ -312,7 +303,6 @@ export default function ProposalDetailPage({ params }: PageProps) {
                 />
               </div>
             </div>
-            {/* Bottom row: Stats under the chart */}
             <div className="lg:col-span-2">
               <AuctionView
                 mode="stats"
@@ -325,10 +315,8 @@ export default function ProposalDetailPage({ params }: PageProps) {
         ) : (
           (proposal as any).marketData && (
             <>
-              {/* Left: Chart with selector below and chosen content immediately under */}
               <div className="lg:col-span-2">
                 <MarketView
-                  // default mode renders chart + tabs + chosen content
                   marketData={(proposal as any).marketData}
                   userOrders={userOrders}
                   selectedMarket={selectedMarket}
@@ -349,7 +337,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
                 />
                 <MarketBalancesPanel proposalId={proposal.id} />
               </div>
-              
+
             </>
           )
         )}

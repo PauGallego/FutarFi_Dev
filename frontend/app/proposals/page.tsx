@@ -10,9 +10,10 @@ import { useGetAllProposals } from "@/hooks/use-get-all-proposals"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAccount } from "wagmi"
 import { useEffect, useMemo, useState } from "react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ConnectWalletButton } from "@/components/connect-wallet-button"
-import { useRouter, usePathname } from "next/navigation"
+// Remove guard modal imports
+// import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+// import { ConnectWalletButton } from "@/components/connect-wallet-button"
+// import { useRouter, usePathname } from "next/navigation"
 import { useCreateOrder } from "@/hooks/use-mintPublic"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL 
@@ -38,7 +39,7 @@ type StatusKey = keyof typeof statusStyles
 export default function ProposalsPage() {
   const { proposals, isLoading, error, refetch } = useGetAllProposals()
   const { isConnected } = useAccount()
-  const router = useRouter()
+  // const router = useRouter()
   const { mintPublic, pyUSDBalance, error: mintError, refetchOnchain } = useCreateOrder()
 
   // Backend proposals when wallet is NOT connected
@@ -46,8 +47,9 @@ export default function ProposalsPage() {
   const [apiLoading, setApiLoading] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
   const [connectionChecked, setConnectionChecked] = useState(false)
-  const [guardOpen, setGuardOpen] = useState(false)
-  const [targetHref, setTargetHref] = useState<string | null>(null)
+  // Removed guard state
+  // const [guardOpen, setGuardOpen] = useState(false)
+  // const [targetHref, setTargetHref] = useState<string | null>(null)
 
   useEffect(() => {
     // Wait for wagmi to determine connection state
@@ -57,13 +59,13 @@ export default function ProposalsPage() {
   }, [isConnected])
 
   // If user connects from the guard, continue to the desired proposal
-  useEffect(() => {
-    if (isConnected && guardOpen && targetHref) {
-      router.push(targetHref)
-      setGuardOpen(false)
-      setTargetHref(null)
-    }
-  }, [isConnected, guardOpen, targetHref, router])
+  // useEffect(() => {
+  //   if (isConnected && guardOpen && targetHref) {
+  //     router.push(targetHref)
+  //     setGuardOpen(false)
+  //     setTargetHref(null)
+  //   }
+  // }, [isConnected, guardOpen, targetHref, router])
 
   useEffect(() => {
     if (isConnected) return // use on-chain path when connected
@@ -245,39 +247,13 @@ export default function ProposalsPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-1 space-y-4 ">
-          {/* Wallet guard modal when trying to enter a proposal without connection */}
-          <Dialog open={guardOpen && !isConnected && connectionChecked} onOpenChange={setGuardOpen}>
-            <DialogContent
-              showCloseButton={true}
-              className="bg-transparent border border-black/10 dark:border-white/20"
-            >
-              <DialogHeader>
-                <DialogTitle>Connect your wallet</DialogTitle>
-                <DialogDescription>
-                  To view proposals you need to connect your wallet.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="flex items-center justify-center pt-2">
-                {connectionChecked
-                  ? <ConnectWalletButton onBeforeOpen={() => setGuardOpen(false)} />
-                  : <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />}
-              </div>
-            </DialogContent>
-          </Dialog>
+          {/* Removed wallet guard to allow viewing proposals without a connected wallet */}
           {filteredList.map((proposal: any) => {
             const stateKey = (proposal.state ?? 'Auction') as StatusKey
             return (
               <Link
                 key={proposal.id}
                 href={`/proposals/${proposal.id}`}
-                onClick={(e) => {
-                  if (!connectionChecked) return
-                  if (!isConnected) {
-                    e.preventDefault()
-                    setTargetHref(`/proposals/${proposal.id}`)
-                    setGuardOpen(true)
-                  }
-                }}
               >
 
                 <Card key={proposal.id} className="hover:border-primary/50 transition-colors">
