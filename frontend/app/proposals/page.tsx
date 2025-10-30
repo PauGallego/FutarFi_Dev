@@ -15,6 +15,8 @@ import { useEffect, useMemo } from "react"
 // import { ConnectWalletButton } from "@/components/connect-wallet-button"
 // import { useRouter, usePathname } from "next/navigation"
 import { useCreateOrder } from "@/hooks/use-mintPublic"
+import { useDeleteProposal } from "@/hooks/use-delete-proposal"
+import { useToast } from "@/hooks/use-toast"
 
 
 const statusStyles = {
@@ -35,9 +37,11 @@ type StatusKey = keyof typeof statusStyles
 
 export default function ProposalsPage() {
   const { proposals, isLoading, error, refetch } = useGetAllProposals()
-  const { isConnected } = useAccount()
+  const { isConnected, address } = useAccount()
   // const router = useRouter()
   const { mintPublic, pyUSDBalance, error: mintError, refetchOnchain } = useCreateOrder()
+  const { deleteProposal, pending, error: deleteError } = useDeleteProposal()
+  const { toast } = useToast()
 
   // Always fetch proposals on-chain via hook (works with or without a connected wallet)
 
@@ -185,37 +189,60 @@ export default function ProposalsPage() {
           {filteredList.map((proposal: any) => {
             const stateKey = (proposal.state ?? 'Auction') as StatusKey
             return (
-              <Link
-                key={proposal.id}
-                href={`/proposals/${proposal.id}`}
-              >
+              <div key={proposal.id} className="space-y-2">
+                <Link href={`/proposals/${proposal.id}`}>
+                  <Card className="hover:border-primary/50 transition-colors">
+                    <CardHeader>
+                      <div className="flex items-start justify-between gap-4 overflow-auto">
+                        <div className="space-y-2 flex-1 min-w-0">
+                          <CardTitle className="text-2xl truncate">{proposal.title}</CardTitle>
+                          <CardDescription className="text-base leading-relaxed line-clamp-2">{proposal.description}</CardDescription>
+                        </div>
+                        <Badge variant="outline" className={statusStyles[stateKey]}>
+                          {statusLabels[stateKey]}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4" />
+                          <span>Created by {formatAddress(proposal.admin)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4" />
+                          <span>Started at: {new Date((proposal.auctionStartTime || 0) * 1000).toLocaleDateString()}</span>
+                        </div>
 
-                <Card key={proposal.id} className="hover:border-primary/50 transition-colors">
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-4 overflow-auto">
-                      <div className="space-y-2 flex-1 min-w-0">
-                        <CardTitle className="text-2xl truncate">{proposal.title}</CardTitle>
-                        <CardDescription className="text-base leading-relaxed line-clamp-2">{proposal.description}</CardDescription>
+                        {/* {isConnected && address && proposal?.admin && String(address).toLowerCase() === String(proposal.admin).toLowerCase() ? (
+                          <div className="ml-auto">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="bg-rose-600 text-white border border-rose-700/30 hover:bg-rose-700 hover:shadow-lg hover:brightness-105 cursor-pointer transition-all duration-150 active:scale-95"
+                              disabled={pending}
+                              onClick={async (e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                try {
+                                  const res = await deleteProposal({ proposalAddress: proposal.address })
+                                  if ((res as any)?.error) throw new Error((res as any).error)
+                                  toast({ title: "Proposal deleted", description: `Tx hash: ${(res as any).txHash ?? ''}` })
+                                  try { await refetch?.() } catch {}
+                                } catch (err: any) {
+                                  toast({ title: "Delete failed", description: err?.message || String(err), variant: "destructive" })
+                                }
+                              }}
+                            >
+                              Delete proposal
+                            </Button>
+                          </div>
+                        ) : null} */}
                       </div>
-                      <Badge variant="outline" className={statusStyles[stateKey]}>
-                        {statusLabels[stateKey]}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        <span>Created by {formatAddress(proposal.admin)}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4" />
-                        <span>Started at: {new Date((proposal.auctionStartTime || 0) * 1000).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </div>
             )
           })}
         </div>

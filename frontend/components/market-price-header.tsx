@@ -14,7 +14,6 @@ export function MarketPriceHeader({ proposalId }: { proposalId: string }) {
 
   return (
     <div className="mb-4 relative h-24">
-      {/* Top-aligned pills to touch the top edge aligned with chart start */}
       <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-4">
         <div className="p-2 rounded-md border w-[48%]">
           <div className="text-xs text-muted-foreground mb-1">tYES</div>

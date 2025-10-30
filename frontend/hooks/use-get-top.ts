@@ -23,7 +23,6 @@ export interface TopResult {
   mid?: number
 }
 
-// Fetch top-of-book (best bid/ask) for a given proposal/market. Listens to WS orderbook updates to refetch.
 export function useGetTop(options: UseGetTopOptions) {
   const { proposalId, market, auto = true, pollMs } = options
   const side = market === 'YES' ? 'approve' : 'reject'
@@ -136,11 +135,38 @@ export function useGetTop(options: UseGetTopOptions) {
     const s = socketRef.current
 
     const handleConnect = () => { s.emit('join-orderbook', proposalId, side) }
+    // If backend provides minimal top-of-book payload, consume it directly
+    const handleTop = (payload: any) => {
+      try {
+        if (!payload) return
+        // If rooms are set up, we only get our proposal/side, but guard anyway
+        if (String(payload.proposalId) !== String(proposalId) || String(payload.side) !== String(side)) return
+        const bestBid = payload?.bestBid?.price != null ? Number(payload.bestBid.price) : undefined
+        const bestAsk = payload?.bestAsk?.price != null ? Number(payload.bestAsk.price) : undefined
+        let mid: number | undefined = undefined
+        const midStr = payload?.mid
+        if (typeof midStr === 'string') {
+          const m = Number(midStr)
+          if (!Number.isNaN(m)) mid = m
+        }
+        if (mid === undefined) {
+          if (bestBid !== undefined && bestAsk !== undefined) mid = (bestBid + bestAsk) / 2
+          else if (bestBid !== undefined) mid = bestBid
+          else if (bestAsk !== undefined) mid = bestAsk
+        }
+        setData({ bestBid, bestAsk, mid })
+      } catch {
+        // If something goes wrong, fallback fetch once
+        void fetchTop()
+      }
+    }
+    // Fallback triggers when other events arrive but top payload isn't provided
     const handleOrderbookUpdated = () => { void fetchTop() }
     const handleNewOrder = () => { void fetchTop() }
     const handleOrderStatusChange = () => { void fetchTop() }
 
     s.on('connect', handleConnect)
+    s.on('orderbook-top', handleTop)
     s.on('orderbook-updated', handleOrderbookUpdated)
     s.on('new-order', handleNewOrder)
     s.on('order-status-change', handleOrderStatusChange)
@@ -150,6 +176,7 @@ export function useGetTop(options: UseGetTopOptions) {
     return () => {
       try { s.emit('leave-orderbook', proposalId, side) } catch {}
       s.off('connect', handleConnect)
+      s.off('orderbook-top', handleTop)
       s.off('orderbook-updated', handleOrderbookUpdated)
       s.off('new-order', handleNewOrder)
       s.off('order-status-change', handleOrderStatusChange)

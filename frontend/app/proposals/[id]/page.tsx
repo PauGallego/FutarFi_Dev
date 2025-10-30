@@ -313,7 +313,9 @@ export default function ProposalDetailPage({ params }: PageProps) {
                 />
               </div>
               <div className="lg:col-span-1 space-y-4">
-                <MarketPriceHeader proposalId={proposal.id} />
+                <div className="hidden md:block">
+                  <MarketPriceHeader proposalId={String(proposal.id)} />
+                </div>
                 <MarketTradePanel
                   selectedMarket={selectedMarket}
                   onMarketChange={setSelectedMarket}

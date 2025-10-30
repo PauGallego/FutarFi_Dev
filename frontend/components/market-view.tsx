@@ -1,6 +1,7 @@
 "use client"
 import React, { useEffect, useRef, useState } from "react"
 import { MarketDepthAndOrders } from "@/components/market-depth-orders"
+import { MarketPriceHeader } from "@/components/market-price-header"
 import type { MarketData, MarketOption, OrderBookEntry, UserOrder } from "@/lib/types"
 import { createChart, LineSeries } from "lightweight-charts"
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
@@ -51,8 +52,8 @@ export function MarketView({
       layout: {
         textColor: '#94a3b8',
         background: { type: 'solid', color: 'rgba(0,0,0,0)' },
-// -        background: { type: 'solid', color: '#1a1a1a'
-    },
+        // -        background: { type: 'solid', color: '#1a1a1a'
+      },
       grid: {
         vertLines: { color: 'rgba(68,68,68,0.1)' },
         horzLines: { color: 'rgba(68,68,68,0.1)' },
@@ -83,40 +84,40 @@ export function MarketView({
     // YES (approve) in green, NO (reject) in red
     const yesSeries = (chart as any).addSeries
       ? (chart as any).addSeries(LineSeries, {
-          color: '#16a34a',
-          lineWidth: 2,
-          lastValueVisible: true,
-          priceLineVisible: true,
-          title: 'tYES',
-        })
+        color: '#16a34a',
+        lineWidth: 2,
+        lastValueVisible: true,
+        priceLineVisible: true,
+        title: 'tYES',
+      })
       : (chart as any).addLineSeries({
-          color: '#16a34a',
-          lineWidth: 2,
-          lastValueVisible: true,
-          priceLineVisible: true,
-          title: 'tYES',
-        })
+        color: '#16a34a',
+        lineWidth: 2,
+        lastValueVisible: true,
+        priceLineVisible: true,
+        title: 'tYES',
+      })
     const noSeries = (chart as any).addSeries
       ? (chart as any).addSeries(LineSeries, {
-          color: '#ef4444',
-          lineWidth: 2,
-          lastValueVisible: true,
-          priceLineVisible: true,
-          title: 'tNO',
-        })
+        color: '#ef4444',
+        lineWidth: 2,
+        lastValueVisible: true,
+        priceLineVisible: true,
+        title: 'tNO',
+      })
       : (chart as any).addLineSeries({
-          color: '#ef4444',
-          lineWidth: 2,
-          lastValueVisible: true,
-          priceLineVisible: true,
-          title: 'tNO',
-        })
+        color: '#ef4444',
+        lineWidth: 2,
+        lastValueVisible: true,
+        priceLineVisible: true,
+        title: 'tNO',
+      })
 
-  // Ensure the chart fills its wrapper (absolute inset-0 via CSS)
+    // Ensure the chart fills its wrapper (absolute inset-0 via CSS)
 
-  // Initial fetch + realtime polling from backend (both markets)
+    // Initial fetch + realtime polling from backend (both markets)
     const controller = new AbortController()
-  const limit = 300
+    const limit = 300
 
     const mapLine = (candles: any[]): LinePoint[] =>
       candles.map((c: any) => ({
@@ -156,7 +157,7 @@ export function MarketView({
       const outYes: LinePoint[] = []
       const outNo: LinePoint[] = []
 
-  // Seed both series with a 0 at the synthetic start time
+      // Seed both series with a 0 at the synthetic start time
       outYes.push({ time: start, value: 0 })
       outNo.push({ time: start, value: 0 })
 
@@ -231,7 +232,7 @@ export function MarketView({
           yesSeries.setData(yes1sRef.current)
           noSeries.setData(no1sRef.current)
           chart.timeScale().fitContent()
-          try { chart.timeScale().scrollToRealTime?.() } catch {}
+          try { chart.timeScale().scrollToRealTime?.() } catch { }
         } else {
           const [resYes, resNo] = await Promise.all([
             fetch(`${API_BASE}/orderbooks/${proposalId}/yes/candles?interval=${interval}&limit=${limit}`, { signal: controller.signal }),
@@ -247,7 +248,7 @@ export function MarketView({
           yesSeries.setData(padded.yes)
           noSeries.setData(padded.no)
           chart.timeScale().fitContent()
-          try { chart.timeScale().scrollToRealTime?.() } catch {}
+          try { chart.timeScale().scrollToRealTime?.() } catch { }
         }
       } catch (_) { /* ignore */ }
     }
@@ -287,7 +288,7 @@ export function MarketView({
           }
           yesSeries.setData(yes1sRef.current)
           noSeries.setData(no1sRef.current)
-          try { chart.timeScale().scrollToRealTime?.() } catch {}
+          try { chart.timeScale().scrollToRealTime?.() } catch { }
         } else {
           const [resYes, resNo] = await Promise.all([
             fetch(`${API_BASE}/orderbooks/${proposalId}/yes/candles?interval=${interval}&limit=${limit}`, { signal: controller.signal }),
@@ -302,7 +303,7 @@ export function MarketView({
           const padded = padLines(yes, no)
           yesSeries.setData(padded.yes)
           noSeries.setData(padded.no)
-          try { chart.timeScale().scrollToRealTime?.() } catch {}
+          try { chart.timeScale().scrollToRealTime?.() } catch { }
         }
       } catch (_) { /* ignore */ }
     }
@@ -343,9 +344,9 @@ export function MarketView({
     }
     window.addEventListener('resize', onResize)
     // Observe wrapper size changes too
-  const RO = (window as any).ResizeObserver
-  const ro = RO ? new RO(() => onResize()) : null
-  if (ro && wrapperRef.current) ro.observe(wrapperRef.current)
+    const RO = (window as any).ResizeObserver
+    const ro = RO ? new RO(() => onResize()) : null
+    if (ro && wrapperRef.current) ro.observe(wrapperRef.current)
     // Initial size sync (next tick)
     setTimeout(onResize, 0)
 
@@ -353,34 +354,34 @@ export function MarketView({
       clearInterval(intervalID)
       controller.abort()
       window.removeEventListener('resize', onResize)
-  if (ro && wrapperRef.current) ro.unobserve(wrapperRef.current)
+      if (ro && wrapperRef.current) ro.unobserve(wrapperRef.current)
       mo.disconnect()
       chart.remove()
     }
   }, [proposalId, interval])
 
   const ChartBlock = (
-      <div ref={wrapperRef} className="relative w-full h-[420px] rounded-md border overflow-hidden">
-        <div className="absolute top-2 left-2 z-10 font-sans ">
-          <select
-            aria-label="Timeframe"
-            value={interval}
-            onChange={(e) => setInterval(e.target.value as any)}
-            className="text-sm rounded border bg-muted text-foreground px-2 py-1 focus:outline-none focus:ring-1 focus:ring-foreground/30 font-sans appearance-none"
-            style={{ fontFamily: 'var(--font-sans, var(--font-geist-sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol))' }}
-          >
-  
-            <option className="" value="1s">1s</option>
-            <option className="" value="1m">1m</option>
-            <option className="" value="5m">5m</option>
-            <option className="" value="15m">15m</option>
-            <option className="" value="1h">1h</option>
-            <option className="" value="4h">4h</option>
-            <option className="" value="1d">1d</option>
-          </select>
-          </div>
-          <div id="chartContainer" ref={chartContainerRef} className="absolute inset-0" />
+    <div ref={wrapperRef} className="relative w-full h-[420px] rounded-md border overflow-hidden">
+      <div className="absolute top-2 left-2 z-10 font-sans ">
+        <select
+          aria-label="Timeframe"
+          value={interval}
+          onChange={(e) => setInterval(e.target.value as any)}
+          className="text-sm rounded border bg-muted text-foreground px-2 py-1 focus:outline-none focus:ring-1 focus:ring-foreground/30 font-sans appearance-none"
+          style={{ fontFamily: 'var(--font-sans, var(--font-geist-sans, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol))' }}
+        >
+
+          <option className="" value="1s">1s</option>
+          <option className="" value="1m">1m</option>
+          <option className="" value="5m">5m</option>
+          <option className="" value="15m">15m</option>
+          <option className="" value="1h">1h</option>
+          <option className="" value="4h">4h</option>
+          <option className="" value="1d">1d</option>
+        </select>
       </div>
+      <div id="chartContainer" ref={chartContainerRef} className="absolute inset-0" />
+    </div>
   )
 
   const OrdersBlock = (
@@ -400,6 +401,11 @@ export function MarketView({
   return (
     <div className="space-y-8">
       {ChartBlock}
+      {proposalId ? (
+        <div className="md:hidden">
+          <MarketPriceHeader proposalId={String(proposalId)} />
+        </div>
+      ) : null}
       {OrdersBlock}
     </div>
   )
