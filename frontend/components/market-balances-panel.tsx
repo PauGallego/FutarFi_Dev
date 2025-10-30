@@ -2,16 +2,18 @@
 
 import { useEffect, useMemo, useCallback, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useAccount, usePublicClient } from "wagmi"
+import { useAccount, useChainId, usePublicClient } from "wagmi"
 import { useGetProposalById } from "@/hooks/use-get-proposalById"
 import { marketToken_abi } from "@/contracts/marketToken-abi"
+import {getContractAddress} from "@/contracts/constants"
 
 export function MarketBalancesPanel({ proposalId }: { proposalId: string }) {
   const { address, isConnected } = useAccount()
   const publicClient = usePublicClient()
   const { proposal } = useGetProposalById(proposalId)
+  const chainId = useChainId()
 
-  const pyusdAddr = proposal?.pyUSD as `0x${string}` | undefined
+  const pyusdAddr = getContractAddress(chainId, 'PYUSD')
   const yesToken = proposal?.yesToken as `0x${string}` | undefined
   const noToken = proposal?.noToken as `0x${string}` | undefined
 
