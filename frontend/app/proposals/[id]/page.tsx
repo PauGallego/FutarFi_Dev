@@ -25,6 +25,7 @@ import { toast } from "sonner"
 import { useGetOrderbookOrders } from "@/hooks/use-get-orderbook-orders"
 import { AuctionResolvedOnChain } from "@/components/resolution-view"
 // import { useRouter } from "next/navigation"
+import { getContractAddress } from "@/contracts/constants"
 
 interface PageProps {
   params: { id: string }
@@ -33,6 +34,8 @@ interface PageProps {
 function generateProposalData(id: string, hookProposal: any): Proposal {
   const zero = '0x0000000000000000000000000000000000000000'
   const now = Date.now()
+
+  const pyUSD = getContractAddress(296, 'PYUSD')
 
 
   const auctionHistory = []
@@ -67,7 +70,6 @@ function generateProposalData(id: string, hookProposal: any): Proposal {
 
     // state already matches the frontend `Proposal.state` union from the hook
     state: (hookProposal.state as 'Auction' | 'Live' | 'Resolved' | 'Cancelled') || 'Auction',
-
     // Auction / live times (seconds)
     auctionStartTime: Number(hookProposal.auctionStartTime || 0),
     auctionEndTime: Number(hookProposal.auctionEndTime || 0),
@@ -77,7 +79,6 @@ function generateProposalData(id: string, hookProposal: any): Proposal {
 
     // Token / treasury / auctions (use zero-address fallbacks)
     subjectToken: (hookProposal.subjectToken as `0x${string}`) || zero,
-    pyUSD: (hookProposal.pyUSD as `0x${string}`) || zero,
     minToOpen: hookProposal.minToOpen ? String(hookProposal.minToOpen) : '0',
     maxCap: hookProposal.maxCap ? String(hookProposal.maxCap) : '0',
     yesAuction: (hookProposal.yesAuction as `0x${string}`) || zero,
@@ -91,7 +92,7 @@ function generateProposalData(id: string, hookProposal: any): Proposal {
     data: hookProposal.data || '0x',
 
     // Proposal contract instance address
-    address: (hookProposal.address as `0x${string}`) || zero,
+    proposalAddress: (hookProposal.proposalAddress as `0x${string}`) || zero,
 
     auctionData:
       hookProposal.state === "Auction" || hookProposal.state === "Cancelled"
@@ -141,25 +142,11 @@ function mapBackendOrderToUserOrder(o: any): UserOrder {
   }
 }
 
-function generateMockUserBalance(): UserBalance {
-  return {
-    yesTokens: BigInt(1500000000000000000), // 1.5 tokens
-    noTokens: BigInt(2300000000000000000), // 2.3 tokens
-    collateral: BigInt(10000000), // 10 USDC
-  }
-}
 
 export default function ProposalDetailPage({ params }: PageProps) {
   const { id } = params
 
   const chainId = useChainId()
-  const { isConnected } = useAccount()
-  // const router = useRouter()
-  // Remove blocking guard state/effect
-  // const [showGuard, setShowGuard] = useState(false)
-  // useEffect(() => {
-  //   setShowGuard(!isConnected)
-  // }, [isConnected])
 
   const { proposal: hookProposal, isLoading: hookLoading, error: hookError } = useGetProposalById(id)
 
@@ -188,13 +175,11 @@ export default function ProposalDetailPage({ params }: PageProps) {
 
     const proposalData = generateProposalData(id, hookProposal)
 
-    setUserBalance(generateMockUserBalance())
     setProposal(proposalData)
     setError(null)
     setIsLoading(hookLoading)
   }, [hookProposal, hookLoading, hookError])
 
-  console.log("treasury address:", proposal?.treasury)
   // Map hook orders -> UI orders
   useEffect(() => {
     if (!rawUserOrders || !Array.isArray(rawUserOrders)) {
@@ -278,7 +263,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
 
         {isResolvedView ? (
           <div className="lg:col-span-3">
-            <AuctionResolvedOnChain proposalAddress={(proposal as any).address} />
+            <AuctionResolvedOnChain proposalAddress={(proposal as any).proposalAddress} />
           </div>
         ) : ((proposal as any).state === "Auction" || (proposal as any).state === "Cancelled") ? (
           <>
@@ -287,7 +272,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
                 <AuctionView
                   mode="chart"
                   fullHeight
-                  proposalAddress={(proposal as any).address}
+                  proposalAddress={(proposal as any).proposalAddress}
                   auctionData={(proposal as any).auctionData}
                   userBalance={(userBalance as any)}
                 />
@@ -297,7 +282,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
               <div className="h-full">
                 <AuctionTradePanel
                   fullHeight
-                  proposalAddress={(proposal as any).address}
+                  proposalAddress={(proposal as any).proposalAddress}
                   auctionData={(proposal as any).auctionData}
                   isFailed={(proposal as any).state === "Cancelled"}
                 />
@@ -306,7 +291,7 @@ export default function ProposalDetailPage({ params }: PageProps) {
             <div className="lg:col-span-2">
               <AuctionView
                 mode="stats"
-                proposalAddress={(proposal as any).address}
+                proposalAddress={(proposal as any).proposalAddress}
                 auctionData={(proposal as any).auctionData}
                 userBalance={(userBalance as any)}
               />

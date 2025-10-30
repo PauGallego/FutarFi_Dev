@@ -8,6 +8,8 @@ const options = {
       version: '1.0.0',
       description: 'Backend API (TEE) for the FutarFi DeFi Protocol with real-time WebSocket support, limit/market orders, and comprehensive market data.'
     },
+    // Use a relative server URL by default so Swagger UI "Try it out"
+    // targets the same origin/port the API is served from. Override via SWAGGER_SERVER_URL if needed.
     servers: [
       {
         url: process.env.SWAGGER_SERVER_URL || '/',

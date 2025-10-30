@@ -523,7 +523,15 @@ async function upsertProposalAndAuctions(snapshot) {
     const toCreate = { ...baseFields };
     // Internal id is set in pre-save
     doc = new Proposal(toCreate);
-    await doc.save();
+    try {
+      await doc.save();
+    } catch (e) {
+      console.error('Proposal create failed:', e.message, {
+        address: snapshot.proposalAddress,
+        proposalContractId: snapshot.proposalContractId
+      });
+      throw e;
+    }
   } else {
     // Update only changed
     const toSet = {};
@@ -538,7 +546,12 @@ async function upsertProposalAndAuctions(snapshot) {
       if (!eq) toSet[k] = newVal;
     }
     if (Object.keys(toSet).length) {
-      doc = await Proposal.findByIdAndUpdate(doc._id, { $set: toSet }, { new: true, runValidators: true });
+      try {
+        doc = await Proposal.findByIdAndUpdate(doc._id, { $set: toSet }, { new: true, runValidators: true });
+      } catch (e) {
+        console.error('Proposal update failed:', e.message, { id: doc.id, address: doc.proposalAddress });
+        throw e;
+      }
     }
   }
 
@@ -593,17 +606,23 @@ async function syncProposalByAddress(proposalAddress) {
 // Sync all proposals from a ProposalManager
 async function syncProposalsFromManager({ manager }) {
   const c = getContract(manager, PM_ABI, false);
-  const addrs = await c.getAllProposals();
+  // Now returns an array of ProposalInfo structs, not addresses
+  const infos = await c.getAllProposals();
   const results = [];
-  console.log("Proposals:");
-    addrs.forEach((address, index) => {
-      console.log(`Proposal ${index + 1}: ${address}`);
-  });
-  for (const addr of addrs) {
+  try {
+    console.log(`Manager returned ${Array.isArray(infos) ? infos.length : 0} proposals`);
+  } catch (_) {}
+  for (const info of infos) {
+    const addr = (info && info.proposalAddress) ? String(info.proposalAddress) : null;
+    if (!addr || addr === '0x0000000000000000000000000000000000000000') {
+      results.push({ address: addr, error: 'invalid proposalAddress' });
+      continue;
+    }
     try {
       const r = await syncProposalByAddress(addr);
       results.push(r);
     } catch (e) {
+      console.error('Sync proposal error:', addr, e.message);
       results.push({ address: addr, error: e.message });
     }
   }
