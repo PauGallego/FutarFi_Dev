@@ -347,6 +347,93 @@ async function syncProposalFromChain({ address, abi }) {
   return { action: 'updated', proposal: updated };
 }
 
+// Process proposal data directly from getAllProposals response (like frontend)
+function processProposalFromManager(proposalData) {
+  // State mapping like frontend but with lowercase values for DB
+  const stateMap = ['auction', 'live', 'resolved', 'cancelled'];
+  
+  try {
+    const processed = {
+      proposalContractId: proposalData.id ? proposalData.id.toString() : undefined,
+      proposalAddress: toAddr(proposalData.proposalAddress || proposalData.address),
+      admin: toAddr(proposalData.admin),
+      title: proposalData.title || `Proposal #${proposalData.id}`,
+      description: proposalData.description || 'Synced from manager',
+      state: stateMap[Number(proposalData.state)] || 'auction',
+      startTime: Number(proposalData.auctionStartTime || proposalData.startTime || 0),
+      endTime: Number(proposalData.liveEnd || proposalData.endTime || 0),
+      duration: Number(proposalData.liveDuration || proposalData.duration || 0),
+      subjectToken: toAddr(proposalData.subjectToken),
+      maxSupply: (proposalData.maxCap || proposalData.cap || proposalData.maxSupply || 0).toString(),
+      target: toAddr(proposalData.target || '0x0000000000000000000000000000000000000000'),
+      data: proposalData.data || '0x',
+      marketAddress: toAddr(proposalData.marketAddress),
+      
+      // Auction data
+      yesAuction: toAddr(proposalData.yesAuction),
+      noAuction: toAddr(proposalData.noAuction),
+      yesToken: toAddr(proposalData.yesToken),
+      noToken: toAddr(proposalData.noToken),
+      treasury: toAddr(proposalData.treasury),
+      minToOpen: (proposalData.minToOpen || 0).toString()
+    };
+
+    // Calculate endTime if not provided
+    if (!processed.endTime && processed.startTime && processed.duration) {
+      processed.endTime = processed.startTime + processed.duration;
+    }
+
+    // Build auctions object
+    const auctions = {};
+    if (processed.yesAuction || processed.yesToken) {
+      auctions.yes = {
+        auctionAddress: processed.yesAuction,
+        marketToken: processed.yesToken || '0x0000000000000000000000000000000000000000',
+        treasury: processed.treasury,
+        admin: processed.admin,
+        startTime: processed.startTime,
+        endTime: Number(proposalData.auctionEndTime || processed.startTime + 3600), // default 1h auction
+        minToOpen: processed.minToOpen,
+        cap: processed.maxSupply,
+        priceStart: '0',
+        currentPrice: '0',
+        tokensSold: '0',
+        finalized: false,
+        isValid: true,
+        isCanceled: false
+      };
+    }
+    
+    if (processed.noAuction || processed.noToken) {
+      auctions.no = {
+        auctionAddress: processed.noAuction,
+        marketToken: processed.noToken || '0x0000000000000000000000000000000000000000',
+        treasury: processed.treasury,
+        admin: processed.admin,
+        startTime: processed.startTime,
+        endTime: Number(proposalData.auctionEndTime || processed.startTime + 3600), // default 1h auction
+        minToOpen: processed.minToOpen,
+        cap: processed.maxSupply,
+        priceStart: '0',
+        currentPrice: '0',
+        tokensSold: '0',
+        finalized: false,
+        isValid: true,
+        isCanceled: false
+      };
+    }
+
+    if (Object.keys(auctions).length > 0) {
+      processed.auctions = auctions;
+    }
+
+    return processed;
+  } catch (e) {
+    console.error('processProposalFromManager error:', e.message, proposalData);
+    throw e;
+  }
+}
+
 // ===== Minimal ABIs for manager/proposal/auction/token =====
 // Load directly from JSON files instead of hardcoding here
 const ABI_MANAGER = PM_ABI;
@@ -653,26 +740,104 @@ async function syncProposalByAddress(proposalAddress) {
 // Sync all proposals from a ProposalManager
 async function syncProposalsFromManager({ manager }) {
   const c = getContract(manager, PM_ABI, false);
-  // Now returns an array of ProposalInfo structs, not addresses
-  const infos = await c.getAllProposals();
+  // Returns an array of proposal structs like frontend useGetAllProposals
+  const proposals = await c.getAllProposals();
   const results = [];
-  try {
-    console.log(`Manager returned ${Array.isArray(infos) ? infos.length : 0} proposals`);
-  } catch (_) {}
-  for (const info of infos) {
-    const addr = (info && info.proposalAddress) ? String(info.proposalAddress) : null;
-    if (!addr || addr === '0x0000000000000000000000000000000000000000') {
-      results.push({ address: addr, error: 'invalid proposalAddress' });
-      continue;
-    }
+  
+  console.log(`Manager returned ${Array.isArray(proposals) ? proposals.length : 0} proposals`);
+  
+  if (!Array.isArray(proposals)) {
+    console.error('getAllProposals did not return an array:', proposals);
+    return results;
+  }
+
+  // Process each proposal struct similar to frontend mapping
+  for (let i = 0; i < proposals.length; i++) {
+    const p = proposals[i];
     try {
-      const r = await syncProposalByAddress(addr);
-      results.push(r);
+      // Process proposal data directly from manager response
+      const processed = processProposalFromManager(p);
+      
+      if (!processed.proposalAddress || processed.proposalAddress === '0x0000000000000000000000000000000000000000') {
+        console.warn(`Proposal ${i}: invalid or missing proposalAddress`, p);
+        results.push({ index: i, error: 'invalid proposalAddress', proposal: p });
+        continue;
+      }
+
+      console.log(`Processing proposal ${i}: ${processed.proposalAddress}`);
+      
+      // Upsert directly using processed data instead of calling individual contracts
+      const doc = await upsertProposalAndAuctions(processed);
+      results.push({ id: doc.id, address: processed.proposalAddress, action: 'synced' });
+      
     } catch (e) {
-      console.error('Sync proposal error:', addr, e.message);
-      results.push({ address: addr, error: e.message });
+      console.error(`Sync proposal error at index ${i}:`, e.message, p);
+      results.push({ index: i, error: e.message, proposal: p });
     }
   }
+  return results;
+}
+
+// Fast sync all proposals from manager using direct data processing (like frontend)
+async function syncProposalsFromManagerFast({ manager }) {
+  const c = getContract(manager, PM_ABI, false);
+  const proposals = await c.getAllProposals();
+  const results = [];
+  
+  console.log(`[Fast Sync] Manager returned ${Array.isArray(proposals) ? proposals.length : 0} proposals`);
+  
+  if (!Array.isArray(proposals)) {
+    console.error('getAllProposals did not return an array:', proposals);
+    return results;
+  }
+
+  const Proposal = require('../models/Proposal');
+  
+  // Process all proposals in batches to avoid overwhelming the database
+  const batchSize = 10;
+  for (let i = 0; i < proposals.length; i += batchSize) {
+    const batch = proposals.slice(i, i + batchSize);
+    const batchPromises = batch.map(async (p, batchIndex) => {
+      const globalIndex = i + batchIndex;
+      try {
+        const processed = processProposalFromManager(p);
+        
+        if (!processed.proposalAddress || processed.proposalAddress === '0x0000000000000000000000000000000000000000') {
+          return { index: globalIndex, error: 'invalid proposalAddress', proposal: p };
+        }
+
+        // Upsert directly using processed data
+        const doc = await upsertProposalAndAuctions(processed);
+        console.log(`[Fast Sync] Processed proposal ${globalIndex}: ${processed.proposalAddress} -> ${doc.id}`);
+        
+        return { 
+          index: globalIndex,
+          id: doc.id, 
+          address: processed.proposalAddress, 
+          action: 'synced',
+          title: processed.title,
+          state: processed.state
+        };
+        
+      } catch (e) {
+        console.error(`[Fast Sync] Error at index ${globalIndex}:`, e.message);
+        return { index: globalIndex, error: e.message, proposal: p };
+      }
+    });
+
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
+    
+    // Small delay between batches to not overwhelm the system
+    if (i + batchSize < proposals.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  const successful = results.filter(r => !r.error).length;
+  const failed = results.filter(r => r.error).length;
+  console.log(`[Fast Sync] Completed: ${successful} successful, ${failed} failed`);
+
   return results;
 }
 
@@ -1134,6 +1299,8 @@ module.exports = {
   syncProposalFromChain,
   syncProposalByAddress,
   syncProposalsFromManager,
+  syncProposalsFromManagerFast,
+  processProposalFromManager,
   startProposalManagerWatcher,
   startProposalCreatedWatcher,
 

@@ -224,13 +224,13 @@ server.listen(PORT, () => {
 
   // Auto-sync proposals and auctions from ProposalManager if configured
   if (process.env.PROPOSAL_MANAGER_ADDRESS) {
-    const { syncProposalsFromManager } = require('./services/chainService');
+    const { syncProposalsFromManagerFast } = require('./services/chainService');
     const { notifyProposalUpdate, notifyAuctionUpdate } = require('./middleware/websocket');
     const Auction = require('./models/Auction');
 
     startPoll('sync-proposals-manager', async () => {
       try {
-        const results = await syncProposalsFromManager({ manager: process.env.PROPOSAL_MANAGER_ADDRESS });
+        const results = await syncProposalsFromManagerFast({ manager: process.env.PROPOSAL_MANAGER_ADDRESS });
         // Broadcast updates for each synced proposal
         for (const r of results) {
           const addr = (r && r.address) ? String(r.address).toLowerCase() : null;
