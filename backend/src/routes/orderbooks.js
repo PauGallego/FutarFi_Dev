@@ -148,7 +148,7 @@ async function ensureSufficientBalance({ proposal, proposalId, side, orderType, 
     throw new Error('PyUSD address not configured in environment');
   }
   
-  // Try to obtain token address from the new struct format first
+  // Get token address exactly like frontend does
   let tokenAddr;
   if (key === 'yes') {
     tokenAddr = proposal?.yesToken;
@@ -156,61 +156,26 @@ async function ensureSufficientBalance({ proposal, proposalId, side, orderType, 
     tokenAddr = proposal?.noToken;
   }
 
-  // If not found, try auctions structure
-  if (!tokenAddr) {
-    tokenAddr = proposal?.auctions?.[key]?.marketToken;
-  }
-
-  // Fallback 1: Look into Auction collection if not found in proposal
-  if (!tokenAddr) {
-    try {
-      const Auction = require('../models/Auction');
-      const pid = String(proposal?.id ?? proposalId);
-      const aucSide = key; // 'yes' | 'no'
-      const aucDoc = await Auction.findOne({ proposalId: pid, side: aucSide }).lean();
-      if (aucDoc?.marketToken) {
-        tokenAddr = String(aucDoc.marketToken);
-      }
-    } catch (_) { /* ignore */ }
-  }
-
-  // Fallback 2: Best-effort on-demand sync from chain, then recheck
+  // If token address not found, sync proposal and try again
   if (!tokenAddr) {
     try {
       const address = proposal?.proposalAddress;
       if (address && /^0x[a-fA-F0-9]{40}$/.test(String(address))) {
+        console.log(`Token address not found for ${side}, syncing proposal: ${address}`);
         const { syncProposalByAddress } = require('../services/chainService');
         await syncProposalByAddress(String(address));
-        // Reload minimal fields
+        
+        // Reload proposal data
         const ProposalModel = require('../models/Proposal');
-        const fresh = await ProposalModel.findOne({ $or: [
-          { proposalAddress: String(address).toLowerCase() },
-          proposal?.proposalContractId ? { proposalContractId: String(proposal.proposalContractId) } : null,
-          proposal?.id ? { id: Number(proposal.id) } : null
-        ].filter(Boolean) }).lean();
+        const fresh = await ProposalModel.findOne({ 
+          proposalAddress: String(address).toLowerCase() 
+        }).lean();
         
-        // Try from new struct format first
-        if (!tokenAddr) {
-          if (key === 'yes') {
-            tokenAddr = fresh?.yesToken;
-          } else if (key === 'no') {
-            tokenAddr = fresh?.noToken;
-          }
-        }
-        
-        // Try to get token from refreshed proposal auctions
-        if (!tokenAddr) {
-          tokenAddr = fresh?.auctions?.[key]?.marketToken;
-        }
-        
-        // Last resort: check Auction collection again
-        if (!tokenAddr) {
-          const Auction = require('../models/Auction');
-          const pid = String(fresh?.id ?? proposal?.id ?? proposalId);
-          const aucDoc = await Auction.findOne({ proposalId: pid, side: key }).lean();
-          if (aucDoc?.marketToken) {
-            tokenAddr = String(aucDoc.marketToken);
-          }
+        // Try again with fresh data
+        if (key === 'yes') {
+          tokenAddr = fresh?.yesToken;
+        } else if (key === 'no') {
+          tokenAddr = fresh?.noToken;
         }
       }
     } catch (e) {
