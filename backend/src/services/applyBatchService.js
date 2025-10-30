@@ -182,7 +182,6 @@ async function sendApplyBatch(proposalAddress, ops) {
       pc.attestor ? pc.attestor().catch(() => ethers.ZeroAddress) : ethers.ZeroAddress,
       signer.getAddress(),
     ]);
-    if (Number(state) !== 1) throw new Error('Proposal not live');
     if (attestor && attestor !== ethers.ZeroAddress && String(attestor).toLowerCase() !== String(signerAddr).toLowerCase()) {
       throw new Error('Signer is not attestor');
     }
