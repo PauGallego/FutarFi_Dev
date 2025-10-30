@@ -477,7 +477,6 @@ async function readProposalSnapshot(proposalAddr) {
     lEnd,
     lDur,
     subjectToken,
-    pyusd,
     minToOpen,
     maxCap,
     yesAuction,
@@ -495,7 +494,6 @@ async function readProposalSnapshot(proposalAddr) {
     tryCall(['liveEnd', 'getLiveEnd']),
     tryCall(['liveDuration', 'getLiveDuration', 'duration']),
     tryCall(['subjectToken', 'getSubjectToken', 'collateralToken', 'getCollateralToken']),
-    tryCall(['pyUSD', 'PYUSD', 'getPyUSD']),
     tryCall(['minToOpen', 'MIN_TO_OPEN', 'getMinToOpen']),
     tryCall(['maxCap', 'MAX_CAP', 'cap', 'getMaxCap']),
     tryCall(['yesAuction', 'YES_AUCTION']),
@@ -556,7 +554,7 @@ async function readProposalSnapshot(proposalAddr) {
     yes = {
       auctionAddress: yesAuctionAddr || null,
       marketToken: yesTokenAddr || '0x0000000000000000000000000000000000000000',
-      pyusd: toAddr(pyusd),
+      pyusd: process.env.PYUSD_ADDRESS,
       treasury: toAddr(treasury),
       admin: toAddr(admin),
       startTime: startTime,
@@ -576,7 +574,7 @@ async function readProposalSnapshot(proposalAddr) {
     no = {
       auctionAddress: noAuctionAddr || null,
       marketToken: noTokenAddr || '0x0000000000000000000000000000000000000000',
-      pyusd: toAddr(pyusd),
+      pyusd: process.env.PYUSD_ADDRESS,
       treasury: toAddr(treasury),
       admin: toAddr(admin),
       startTime: startTime,
@@ -700,7 +698,7 @@ async function upsertProposalAndAuctions(snapshot) {
       // side,                           // do not include in $set to avoid conflict
       auctionAddress: a.auctionAddress,
       marketToken: a.marketToken,
-      pyusd: a.pyusd,
+      pyusd: process.env.PYUSD_ADDRESS,
       treasury: a.treasury,
       admin: a.admin,
       startTime: a.startTime,
