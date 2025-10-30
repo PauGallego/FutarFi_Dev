@@ -47,13 +47,61 @@ async function resolveEffectivePrice({ proposalId, side, buyOrder, sellOrder, in
 }
 
 async function buildTradeOp({ proposalDoc, side, buyOrder, sellOrder, price, amount }) {
-  if (!proposalDoc?.proposalAddress || !proposalDoc?.auctions) throw new Error('Proposal not synced with chain');
+  if (!proposalDoc?.proposalAddress) throw new Error('Proposal not synced with chain');
+  
   const key = sideToKey(side);
-  const auctionSide = proposalDoc.auctions[key];
-  if (!auctionSide?.marketToken || !auctionSide?.pyusd) throw new Error('Token addresses missing for proposal');
-
-  const tokenAddr = auctionSide.marketToken;
-  const pyusdAddr = auctionSide.pyusd;
+  
+  // Get token addresses like frontend and orderbooks.js - first from direct fields
+  let tokenAddr;
+  let pyusdAddr = process.env.PYUSD_ADDRESS;
+  
+  if (key === 'yes') {
+    tokenAddr = proposalDoc.yesToken;
+  } else if (key === 'no') {
+    tokenAddr = proposalDoc.noToken;
+  }
+  
+  // Fallback to auctions structure if direct fields not available
+  if (!tokenAddr && proposalDoc.auctions?.[key]?.marketToken) {
+    tokenAddr = proposalDoc.auctions[key].marketToken;
+  }
+  
+  // If still no token address, try to sync proposal
+  if (!tokenAddr) {
+    try {
+      const { syncProposalByAddress } = require('./chainService');
+      await syncProposalByAddress(proposalDoc.proposalAddress);
+      
+      // Reload proposal data
+      const ProposalModel = require('../models/Proposal');
+      const fresh = await ProposalModel.findOne({ 
+        proposalAddress: proposalDoc.proposalAddress.toLowerCase() 
+      }).lean();
+      
+      if (fresh) {
+        if (key === 'yes') {
+          tokenAddr = fresh.yesToken;
+        } else if (key === 'no') {
+          tokenAddr = fresh.noToken;
+        }
+        
+        // Still try auctions as fallback
+        if (!tokenAddr && fresh.auctions?.[key]?.marketToken) {
+          tokenAddr = fresh.auctions[key].marketToken;
+        }
+      }
+    } catch (e) {
+      console.error('Error syncing proposal in buildTradeOp:', e.message);
+    }
+  }
+  
+  if (!tokenAddr) {
+    throw new Error(`Market token address not available for side '${side}' on this proposal`);
+  }
+  
+  if (!pyusdAddr) {
+    throw new Error('PyUSD address not configured in environment');
+  }
 
   const [tokenDec, pyusdDec] = await Promise.all([
     getDecimals(tokenAddr),
