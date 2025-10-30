@@ -33,6 +33,34 @@ function isValidOrderExecution(orderExecution) { return ['limit', 'market'].incl
 function sendError(res, status, message) { return res.status(status).json({ error: message }); }
 function sideToKey(side) { return side === 'approve' ? 'yes' : 'no'; }
 
+// Cache for proposal token addresses to avoid repeated DB lookups
+const proposalTokenCache = new Map();
+const CACHE_TTL = 60000; // 1 minute cache
+
+// Helper to invalidate cache for a proposal
+function invalidateProposalCache(proposalId) {
+  const keysToDelete = [];
+  for (const key of proposalTokenCache.keys()) {
+    if (key.startsWith(`${proposalId}-`) || key === `proposal-${proposalId}`) {
+      keysToDelete.push(key);
+    }
+  }
+  keysToDelete.forEach(k => proposalTokenCache.delete(k));
+  if (keysToDelete.length > 0) {
+    console.log(`[CACHE] Invalidated ${keysToDelete.length} entries for proposal ${proposalId}`);
+  }
+}
+
+// Clean cache periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of proposalTokenCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      proposalTokenCache.delete(key);
+    }
+  }
+}, 30000); // Clean every 30 seconds
+
 // Build and persist a compact order book snapshot for a proposal/side
 async function updateOrderBook(proposalId, side, io) {
   try {
@@ -148,59 +176,89 @@ async function ensureSufficientBalance({ proposal, proposalId, side, orderType, 
     throw new Error('PyUSD address not configured in environment');
   }
   
-  // Get token address exactly like frontend does
-  let tokenAddr;
-  if (key === 'yes') {
-    tokenAddr = proposal?.yesToken;
-  } else if (key === 'no') {
-    tokenAddr = proposal?.noToken;
+  // Try cache first for fast path
+  const cacheKey = `${proposalId}-${key}`;
+  const cached = proposalTokenCache.get(cacheKey);
+  let tokenAddr = cached?.address;
+  
+  // If not in cache or cache expired, get from proposal
+  if (!tokenAddr || Date.now() - cached.timestamp > CACHE_TTL) {
+    if (key === 'yes') {
+      tokenAddr = proposal?.yesToken;
+    } else if (key === 'no') {
+      tokenAddr = proposal?.noToken;
+    }
+    
+    // Cache the result
+    if (tokenAddr) {
+      proposalTokenCache.set(cacheKey, { address: tokenAddr, timestamp: Date.now() });
+    }
   }
 
-  // If token address not found, sync proposal and try again
+  // If token address not found, try reload from DB (maybe cached data is stale)
   if (!tokenAddr) {
     try {
       const address = proposal?.proposalAddress;
       if (address && /^0x[a-fA-F0-9]{40}$/.test(String(address))) {
-        console.log(`Token address not found for ${side}, syncing proposal: ${address}`);
-        const { syncProposalByAddress } = require('../services/chainService');
-        await syncProposalByAddress(String(address));
+        console.log(`[BALANCE-CHECK] Token address not found for ${side}, reloading from DB: ${address}`);
         
-        // Reload proposal data
+        // Quick DB reload without blockchain sync (non-blocking)
         const ProposalModel = require('../models/Proposal');
         const fresh = await ProposalModel.findOne({ 
           proposalAddress: String(address).toLowerCase() 
         }).lean();
         
-        // Try again with fresh data
+        // Try with fresh data from DB
         if (key === 'yes') {
           tokenAddr = fresh?.yesToken;
         } else if (key === 'no') {
           tokenAddr = fresh?.noToken;
         }
+        
+        // Cache the result
+        if (tokenAddr) {
+          proposalTokenCache.set(cacheKey, { address: tokenAddr, timestamp: Date.now() });
+        }
+        
+        // If still not found, trigger async background sync (non-blocking)
+        if (!tokenAddr) {
+          console.log(`[BALANCE-CHECK] Token still not found, triggering async sync for ${address}`);
+          setImmediate(async () => {
+            try {
+              const { syncProposalByAddress } = require('../services/chainService');
+              await syncProposalByAddress(String(address));
+              console.log(`[BALANCE-CHECK] Background sync completed for ${address}`);
+            } catch (e) {
+              console.error('[BALANCE-CHECK] Background sync error:', e.message);
+            }
+          });
+        }
       }
     } catch (e) {
-      console.error('Error syncing proposal for token address:', e.message);
+      console.error('[BALANCE-CHECK] Error reloading proposal:', e.message);
     }
   }
 
   if (!tokenAddr) {
-    throw new Error(`Market token address not available for side '${side}' on this proposal yet`);
+    throw new Error(`Market token address not available for side '${side}' on this proposal. Try again in a moment.`);
   }
 
-  console.log(`Balance check - PyUSD: ${pyusdAddr}, Token (${side}): ${tokenAddr}`);
+  console.log(`[BALANCE-CHECK] PyUSD: ${pyusdAddr}, Token (${side}): ${tokenAddr}`);
 
   const token = new ethers.Contract(tokenAddr, ERC20_MIN_ABI, provider);
   const pyusd = new ethers.Contract(pyusdAddr, ERC20_MIN_ABI, provider);
 
-  const [tokenDec, pyusdDec] = await Promise.all([
+  // Fetch decimals and balance in parallel for speed
+  const [tokenDec, pyusdDec, userTokenBal, userPyusdBal] = await Promise.all([
     token.decimals().catch(() => 18),
-    pyusd.decimals().catch(() => 18)
+    pyusd.decimals().catch(() => 6),
+    token.balanceOf(userAddress).catch(() => 0n),
+    pyusd.balanceOf(userAddress).catch(() => 0n)
   ]);
 
   // SELL: user must have enough market tokens (amount is token qty)
   if (orderType === 'sell') {
     const requiredToken = ethers.parseUnits(String(amount), Number(tokenDec));
-    const userTokenBal = await token.balanceOf(userAddress).catch(() => 0n);
     if (userTokenBal < requiredToken) {
       const need = ethers.formatUnits(requiredToken, Number(tokenDec));
       const have = ethers.formatUnits(userTokenBal, Number(tokenDec));
@@ -211,7 +269,6 @@ async function ensureSufficientBalance({ proposal, proposalId, side, orderType, 
 
   // BUY: amount is a PyUSD budget. User must have at least this much PyUSD.
   const requiredPyusd = ethers.parseUnits(String(amount), Number(pyusdDec));
-  const userPyusdBal = await pyusd.balanceOf(userAddress).catch(() => 0n);
   if (userPyusdBal < requiredPyusd) {
     const need = ethers.formatUnits(requiredPyusd, Number(pyusdDec));
     const have = ethers.formatUnits(userPyusdBal, Number(pyusdDec));
@@ -512,7 +569,10 @@ router.get('/:proposalId/:side/candles', async (req, res) => {
  * /api/orderbooks/{proposalId}/{side}/orders:
  *   post:
  *     summary: Create order (requires wallet signature)
- *     description: Creates a new order. User must provide wallet signature for authentication.
+ *     description: |
+ *       Creates a new order and returns immediately. Order matching and execution 
+ *       happens asynchronously in the background. Updates are sent via WebSocket.
+ *       User must provide wallet signature for authentication.
  *     tags: [Orderbooks]
  *     security:
  *       - WalletSignature: []
@@ -551,15 +611,25 @@ router.get('/:proposalId/:side/candles', async (req, res) => {
  *               orderType:
  *                 type: string
  *                 enum: [buy, sell]
+ *               orderExecution:
+ *                 type: string
+ *                 enum: [limit, market]
+ *                 default: limit
  *               price:
  *                 type: number
+ *                 description: Required for limit orders, optional for market orders
  *               amount:
  *                 type: number
+ *                 description: For buy orders (PyUSD budget), for sell orders (token quantity)
  *     responses:
  *       201:
- *         description: Order created successfully
+ *         description: Order created successfully. Matching happens asynchronously.
+ *       400:
+ *         description: Invalid input or insufficient balance
  *       401:
  *         description: Invalid wallet signature
+ *       404:
+ *         description: Proposal not found
  */
 router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res) => {
   try {
@@ -591,13 +661,28 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
 
     // Verify that the proposal exists by accepting multiple identifiers (internal id, on-chain id, or address)
     let proposal;
-    try {
-      const pidNum = Number(proposalId);
-      const clauses = [{ proposalContractId: String(proposalId) }];
-      if (!Number.isNaN(pidNum)) clauses.push({ id: pidNum });
-      if (/^0x[a-fA-F0-9]{40}$/.test(String(proposalId))) clauses.push({ proposalAddress: String(proposalId).toLowerCase() });
-      proposal = await Proposal.findOne({ $or: clauses });
-    } catch (_) {}
+    const proposalCacheKey = `proposal-${proposalId}`;
+    
+    // Try cache first
+    const cachedProposal = proposalTokenCache.get(proposalCacheKey);
+    if (cachedProposal && Date.now() - cachedProposal.timestamp < CACHE_TTL) {
+      proposal = cachedProposal.data;
+    } else {
+      // Fetch from DB
+      try {
+        const pidNum = Number(proposalId);
+        const clauses = [{ proposalContractId: String(proposalId) }];
+        if (!Number.isNaN(pidNum)) clauses.push({ id: pidNum });
+        if (/^0x[a-fA-F0-9]{40}$/.test(String(proposalId))) clauses.push({ proposalAddress: String(proposalId).toLowerCase() });
+        proposal = await Proposal.findOne({ $or: clauses });
+        
+        // Cache the proposal
+        if (proposal) {
+          proposalTokenCache.set(proposalCacheKey, { data: proposal, timestamp: Date.now() });
+        }
+      } catch (_) {}
+    }
+    
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -677,32 +762,10 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(500).json({ error: 'Failed to create order' });
     }
 
+    // Notify user immediately via WebSocket
     try { if (io) notifyUserOrdersUpdate(io, userAddress, { reason: 'order-created', changedOrderId: order._id.toString() }); } catch (e) {}
 
-    try {
-      await updateOrderBook(proposalId, side, io);
-    } catch (updateError) {
-      console.error('Error updating order book after creation:', updateError);
-    }
-
-    try {
-      await executeOrder(order, io);
-      const existingOrders = await Order.find({
-        proposalId: order.proposalId,
-        side: order.side,
-        orderType: order.orderType === 'buy' ? 'sell' : 'buy',
-        status: 'open',
-        _id: { $ne: order._id }
-      }).sort({ createdAt: 1 });
-
-      console.log(`Found ${existingOrders.length} existing orders to re-check for matching`);
-      for (const existingOrder of existingOrders) {
-        try { await executeOrder(existingOrder, io); } catch (existingExecuteError) { console.error('Error executing existing order:', existingExecuteError); }
-      }
-    } catch (executeError) {
-      console.error('Error executing order:', executeError);
-    }
-
+    // Notify new order creation via WebSocket
     try {
       if (io && typeof notifyNewOrder === 'function') {
         notifyNewOrder(io, order);
@@ -711,7 +774,43 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       console.error('Error notifying new order:', notifyError);
     }
 
+    // IMPORTANT: Respond immediately to prevent frontend timeout
     res.status(201).json(order);
+
+    // Execute order matching ASYNCHRONOUSLY (non-blocking)
+    // This allows the response to be sent immediately while processing happens in background
+    setImmediate(async () => {
+      try {
+        console.log(`[ASYNC-MATCH] Starting async execution for order ${order._id}`);
+        
+        // Update order book snapshot
+        await updateOrderBook(proposalId, side, io);
+        
+        // Execute matching for this order
+        await executeOrder(order, io);
+        
+        // Re-check existing opposite orders for potential matches
+        const existingOrders = await Order.find({
+          proposalId: order.proposalId,
+          side: order.side,
+          orderType: order.orderType === 'buy' ? 'sell' : 'buy',
+          status: { $in: ['open', 'partial'] },
+          _id: { $ne: order._id }
+        }).sort({ createdAt: 1 });
+
+        console.log(`[ASYNC-MATCH] Found ${existingOrders.length} existing orders to re-check for matching`);
+        for (const existingOrder of existingOrders) {
+          try { 
+            await executeOrder(existingOrder, io); 
+          } catch (existingExecuteError) { 
+            console.error('[ASYNC-MATCH] Error executing existing order:', existingExecuteError); 
+          }
+        }
+        console.log(`[ASYNC-MATCH] Completed async execution for order ${order._id}`);
+      } catch (asyncError) {
+        console.error('[ASYNC-MATCH] Error in async order execution:', asyncError);
+      }
+    });
   } catch (error) {
     console.error('Error creating order:', error);
     res.status(400).json({ error: error.message });
@@ -1078,6 +1177,20 @@ router.get('/:proposalId/:side/top', async (req, res) => {
   }
 });
 
+// Lock map to prevent concurrent execution of the same order
+const executionLocks = new Map();
+
+// Clean up old locks periodically (in case of crashes/errors)
+setInterval(() => {
+  const now = Date.now();
+  for (const [orderId, lockTime] of executionLocks.entries()) {
+    // Remove locks older than 30 seconds
+    if (typeof lockTime === 'number' && now - lockTime > 30000) {
+      console.log(`[EXEC-LOCK] Cleaning up stale lock for order ${orderId}`);
+      executionLocks.delete(orderId);
+    }
+  }
+}, 60000); // Run every minute
 
 async function executeOrder(order, io) {
   try {
@@ -1086,7 +1199,34 @@ async function executeOrder(order, io) {
       return;
     }
 
-    console.log(`Executing order: ${order._id}, side: ${order.side}, type: ${order.orderType}, execution: ${order.orderExecution}, price: ${order.price}, amount: ${order.amount}`);
+    const orderId = order._id.toString();
+    
+    // Check if this order is already being executed
+    if (executionLocks.has(orderId)) {
+      console.log(`[EXEC-LOCK] Order ${orderId} is already being executed, skipping...`);
+      return;
+    }
+
+    // Set lock with timestamp
+    executionLocks.set(orderId, Date.now());
+
+    try {
+      // Reload order from DB to get latest status
+      const freshOrder = await Order.findById(order._id);
+      if (!freshOrder) {
+        console.log(`[EXEC] Order ${orderId} not found in DB`);
+        return;
+      }
+
+      if (freshOrder.status === 'filled' || freshOrder.status === 'cancelled') {
+        console.log(`[EXEC] Order ${orderId} is ${freshOrder.status}, skipping execution`);
+        return;
+      }
+
+      // Use fresh order for execution
+      order = freshOrder;
+
+      console.log(`[EXEC] Executing order: ${order._id}, side: ${order.side}, type: ${order.orderType}, execution: ${order.orderExecution}, price: ${order.price}, amount: ${order.amount}`);
 
     const oppositeOrderType = order.orderType === 'buy' ? 'sell' : 'buy';
 
@@ -1379,10 +1519,19 @@ async function executeOrder(order, io) {
     }
 
     // Refresh order book snapshot after execution
-    try { await updateOrderBook(order.proposalId, order.side, io); } catch (e) { console.error('Error updating order book after execution:', e); }
+    try { await updateOrderBook(order.proposalId, order.side, io); } catch (e) { console.error('[EXEC] Error updating order book after execution:', e); }
+
+    } finally {
+      // Always release the lock
+      executionLocks.delete(orderId);
+    }
 
   } catch (error) {
-    console.error('Error executing order:', error);
+    console.error('[EXEC] Error executing order:', error);
+    // Ensure lock is released even on outer error
+    if (order?._id) {
+      executionLocks.delete(order._id.toString());
+    }
   }
 }
 
