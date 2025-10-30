@@ -648,6 +648,13 @@ async function upsertProposalAndAuctions(snapshot) {
     target: snapshot.target ?? '0x0000000000000000000000000000000000000000',
     data: snapshot.data ?? '0x',
     marketAddress: snapshot.marketAddress,
+    // Include token addresses for direct access
+    yesToken: snapshot.yesToken,
+    noToken: snapshot.noToken,
+    yesAuction: snapshot.yesAuction,
+    noAuction: snapshot.noAuction,
+    treasury: snapshot.treasury,
+    minToOpen: snapshot.minToOpen,
     auctions: auctionsFinal
   };
 

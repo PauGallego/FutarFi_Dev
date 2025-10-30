@@ -142,28 +142,40 @@ async function ensureSufficientBalance({ proposal, proposalId, side, orderType, 
   const provider = getProvider();
   const key = sideToKey(side);
 
-  // Try to obtain token addresses from multiple sources (Proposal.auctions, Auction collection, last-resort on-chain sync)
-  let tokenAddr = proposal?.auctions?.[key]?.marketToken;
-  let pyusdAddr = process.env.PYUSD_ADDRESS;
+  // PyUSD address always comes from environment variable
+  const pyusdAddr = process.env.PYUSD_ADDRESS;
+  if (!pyusdAddr) {
+    throw new Error('PyUSD address not configured in environment');
+  }
+  
+  // Try to obtain token address from the new struct format first
+  let tokenAddr;
+  if (key === 'yes') {
+    tokenAddr = proposal?.yesToken;
+  } else if (key === 'no') {
+    tokenAddr = proposal?.noToken;
+  }
 
-  // Fallback 1: Look into Auction collection if Proposal.auctions is not populated yet
-  if (!tokenAddr || !pyusdAddr) {
+  // If not found, try auctions structure
+  if (!tokenAddr) {
+    tokenAddr = proposal?.auctions?.[key]?.marketToken;
+  }
+
+  // Fallback 1: Look into Auction collection if not found in proposal
+  if (!tokenAddr) {
     try {
       const Auction = require('../models/Auction');
       const pid = String(proposal?.id ?? proposalId);
       const aucSide = key; // 'yes' | 'no'
       const aucDoc = await Auction.findOne({ proposalId: pid, side: aucSide }).lean();
-      const aucYes = await Auction.findOne({ proposalId: pid, side: 'yes' }).lean();
-      const aucNo = await Auction.findOne({ proposalId: pid, side: 'no' }).lean();
-      if (!tokenAddr && aucDoc?.marketToken) tokenAddr = String(aucDoc.marketToken);
-      if (!pyusdAddr) {
-        pyusdAddr = (aucYes?.pyusd || aucNo?.pyusd) ? String(aucYes?.pyusd || aucNo?.pyusd) : undefined;
+      if (aucDoc?.marketToken) {
+        tokenAddr = String(aucDoc.marketToken);
       }
     } catch (_) { /* ignore */ }
   }
 
   // Fallback 2: Best-effort on-demand sync from chain, then recheck
-  if (!tokenAddr || !pyusdAddr) {
+  if (!tokenAddr) {
     try {
       const address = proposal?.proposalAddress;
       if (address && /^0x[a-fA-F0-9]{40}$/.test(String(address))) {
@@ -176,26 +188,41 @@ async function ensureSufficientBalance({ proposal, proposalId, side, orderType, 
           proposal?.proposalContractId ? { proposalContractId: String(proposal.proposalContractId) } : null,
           proposal?.id ? { id: Number(proposal.id) } : null
         ].filter(Boolean) }).lean();
-        tokenAddr = tokenAddr || fresh?.auctions?.[key]?.marketToken;
-        pyusdAddr = pyusdAddr || fresh?.auctions?.yes?.pyusd || fresh?.auctions?.no?.pyusd;
-        if (!tokenAddr || !pyusdAddr) {
+        
+        // Try from new struct format first
+        if (!tokenAddr) {
+          if (key === 'yes') {
+            tokenAddr = fresh?.yesToken;
+          } else if (key === 'no') {
+            tokenAddr = fresh?.noToken;
+          }
+        }
+        
+        // Try to get token from refreshed proposal auctions
+        if (!tokenAddr) {
+          tokenAddr = fresh?.auctions?.[key]?.marketToken;
+        }
+        
+        // Last resort: check Auction collection again
+        if (!tokenAddr) {
           const Auction = require('../models/Auction');
           const pid = String(fresh?.id ?? proposal?.id ?? proposalId);
           const aucDoc = await Auction.findOne({ proposalId: pid, side: key }).lean();
-          const aucYes = await Auction.findOne({ proposalId: pid, side: 'yes' }).lean();
-          const aucNo = await Auction.findOne({ proposalId: pid, side: 'no' }).lean();
-          if (!tokenAddr && aucDoc?.marketToken) tokenAddr = String(aucDoc.marketToken);
-          if (!pyusdAddr) {
-            pyusdAddr = (aucYes?.pyusd || aucNo?.pyusd) ? String(aucYes?.pyusd || aucNo?.pyusd) : undefined;
+          if (aucDoc?.marketToken) {
+            tokenAddr = String(aucDoc.marketToken);
           }
         }
       }
-    } catch (_) { /* ignore */ }
+    } catch (e) {
+      console.error('Error syncing proposal for token address:', e.message);
+    }
   }
 
-  if (!tokenAddr || !pyusdAddr) {
-    throw new Error('Token addresses not available for this proposal yet');
+  if (!tokenAddr) {
+    throw new Error(`Market token address not available for side '${side}' on this proposal yet`);
   }
+
+  console.log(`Balance check - PyUSD: ${pyusdAddr}, Token (${side}): ${tokenAddr}`);
 
   const token = new ethers.Contract(tokenAddr, ERC20_MIN_ABI, provider);
   const pyusd = new ethers.Contract(pyusdAddr, ERC20_MIN_ABI, provider);

@@ -20,6 +20,13 @@ const proposalSchema = new mongoose.Schema({
   marketAddress: { type: String, required: false },
   proposalExecuted: { type: Boolean, default: false },
   proposalEnded: { type: Boolean, default: false },
+  // Direct token addresses from getAllProposals struct (new format)
+  yesToken: { type: String, required: false },
+  noToken: { type: String, required: false },
+  yesAuction: { type: String, required: false },
+  noAuction: { type: String, required: false },
+  treasury: { type: String, required: false },
+  minToOpen: { type: String, required: false },
   // On-chain state mirror
   state: {
     type: String,
