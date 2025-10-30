@@ -144,7 +144,7 @@ async function ensureSufficientBalance({ proposal, proposalId, side, orderType, 
 
   // Try to obtain token addresses from multiple sources (Proposal.auctions, Auction collection, last-resort on-chain sync)
   let tokenAddr = proposal?.auctions?.[key]?.marketToken;
-  let pyusdAddr = proposal?.auctions?.yes?.pyusd || proposal?.auctions?.no?.pyusd;
+  let pyusdAddr = process.env.PYUSD_ADDRESS;
 
   // Fallback 1: Look into Auction collection if Proposal.auctions is not populated yet
   if (!tokenAddr || !pyusdAddr) {
@@ -2116,7 +2116,7 @@ async function executeOrder(order, io) {
       } catch (_) {}
       const key = sideToKey(order.side);
       const tokenAddr = proposalDoc?.auctions?.[key]?.marketToken;
-      const pyusdAddr = proposalDoc?.auctions?.[key]?.pyusd || proposalDoc?.auctions?.yes?.pyusd || proposalDoc?.auctions?.no?.pyusd;
+      const pyusdAddr = process.env.PYUSD_ADDRESS;
       if (tokenAddr && pyusdAddr) {
         const provider = getProvider();
         const token = new ethers.Contract(tokenAddr, ERC20_MIN_ABI, provider);
