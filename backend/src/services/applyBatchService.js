@@ -66,8 +66,9 @@ async function buildTradeOp({ proposalDoc, side, buyOrder, sellOrder, price, amo
     tokenAddr = proposalDoc.auctions[key].marketToken;
   }
   
-  // If still no token address, try to sync proposal
+  // If still no token address, try to sync proposal (BLOCKING - last resort)
   if (!tokenAddr) {
+    console.log(`[applyBatch] Token address missing for ${side}, attempting sync of ${proposalDoc.proposalAddress}`);
     try {
       const { syncProposalByAddress } = require('./chainService');
       await syncProposalByAddress(proposalDoc.proposalAddress);
@@ -91,7 +92,7 @@ async function buildTradeOp({ proposalDoc, side, buyOrder, sellOrder, price, amo
         }
       }
     } catch (e) {
-      console.error('Error syncing proposal in buildTradeOp:', e.message);
+      console.error('[applyBatch] Error syncing proposal:', e.message);
     }
   }
   
@@ -230,8 +231,24 @@ async function sendApplyBatch(proposalAddress, ops) {
 
 async function submitFillToChain({ proposalId, side, buyOrder, sellOrder, price, amount }) {
   const ProposalModel = require('../models/Proposal');
-  const proposalDoc = await ProposalModel.findOne({ id: Number(proposalId) }).lean();
-  if (!proposalDoc?.proposalAddress) throw new Error(`Proposal ${proposalId} not found or missing address`);
+  
+  // proposalId can be: internal id, contract id (string), or address
+  let proposalDoc;
+  try {
+    const pidNum = Number(proposalId);
+    const clauses = [{ proposalContractId: String(proposalId) }];
+    if (!Number.isNaN(pidNum)) clauses.push({ id: pidNum });
+    if (/^0x[a-fA-F0-9]{40}$/.test(String(proposalId))) {
+      clauses.push({ proposalAddress: String(proposalId).toLowerCase() });
+    }
+    proposalDoc = await ProposalModel.findOne({ $or: clauses }).lean();
+  } catch (e) {
+    console.error(`[applyBatch] Error finding proposal: ${e.message}`);
+  }
+  
+  if (!proposalDoc?.proposalAddress) {
+    throw new Error(`Proposal ${proposalId} not found or missing address`);
+  }
 
   const op = await buildTradeOp({ proposalDoc, side, buyOrder, sellOrder, price, amount });
   const res = await sendApplyBatch(proposalDoc.proposalAddress, [op]);
