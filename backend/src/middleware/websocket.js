@@ -1,8 +1,32 @@
 // WebSocket notification helpers
 
 const notifyOrderBookUpdate = (io, proposalId, side, orderBook) => {
-  // Public orderbook broadcasts disabled intentionally
-  return;
+  try {
+    if (!io || !proposalId || !side) return;
+    // Emit minimal, privacy-safe top-of-book snapshot to the specific orderbook room
+    const bestBid = Array.isArray(orderBook?.bids) && orderBook.bids.length
+      ? orderBook.bids[0]
+      : null;
+    const bestAsk = Array.isArray(orderBook?.asks) && orderBook.asks.length
+      ? orderBook.asks[0]
+      : null;
+    let mid = null;
+    if (bestBid && bestAsk) {
+      const bid = parseFloat(bestBid.price);
+      const ask = parseFloat(bestAsk.price);
+      if (Number.isFinite(bid) && Number.isFinite(ask)) mid = ((bid + ask) / 2).toFixed(8);
+    }
+    io.to(`orderbook-${proposalId}-${side}`).emit('orderbook-top', {
+      proposalId: String(proposalId),
+      side,
+      bestBid,
+      bestAsk,
+      mid,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (_) {
+    // ignore
+  }
 };
 
 const notifyNewOrder = (io, order) => {

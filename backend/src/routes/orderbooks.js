@@ -1239,15 +1239,13 @@ async function executeOrder(order, io) {
     }
     
 
-    // Find matching orders
+    // Find matching orders (excluding same user to prevent self-matching)
     const matchingOrders = await Order.find({
-
-     
-     
       proposalId: order.proposalId,
       side: order.side,
       orderType: oppositeOrderType,
       status: { $in: ['open', 'partial'] },
+      userAddress: { $ne: order.userAddress }, // Prevent self-matching
       ...(order.orderExecution === 'limit' ? { ...priceFilter } : {})
     }).sort({
       price: order.orderType === 'buy' ? 1 : -1, // Best price first
