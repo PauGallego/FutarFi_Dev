@@ -17,6 +17,8 @@ import { parseUnits, formatUnits } from "viem"
 import { ethers } from "ethers"
 import React from "react";
 import { Button } from "@/components/ui/stateful-button";
+import { useChainId } from "wagmi"
+import {getContractAddress} from "@/contracts/constants"
 
 type MarketTradePanelProps = {
   selectedMarket: MarketOption
@@ -28,6 +30,8 @@ type MarketTradePanelProps = {
 
 export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, onOrderPlaced }: MarketTradePanelProps) {
   const { isConnected, address } = useAccount()
+  const chainId = useChainId()
+  
   const publicClient = usePublicClient()
   const { createOrder, isLoading: creating, error: createError } = useCreateOrder()
 
@@ -39,9 +43,9 @@ export function MarketTradePanel({ selectedMarket, onMarketChange, proposalId, o
 
   // Fetch proposal addresses so we can read balances and spender (proposal address)
   const { proposal } = useGetProposalById(proposalId)
-  const pyusdAddr = proposal?.pyUSD as `0x${string}` | undefined
+  const pyusdAddr = getContractAddress(chainId, 'PYUSD') as `0x${string}` 
   const marketTokenAddr = (selectedMarket === "YES" ? proposal?.yesToken : proposal?.noToken) as `0x${string}` | undefined
-  const proposalAddr = proposal?.address as `0x${string}` | undefined // spender for applyBatch
+  const proposalAddr = proposal?.proposalAddress as `0x${string}` | undefined // spender for applyBatch
 
   // Read user balances
   const [pyusdBalance, setPyusdBalance] = useState<bigint>(0n)

@@ -140,13 +140,58 @@ async function getBestSellPrice(proposalId, side) {
 
 async function ensureSufficientBalance({ proposal, proposalId, side, orderType, orderExecution, price, amount, userAddress }) {
   const provider = getProvider();
-  if (!proposal || !proposal.auctions) {
-    throw new Error('Proposal data missing token addresses. Try again shortly.');
+  const key = sideToKey(side);
+
+  // Try to obtain token addresses from multiple sources (Proposal.auctions, Auction collection, last-resort on-chain sync)
+  let tokenAddr = proposal?.auctions?.[key]?.marketToken;
+  let pyusdAddr = proposal?.auctions?.yes?.pyusd || proposal?.auctions?.no?.pyusd;
+
+  // Fallback 1: Look into Auction collection if Proposal.auctions is not populated yet
+  if (!tokenAddr || !pyusdAddr) {
+    try {
+      const Auction = require('../models/Auction');
+      const pid = String(proposal?.id ?? proposalId);
+      const aucSide = key; // 'yes' | 'no'
+      const aucDoc = await Auction.findOne({ proposalId: pid, side: aucSide }).lean();
+      const aucYes = await Auction.findOne({ proposalId: pid, side: 'yes' }).lean();
+      const aucNo = await Auction.findOne({ proposalId: pid, side: 'no' }).lean();
+      if (!tokenAddr && aucDoc?.marketToken) tokenAddr = String(aucDoc.marketToken);
+      if (!pyusdAddr) {
+        pyusdAddr = (aucYes?.pyusd || aucNo?.pyusd) ? String(aucYes?.pyusd || aucNo?.pyusd) : undefined;
+      }
+    } catch (_) { /* ignore */ }
   }
 
-  const key = sideToKey(side);
-  const tokenAddr = proposal?.auctions?.[key]?.marketToken;
-  const pyusdAddr = proposal?.auctions?.yes?.pyusd || proposal?.auctions?.no?.pyusd;
+  // Fallback 2: Best-effort on-demand sync from chain, then recheck
+  if (!tokenAddr || !pyusdAddr) {
+    try {
+      const address = proposal?.proposalAddress;
+      if (address && /^0x[a-fA-F0-9]{40}$/.test(String(address))) {
+        const { syncProposalByAddress } = require('../services/chainService');
+        await syncProposalByAddress(String(address));
+        // Reload minimal fields
+        const ProposalModel = require('../models/Proposal');
+        const fresh = await ProposalModel.findOne({ $or: [
+          { proposalAddress: String(address).toLowerCase() },
+          proposal?.proposalContractId ? { proposalContractId: String(proposal.proposalContractId) } : null,
+          proposal?.id ? { id: Number(proposal.id) } : null
+        ].filter(Boolean) }).lean();
+        tokenAddr = tokenAddr || fresh?.auctions?.[key]?.marketToken;
+        pyusdAddr = pyusdAddr || fresh?.auctions?.yes?.pyusd || fresh?.auctions?.no?.pyusd;
+        if (!tokenAddr || !pyusdAddr) {
+          const Auction = require('../models/Auction');
+          const pid = String(fresh?.id ?? proposal?.id ?? proposalId);
+          const aucDoc = await Auction.findOne({ proposalId: pid, side: key }).lean();
+          const aucYes = await Auction.findOne({ proposalId: pid, side: 'yes' }).lean();
+          const aucNo = await Auction.findOne({ proposalId: pid, side: 'no' }).lean();
+          if (!tokenAddr && aucDoc?.marketToken) tokenAddr = String(aucDoc.marketToken);
+          if (!pyusdAddr) {
+            pyusdAddr = (aucYes?.pyusd || aucNo?.pyusd) ? String(aucYes?.pyusd || aucNo?.pyusd) : undefined;
+          }
+        }
+      }
+    } catch (_) { /* ignore */ }
+  }
 
   if (!tokenAddr || !pyusdAddr) {
     throw new Error('Token addresses not available for this proposal yet');
@@ -552,8 +597,15 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
     }
 
-    // Verify that the proposal exists using on-chain contract id (string)
-    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
+    // Verify that the proposal exists by accepting multiple identifiers (internal id, on-chain id, or address)
+    let proposal;
+    try {
+      const pidNum = Number(proposalId);
+      const clauses = [{ proposalContractId: String(proposalId) }];
+      if (!Number.isNaN(pidNum)) clauses.push({ id: pidNum });
+      if (/^0x[a-fA-F0-9]{40}$/.test(String(proposalId))) clauses.push({ proposalAddress: String(proposalId).toLowerCase() });
+      proposal = await Proposal.findOne({ $or: clauses });
+    } catch (_) {}
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -915,8 +967,15 @@ router.get('/:proposalId/:side/orders', async (req, res) => {
       return res.status(400).json({ error: 'Invalid side. Must be approve/reject (or yes/no alias)' });
     }
 
-    // Verify proposal exists using on-chain contract id (string)
-    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
+    // Verify proposal exists (accept internal id, on-chain id, or address)
+    let proposal;
+    try {
+      const pidNum = Number(proposalId);
+      const clauses = [{ proposalContractId: String(proposalId) }];
+      if (!Number.isNaN(pidNum)) clauses.push({ id: pidNum });
+      if (/^0x[a-fA-F0-9]{40}$/.test(String(proposalId))) clauses.push({ proposalAddress: String(proposalId).toLowerCase() });
+      proposal = await Proposal.findOne({ $or: clauses });
+    } catch (_) {}
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -1028,8 +1087,15 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
     }
 
-    // Verify that the proposal exists using on-chain contract id (string)
-    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
+    // Verify that the proposal exists by accepting multiple identifiers (internal id, on-chain id, or address)
+    let proposal;
+    try {
+      const pidNum = Number(proposalId);
+      const clauses = [{ proposalContractId: String(proposalId) }];
+      if (!Number.isNaN(pidNum)) clauses.push({ id: pidNum });
+      if (/^0x[a-fA-F0-9]{40}$/.test(String(proposalId))) clauses.push({ proposalAddress: String(proposalId).toLowerCase() });
+      proposal = await Proposal.findOne({ $or: clauses });
+    } catch (_) {}
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -1391,8 +1457,15 @@ router.get('/:proposalId/:side/orders', async (req, res) => {
       return res.status(400).json({ error: 'Invalid side. Must be approve/reject (or yes/no alias)' });
     }
 
-    // Verify proposal exists using on-chain contract id (string)
-    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
+    // Verify proposal exists (accept internal id, on-chain id, or address)
+    let proposal;
+    try {
+      const pidNum = Number(proposalId);
+      const clauses = [{ proposalContractId: String(proposalId) }];
+      if (!Number.isNaN(pidNum)) clauses.push({ id: pidNum });
+      if (/^0x[a-fA-F0-9]{40}$/.test(String(proposalId))) clauses.push({ proposalAddress: String(proposalId).toLowerCase() });
+      proposal = await Proposal.findOne({ $or: clauses });
+    } catch (_) {}
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -1504,8 +1577,15 @@ router.post('/:proposalId/:side/orders', verifyWalletSignature, async (req, res)
       return res.status(400).json({ error: 'Invalid orderExecution. Must be limit or market' });
     }
 
-    // Verify that the proposal exists using on-chain contract id (string)
-    const proposal = await Proposal.findOne({ proposalContractId: proposalId });
+    // Verify that the proposal exists (accept internal id, on-chain id, or address)
+    let proposal;
+    try {
+      const pidNum = Number(proposalId);
+      const clauses = [{ proposalContractId: String(proposalId) }];
+      if (!Number.isNaN(pidNum)) clauses.push({ id: pidNum });
+      if (/^0x[a-fA-F0-9]{40}$/.test(String(proposalId))) clauses.push({ proposalAddress: String(proposalId).toLowerCase() });
+      proposal = await Proposal.findOne({ $or: clauses });
+    } catch (_) {}
     if (!proposal) {
       return res.status(404).json({ error: `Proposal with id ${proposalId} not found` });
     }
@@ -2025,7 +2105,15 @@ async function executeOrder(order, io) {
     // Fallback to 18/6
     let tokenDec = 18, pyusdDec = 6;
     try {
-      const proposalDoc = await Proposal.findOne({ proposalContractId: order.proposalId });
+      // Look up by multiple identifiers (order.proposalId may be internal id string)
+      let proposalDoc;
+      try {
+        const pidNum = Number(order.proposalId);
+        const clauses = [{ proposalContractId: String(order.proposalId) }];
+        if (!Number.isNaN(pidNum)) clauses.push({ id: pidNum });
+        if (/^0x[a-fA-F0-9]{40}$/.test(String(order.proposalId))) clauses.push({ proposalAddress: String(order.proposalId).toLowerCase() });
+        proposalDoc = await Proposal.findOne({ $or: clauses });
+      } catch (_) {}
       const key = sideToKey(order.side);
       const tokenAddr = proposalDoc?.auctions?.[key]?.marketToken;
       const pyusdAddr = proposalDoc?.auctions?.[key]?.pyusd || proposalDoc?.auctions?.yes?.pyusd || proposalDoc?.auctions?.no?.pyusd;

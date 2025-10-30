@@ -367,8 +367,55 @@ const toAddr = (v) => {
 
 async function readProposalSnapshot(proposalAddr) {
   const c = getContract(proposalAddr, PROPOSAL_ABI, false);
-  const [id, admin, st, aStart, aEnd, lStart, lEnd, lDur, subjectToken, pyusd, minToOpen, maxCap, yesAuction, noAuction, yesToken, noToken, treasury] = await Promise.all([
-    c.id(), c.admin(), c.state(), c.auctionStartTime(), c.auctionEndTime(), c.liveStart(), c.liveEnd(), c.liveDuration(), c.subjectToken(), c.pyUSD(), c.minToOpen(), c.maxCap(), c.yesAuction(), c.noAuction(), c.yesToken().catch(() => '0x0000000000000000000000000000000000000000'), c.noToken().catch(() => '0x0000000000000000000000000000000000000000'), c.treasury()
+
+  // Resilient read helper: try multiple aliases and swallow CALL_EXCEPTION
+  const tryCall = async (names) => {
+    for (const n of names) {
+      const fn = c[n];
+      if (typeof fn === 'function') {
+        try { return await fn(); } catch (_) { /* ignore and try next */ }
+      }
+    }
+    return undefined;
+  };
+
+  // Read fields with aliases for older/newer ABIs; each call is self-contained to avoid Promise.all failing
+  const [
+    id,
+    admin,
+    st,
+    aStart,
+    aEnd,
+    lStart,
+    lEnd,
+    lDur,
+    subjectToken,
+    pyusd,
+    minToOpen,
+    maxCap,
+    yesAuction,
+    noAuction,
+    yesToken,
+    noToken,
+    treasury
+  ] = await Promise.all([
+    tryCall(['id', 'proposalId', 'getId']),
+    tryCall(['admin', 'getAdmin', 'owner']),
+    tryCall(['state', 'getState']),
+    tryCall(['auctionStartTime', 'getAuctionStartTime', 'startTime']),
+    tryCall(['auctionEndTime', 'getAuctionEndTime']),
+    tryCall(['liveStart', 'getLiveStart']),
+    tryCall(['liveEnd', 'getLiveEnd']),
+    tryCall(['liveDuration', 'getLiveDuration', 'duration']),
+    tryCall(['subjectToken', 'getSubjectToken', 'collateralToken', 'getCollateralToken']),
+    tryCall(['pyUSD', 'PYUSD', 'getPyUSD']),
+    tryCall(['minToOpen', 'MIN_TO_OPEN', 'getMinToOpen']),
+    tryCall(['maxCap', 'MAX_CAP', 'cap', 'getMaxCap']),
+    tryCall(['yesAuction', 'YES_AUCTION']),
+    tryCall(['noAuction', 'NO_AUCTION']),
+    (async () => { try { return await c.yesToken(); } catch { return '0x0000000000000000000000000000000000000000'; } })(),
+    (async () => { try { return await c.noToken(); } catch { return '0x0000000000000000000000000000000000000000'; } })(),
+    tryCall(['treasury', 'TREASURY'])
   ]);
 
   // Optional metadata (older deployments may not have these; ignore errors)
